@@ -1,0 +1,98 @@
+import { useState } from 'react';
+import { useRouter, Link } from 'expo-router';
+import { View, Text } from 'react-native';
+import { useAuth } from '../../context/AuthContext';
+import { GlassTextInput, GlassPressable } from '../../components/Glass';
+import { Spinner } from '../../components/icons';
+
+export default function LoginScreen() {
+  const { login } = useAuth();
+  const router = useRouter();
+  const [form, setForm] = useState({ email: '', password: '' });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  function setField(key, value) {
+    setForm(f => ({ ...f, [key]: value }));
+    setError('');
+  }
+
+  async function handleSubmit() {
+    if (!form.email || !form.password) { setError('Please fill in all fields'); return; }
+    setLoading(true);
+    try {
+      await login({ email: form.email, password: form.password });
+      router.replace('/(app)');
+    } catch {
+      // Deliberately generic — distinguishing "wrong password" from "no such
+      // account" lets an attacker enumerate registered emails.
+      setError('Incorrect email or password. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <View className="flex-1 bg-bg justify-center px-6">
+      <View className="w-full max-w-[400px] self-center">
+        <View className="items-center mb-10">
+          <Text className="text-white text-xl font-semibold mb-1">Okana</Text>
+          <Text className="text-white/30 text-sm">Your money, beautifully tracked.</Text>
+        </View>
+
+        <View className="gap-4">
+          <View>
+            <Text className="text-white/35 text-xs font-medium mb-2 uppercase tracking-wider">Email</Text>
+            <GlassTextInput
+              value={form.email}
+              onChangeText={t => setField('email', t)}
+              placeholder="you@example.com"
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+          </View>
+
+          <View>
+            <View className="flex-row items-center justify-between mb-2">
+              <Text className="text-white/35 text-xs font-medium uppercase tracking-wider">Password</Text>
+              <Link href="/(auth)/forgot-password">
+                <Text className="text-white/35 text-xs">Forgot password?</Text>
+              </Link>
+            </View>
+            <GlassTextInput
+              value={form.password}
+              onChangeText={t => setField('password', t)}
+              placeholder="••••••••"
+              secureTextEntry
+            />
+          </View>
+
+          {!!error && <Text className="text-red-400 text-xs text-center">{error}</Text>}
+
+          <GlassPressable
+            variant="active"
+            onPress={handleSubmit}
+            disabled={loading}
+            className="w-full py-[14px] rounded-2xl mt-2 flex-row items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <Spinner />
+                <Text className="text-white text-sm font-semibold">Logging in…</Text>
+              </>
+            ) : (
+              <Text className="text-white text-sm font-semibold">Log In</Text>
+            )}
+          </GlassPressable>
+        </View>
+
+        <View className="flex-row justify-center mt-6">
+          <Text className="text-white/35 text-sm">Don't have an account? </Text>
+          <Link href="/(auth)/signup">
+            <Text className="text-white font-medium text-sm">Sign Up</Text>
+          </Link>
+        </View>
+      </View>
+    </View>
+  );
+}
