@@ -2,6 +2,7 @@ import { memo, useState, useEffect, useRef } from 'react';
 import { Modal, View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
 import Svg, { Rect, Line } from 'react-native-svg';
 import { today, toTitleCase } from '../utils/format';
 import CalendarPicker from './CalendarPicker';
@@ -41,6 +42,33 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
   const [calOpen, setCalOpen] = useState(false);
   const amountRef = useRef(null);
 
+  // RN's built-in Modal animationType only animates the WHOLE modal content
+  // as one transform — the backdrop was sliding up together with the sheet
+  // instead of fading in place. Managed independently here instead:
+  // animationType="none" on the Modal, backdrop opacity and sheet
+  // translateY driven separately so the backdrop fades while the sheet
+  // slides, and `visible` stays mounted through the close animation so it
+  // can play instead of the modal disappearing instantly.
+  const [visible, setVisible] = useState(open);
+  const backdropOpacity = useSharedValue(0);
+  const sheetTranslateY = useSharedValue(sheetMaxHeight);
+
+  useEffect(() => {
+    if (open) {
+      setVisible(true);
+      backdropOpacity.value = withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) });
+      sheetTranslateY.value = withTiming(0, { duration: 320, easing: Easing.out(Easing.cubic) });
+    } else {
+      backdropOpacity.value = withTiming(0, { duration: 240, easing: Easing.in(Easing.cubic) });
+      sheetTranslateY.value = withTiming(
+        sheetMaxHeight,
+        { duration: 240, easing: Easing.in(Easing.cubic) },
+        finished => { if (finished) runOnJS(setVisible)(false); },
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   useEffect(() => {
     if (open) {
       if (editData) {
@@ -71,130 +99,137 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
 
   const canSubmit = !!amount && parseFloat(amount) > 0;
 
+  const backdropStyle = useAnimatedStyle(() => ({ opacity: backdropOpacity.value }));
+  const sheetStyle = useAnimatedStyle(() => ({ transform: [{ translateY: sheetTranslateY.value }] }));
+
   return (
-    <Modal visible={open} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <View style={{ flex: 1 }}>
         <Pressable style={{ flex: 1 }} onPress={onClose}>
-          <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.2)' }]} />
+          <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
+            <BlurView intensity={35} tint="dark" style={StyleSheet.absoluteFill} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.55)' }]} />
+          </Animated.View>
         </Pressable>
 
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={{ maxHeight: sheetMaxHeight }}
         >
-          <GlassView
-            variant="modal"
-            radius={24}
-            corners="t"
-            className="px-6 pt-5"
-            style={{ maxHeight: sheetMaxHeight, paddingBottom: insets.bottom }}
-          >
-          <ScrollView
-            style={{ flexGrow: 0, flexShrink: 1, maxHeight: sheetMaxHeight - 100 }}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingBottom: 8 }}
-          >
-            <View className="w-8 h-1 rounded-full mx-auto mb-5" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }} />
+          <Animated.View style={sheetStyle}>
+            <GlassView
+              variant="modal"
+              radius={24}
+              corners="t"
+              className="px-6 pt-5"
+              style={{ maxHeight: sheetMaxHeight, paddingBottom: insets.bottom }}
+            >
+            <ScrollView
+              style={{ flexGrow: 0, flexShrink: 1, maxHeight: sheetMaxHeight - 100 }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 8 }}
+            >
+              <View className="w-8 h-1 rounded-full mx-auto mb-5" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }} />
 
-            <View className="flex-row rounded-full p-[3px] mb-5" style={{ backgroundColor: 'rgba(255,255,255,0.07)' }}>
-              {['expense', 'income'].map(t => (
-                <Pressable
-                  key={t}
-                  onPress={() => setType(t)}
-                  className="flex-1 py-[6px] rounded-full items-center"
-                  style={type === t ? { backgroundColor: 'rgba(255,255,255,0.14)' } : null}
+              <View className="flex-row rounded-full p-[3px] mb-5" style={{ backgroundColor: 'rgba(255,255,255,0.07)' }}>
+                {['expense', 'income'].map(t => (
+                  <Pressable
+                    key={t}
+                    onPress={() => setType(t)}
+                    className="flex-1 py-[6px] rounded-full items-center"
+                    style={type === t ? { backgroundColor: 'rgba(255,255,255,0.14)' } : null}
+                  >
+                    <Text className={type === t ? 'text-white text-sm font-medium' : 'text-white/35 text-sm font-medium'}>
+                      {t.charAt(0).toUpperCase() + t.slice(1)}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <View className="mb-6 items-center">
+                <View className="flex-row items-center justify-center gap-1">
+                  <Text className="text-4xl font-light text-white/35" style={{ lineHeight: 56 }}>₹</Text>
+                  <TextInput
+                    ref={amountRef}
+                    value={amount}
+                    onChangeText={setAmount}
+                    placeholder="0"
+                    placeholderTextColor="#333333"
+                    keyboardType="decimal-pad"
+                    className="font-semibold text-center text-white"
+                    // text-5xl's default lineHeight (1x font-size) is too tight for
+                    // iOS to render tall digit glyphs in a TextInput without
+                    // clipping their tops — set both explicitly with headroom.
+                    style={{ minWidth: 120, fontSize: 48, lineHeight: 56 }}
+                  />
+                </View>
+              </View>
+
+              <View className="mb-4">
+                <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Date</Text>
+                <GlassPressable
+                  variant="glass"
+                  onPress={() => setCalOpen(true)}
+                  className="w-full px-4 py-3 flex-row items-center justify-between"
                 >
-                  <Text className={type === t ? 'text-white text-sm font-medium' : 'text-white/35 text-sm font-medium'}>
-                    {t.charAt(0).toUpperCase() + t.slice(1)}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+                  <Text className="text-white text-base">{formatDisplay(date)}</Text>
+                  <CalIcon />
+                </GlassPressable>
+              </View>
 
-            <View className="mb-6 items-center">
-              <View className="flex-row items-center justify-center gap-1">
-                <Text className="text-4xl font-light text-white/35" style={{ lineHeight: 56 }}>₹</Text>
+              <View className="mb-6">
+                <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Description</Text>
                 <TextInput
-                  ref={amountRef}
-                  value={amount}
-                  onChangeText={setAmount}
-                  placeholder="0"
+                  value={description}
+                  onChangeText={setDescription}
+                  placeholder="What was this for?"
                   placeholderTextColor="#333333"
-                  keyboardType="decimal-pad"
-                  className="font-semibold text-center text-white"
-                  // text-5xl's default lineHeight (1x font-size) is too tight for
-                  // iOS to render tall digit glyphs in a TextInput without
-                  // clipping their tops — set both explicitly with headroom.
-                  style={{ minWidth: 120, fontSize: 48, lineHeight: 56 }}
+                  className="w-full rounded-xl px-4 py-3 text-white text-base"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.07)' }}
                 />
               </View>
-            </View>
 
-            <View className="mb-4">
-              <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Date</Text>
-              <GlassPressable
-                variant="glass"
-                onPress={() => setCalOpen(true)}
-                className="w-full px-4 py-3 flex-row items-center justify-between"
-              >
-                <Text className="text-white text-base">{formatDisplay(date)}</Text>
-                <CalIcon />
-              </GlassPressable>
-            </View>
+            </ScrollView>
 
-            <View className="mb-6">
-              <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Description</Text>
-              <TextInput
-                value={description}
-                onChangeText={setDescription}
-                placeholder="What was this for?"
-                placeholderTextColor="#333333"
-                className="w-full rounded-xl px-4 py-3 text-white text-base"
-                style={{ backgroundColor: 'rgba(255,255,255,0.07)' }}
-              />
-            </View>
-
-          </ScrollView>
-
-          {/* Fixed footer — always visible regardless of scroll position, so the
-              action button can never end up scrolled out of view (was the bug).
-              Bottom safe-area padding lives on the GlassView itself so it's part
-              of the visible card, not a gap exposing the backdrop behind it. */}
-          <View style={{ paddingTop: 12 }}>
-            {isEdit ? (
-              <View className="flex-row gap-3">
+            {/* Fixed footer — always visible regardless of scroll position, so the
+                action button can never end up scrolled out of view (was the bug).
+                Bottom safe-area padding lives on the GlassView itself so it's part
+                of the visible card, not a gap exposing the backdrop behind it. */}
+            <View style={{ paddingTop: 12 }}>
+              {isEdit ? (
+                <View className="flex-row gap-3">
+                  <GlassPressable
+                    variant="active"
+                    radius={16}
+                    disabled={!canSubmit}
+                    onPress={handleSubmit}
+                    className="flex-1 py-[14px] items-center"
+                  >
+                    <Text className="text-white text-base font-semibold">Update</Text>
+                  </GlassPressable>
+                  <Pressable
+                    onPress={() => { onDelete(editData.id); onClose(); }}
+                    className="flex-1 py-[14px] rounded-2xl items-center"
+                    style={{ backgroundColor: 'rgba(248,113,113,0.12)' }}
+                  >
+                    <Text className="text-base font-semibold" style={{ color: 'rgba(248,113,113,0.85)' }}>Delete</Text>
+                  </Pressable>
+                </View>
+              ) : (
                 <GlassPressable
                   variant="active"
                   radius={16}
                   disabled={!canSubmit}
                   onPress={handleSubmit}
-                  className="flex-1 py-[14px] items-center"
+                  className="w-full py-[14px] items-center"
                 >
-                  <Text className="text-white text-base font-semibold">Update</Text>
+                  <Text className="text-white text-base font-semibold">Add {type.charAt(0).toUpperCase() + type.slice(1)}</Text>
                 </GlassPressable>
-                <Pressable
-                  onPress={() => { onDelete(editData.id); onClose(); }}
-                  className="flex-1 py-[14px] rounded-2xl items-center"
-                  style={{ backgroundColor: 'rgba(248,113,113,0.12)' }}
-                >
-                  <Text className="text-base font-semibold" style={{ color: 'rgba(248,113,113,0.85)' }}>Delete</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <GlassPressable
-                variant="active"
-                radius={16}
-                disabled={!canSubmit}
-                onPress={handleSubmit}
-                className="w-full py-[14px] items-center"
-              >
-                <Text className="text-white text-base font-semibold">Add {type.charAt(0).toUpperCase() + type.slice(1)}</Text>
-              </GlassPressable>
-            )}
-          </View>
-          </GlassView>
+              )}
+            </View>
+            </GlassView>
+          </Animated.View>
         </KeyboardAvoidingView>
       </View>
 
