@@ -10,7 +10,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS
 // independently with Reanimated instead, and keeps the Modal mounted
 // through the close animation so it can actually play.
 export function AnimatedModal({ open, onClose, variant = 'bottom', blurIntensity = 30, dim = 0.5, children }) {
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const [visible, setVisible] = useState(open);
   const backdropOpacity = useSharedValue(0);
   const progress = useSharedValue(0); // 0 closed → 1 open
@@ -60,7 +60,17 @@ export function AnimatedModal({ open, onClose, variant = 'bottom', blurIntensity
             pointerEvents="box-none"
           >
             <Animated.View style={contentStyle} pointerEvents="auto">
-              {children}
+              {/* Plain (non-animated) wrapper with a concrete pixel width —
+                  Animated.View above has no definite width of its own here
+                  (alignItems:center on the ancestor leaves it shrink-wrapped),
+                  so any `w-full` a child asks for can't resolve against it
+                  reliably on native Yoga. Putting the width fix on a plain
+                  View instead of the Animated.View itself sidesteps a
+                  react-native-web + Reanimated quirk where a static style
+                  merged into an animated style array doesn't apply. */}
+              <View style={{ width: windowWidth - 48, alignItems: 'center' }}>
+                {children}
+              </View>
             </Animated.View>
           </View>
         ) : (
