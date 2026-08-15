@@ -6,11 +6,14 @@ import Header from '../../components/Header';
 import SummaryCard from '../../components/SummaryCard';
 import TransactionList from '../../components/TransactionList';
 import AddModal from '../../components/AddModal';
+import Drawer from '../../components/Drawer';
 import { currentMonthYear } from '../../utils/format';
 
 export default function Dashboard() {
   const { logout } = useAuth();
   const { transactions, addTransaction, editTransaction, deleteTransaction } = useTransactions();
+
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const { month: currMonth, year: currYear } = currentMonthYear();
 
@@ -43,7 +46,7 @@ export default function Dashboard() {
   return (
     <View className="flex-1 bg-bg">
       <Header
-        onMenuOpen={logout}
+        onMenuOpen={() => setDrawerOpen(true)}
         chartTab={chartTab}
         onChartTabChange={setChartTab}
         onCalendarOpen={() => {}}
@@ -91,6 +94,8 @@ export default function Dashboard() {
         onDelete={deleteTransaction}
         editData={editData}
       />
+
+      <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </View>
   );
 }

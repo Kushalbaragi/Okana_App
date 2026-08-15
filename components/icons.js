@@ -17,10 +17,41 @@ export function CheckIcon({ size = 36, color = '#4ade80' }) {
   );
 }
 
-export function BackIcon({ size = 20, color = 'currentColor' }) {
+export function BackIcon({ size = 20, color = '#ffffff' }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 20 20" fill="none">
       <Path d="M12.5 5L7.5 10L12.5 15" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function EditIcon({ size = 15 }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <Path d="M11.5 2.5a1.414 1.414 0 012 2L5 13H3v-2L11.5 2.5z" stroke="rgba(255,255,255,0.4)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function EyeIcon({ open, size = 16 }) {
+  return open ? (
+    <Svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <Path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" stroke="rgba(255,255,255,0.4)" strokeWidth="1.3" />
+      <Circle cx="8" cy="8" r="2" stroke="rgba(255,255,255,0.4)" strokeWidth="1.3" />
+    </Svg>
+  ) : (
+    <Svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <Path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" stroke="rgba(255,255,255,0.4)" strokeWidth="1.3" />
+      <Circle cx="8" cy="8" r="2" stroke="rgba(255,255,255,0.4)" strokeWidth="1.3" />
+      <Line x1="2" y1="2" x2="14" y2="14" stroke="rgba(255,255,255,0.4)" strokeWidth="1.3" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function ChevronRight({ size = 14 }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 14 14" fill="none">
+      <Path d="M5 3l4 4-4 4" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
