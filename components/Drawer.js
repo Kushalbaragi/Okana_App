@@ -52,12 +52,12 @@ function Drawer({ open, onClose }) {
         style={{ position: 'absolute', top: 52, left: 16, minWidth: 190 }}
       >
         <Item onPress={() => openPage('/(app)/account')}>
-          <Text className="text-white text-sm">Account</Text>
+          <Text className="text-white text-base">Account</Text>
         </Item>
         <Divider />
         <Item onPress={() => openPage('/(app)/subscription')}>
           <View className="flex-row items-center justify-between" style={{ gap: 8 }}>
-            <Text className="text-white text-sm">Subscription</Text>
+            <Text className="text-white text-base">Subscription</Text>
             {planLabel && (
               <View
                 className="px-2 py-0.5 rounded-full"
@@ -75,11 +75,11 @@ function Drawer({ open, onClose }) {
         </Item>
         <Divider />
         <Item onPress={() => openPage('/(app)/settings')}>
-          <Text className="text-white text-sm">Settings</Text>
+          <Text className="text-white text-base">Settings</Text>
         </Item>
         <Divider />
         <Item onPress={handleLogout}>
-          <Text className="text-sm" style={{ color: 'rgba(248,113,113,0.8)' }}>Log Out</Text>
+          <Text className="text-base" style={{ color: 'rgba(248,113,113,0.8)' }}>Log Out</Text>
         </Item>
       </GlassView>
     </>

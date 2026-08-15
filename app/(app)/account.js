@@ -90,10 +90,10 @@ function ConfirmModal({ open, title, message, confirmLabel, onConfirm, onCancel 
         <Text className="text-white/45 text-sm mb-6" style={{ lineHeight: 20 }}>{message}</Text>
         <View className="flex-row" style={{ gap: 12 }}>
           <Pressable onPress={onCancel} className="flex-1 py-3 rounded-xl items-center" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
-            <Text className="text-white/60 text-sm font-medium">Cancel</Text>
+            <Text className="text-white/60 text-base font-medium">Cancel</Text>
           </Pressable>
           <Pressable onPress={onConfirm} className="flex-1 py-3 rounded-xl items-center" style={{ backgroundColor: 'rgba(248,113,113,0.14)' }}>
-            <Text className="text-sm font-semibold" style={{ color: 'rgba(248,113,113,0.9)' }}>{confirmLabel}</Text>
+            <Text className="text-base font-semibold" style={{ color: 'rgba(248,113,113,0.9)' }}>{confirmLabel}</Text>
           </Pressable>
         </View>
       </View>

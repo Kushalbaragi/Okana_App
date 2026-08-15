@@ -57,7 +57,7 @@ function Card({ children }) {
 function Row({ label, value, onPress, right }) {
   const content = (
     <View className="flex-row items-center justify-between px-4 py-[14px]">
-      <Text className="text-white text-sm">{label}</Text>
+      <Text className="text-white text-base">{label}</Text>
       <View className="flex-row items-center" style={{ gap: 8 }}>
         {!!value && <Text className="text-white/35 text-xs">{value}</Text>}
         {right || (onPress && !right && <ChevronRight />)}
@@ -233,7 +233,7 @@ export default function SettingsPage() {
           style={{ gap: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
         >
           <MailIcon />
-          <Text className="text-white/60 text-sm">kushalbaragi@gmail.com</Text>
+          <Text className="text-white/60 text-base">kushalbaragi@gmail.com</Text>
         </Pressable>
         <Text className="text-white/20 mt-3" style={{ fontSize: 12 }}>We typically respond within 1–2 business days.</Text>
       </InfoModal>
@@ -252,7 +252,7 @@ export default function SettingsPage() {
               multiline
               numberOfLines={4}
               textAlignVertical="top"
-              className="text-white text-sm px-4 py-3 mb-4"
+              className="text-white text-base px-4 py-3 mb-4"
               style={{ minHeight: 100, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.07)' }}
             />
             {!!feedbackError && <Text className="text-red-400 text-xs mb-4">{feedbackError}</Text>}
@@ -262,7 +262,7 @@ export default function SettingsPage() {
               className="w-full py-[14px] rounded-2xl items-center"
               style={{ backgroundColor: 'rgba(255,255,255,0.14)', opacity: !feedbackText.trim() || feedbackSending ? 0.3 : 1 }}
             >
-              <Text className="text-white text-sm font-semibold">{feedbackSending ? 'Sending…' : 'Send'}</Text>
+              <Text className="text-white text-base font-semibold">{feedbackSending ? 'Sending…' : 'Send'}</Text>
             </Pressable>
           </>
         )}

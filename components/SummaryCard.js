@@ -1,6 +1,6 @@
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import Animated, { FadeInUp } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withDelay, withTiming, Easing } from 'react-native-reanimated';
 import BarChart from './BarChart';
 import LineChart from './LineChart';
 import { GlassPressable } from './Glass';
@@ -22,19 +22,46 @@ const fmt = new Intl.NumberFormat('en-IN', {
   minimumFractionDigits: 2, maximumFractionDigits: 2,
 });
 
+// Matches web's `.digit-up` keyframe exactly (translateY 18%→0, 500ms,
+// cubic-bezier(0.16,1,0.3,1) — an ease-out-expo "settle" feel) rather than
+// Reanimated's generic FadeInUp preset, which uses a different curve/travel
+// distance and reads as a slightly different, less "settled" motion.
+const DIGIT_EASING = Easing.bezier(0.16, 1, 0.3, 1);
+
+function Digit({ char, delay, distance, style, className }) {
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = 0;
+    progress.value = withDelay(delay, withTiming(1, { duration: 500, easing: DIGIT_EASING }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [char]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ translateY: (1 - progress.value) * distance }],
+  }));
+
+  return (
+    <Animated.Text className={className} style={[style, animStyle]}>
+      {char === ' ' ? ' ' : char}
+    </Animated.Text>
+  );
+}
+
 function AnimatedAmount({ value, color }) {
   const str = fmt.format(value);
   return (
     <View className="flex-row" key={str}>
       {[...str].map((char, i) => (
-        <Animated.Text
+        <Digit
           key={i}
-          entering={FadeInUp.delay(i * 22).duration(400)}
+          char={char}
+          delay={i * 22}
+          distance={7}
           className="text-4xl font-semibold tracking-tight"
           style={{ color }}
-        >
-          {char === ' ' ? ' ' : char}
-        </Animated.Text>
+        />
       ))}
     </View>
   );
@@ -44,14 +71,7 @@ function AnimatedDelta({ text, style }) {
   return (
     <View className="flex-row" key={text}>
       {[...text].map((char, i) => (
-        <Animated.Text
-          key={i}
-          entering={FadeInUp.delay(i * 20).duration(350)}
-          className="text-sm"
-          style={style}
-        >
-          {char === ' ' ? ' ' : char}
-        </Animated.Text>
+        <Digit key={i} char={char} delay={i * 20} distance={4} className="text-sm" style={style} />
       ))}
     </View>
   );

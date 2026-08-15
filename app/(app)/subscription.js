@@ -94,7 +94,7 @@ export default function SubscriptionPage() {
             <SectionLabel>Current Plan</SectionLabel>
             <Card>
               <View className="flex-row items-center justify-between px-4 py-[14px]">
-                <Text className="text-white text-sm">{needsAction ? 'Okana' : 'Okana Plus'}</Text>
+                <Text className="text-white text-base">{needsAction ? 'Okana' : 'Okana Plus'}</Text>
                 <Pill tone={pill.tone}>{pill.label}</Pill>
               </View>
 
@@ -135,7 +135,7 @@ export default function SubscriptionPage() {
                             : (paymentMethod.method || 'UPI').toUpperCase()}
                         </Text>
                       </View>
-                      <Text className="text-white/70 text-sm">
+                      <Text className="text-white/70 text-base">
                         {paymentMethod.card ? `•••• ${paymentMethod.card.last4}` : paymentMethod.vpa || 'Linked'}
                       </Text>
                     </View>
@@ -158,7 +158,7 @@ export default function SubscriptionPage() {
                 className="w-full py-[13px] rounded-2xl items-center"
                 style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
               >
-                <Text className="text-sm font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>Coming soon</Text>
+                <Text className="text-base font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>Coming soon</Text>
               </View>
               <Text className="w-full text-center text-white/25 text-xs">
                 Subscribing from the app is on its way — manage your plan from the web for now.
@@ -201,10 +201,10 @@ export default function SubscriptionPage() {
           </Text>
           <View className="flex-row" style={{ gap: 12 }}>
             <Pressable onPress={() => setConfirmOpen(false)} className="flex-1 py-3 rounded-xl items-center" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
-              <Text className="text-white/60 text-sm font-medium">Go back</Text>
+              <Text className="text-white/60 text-base font-medium">Go back</Text>
             </Pressable>
             <Pressable onPress={handleConfirmCancel} disabled={cancelling} className="flex-1 py-3 rounded-xl items-center" style={{ backgroundColor: 'rgba(248,113,113,0.14)', opacity: cancelling ? 0.5 : 1 }}>
-              <Text className="text-sm font-semibold" style={{ color: 'rgba(248,113,113,0.9)' }}>{cancelling ? 'Cancelling…' : 'Cancel subscription'}</Text>
+              <Text className="text-base font-semibold" style={{ color: 'rgba(248,113,113,0.9)' }}>{cancelling ? 'Cancelling…' : 'Cancel subscription'}</Text>
             </Pressable>
           </View>
         </View>

@@ -19,7 +19,7 @@ export function AnimatedModal({ open, onClose, variant = 'bottom', blurIntensity
     if (open) {
       setVisible(true);
       backdropOpacity.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) });
-      progress.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) });
+      progress.value = withTiming(1, { duration: 380, easing: Easing.bezier(0.16, 1, 0.3, 1) });
     } else {
       backdropOpacity.value = withTiming(0, { duration: 220, easing: Easing.in(Easing.cubic) });
       progress.value = withTiming(
@@ -36,9 +36,15 @@ export function AnimatedModal({ open, onClose, variant = 'bottom', blurIntensity
     if (variant === 'bottom') {
       return { transform: [{ translateY: (1 - progress.value) * windowHeight }] };
     }
+    // Scale + a settle-in translateY (instead of scale alone) — matches the
+    // "digit-up"/ease-out-expo reveal feel used elsewhere in the web app
+    // (cubic-bezier(0.16,1,0.3,1)) rather than a flat cross-fade.
     return {
       opacity: progress.value,
-      transform: [{ scale: 0.94 + progress.value * 0.06 }],
+      transform: [
+        { translateY: (1 - progress.value) * 14 },
+        { scale: 0.94 + progress.value * 0.06 },
+      ],
     };
   });
 

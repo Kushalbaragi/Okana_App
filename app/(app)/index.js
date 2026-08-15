@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, ScrollView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../hooks/useTransactions';
@@ -155,17 +155,19 @@ export default function Dashboard() {
         onDayChange={setSelectedDay}
       />
 
-      <TransactionList
-        transactions={transactions}
-        activeTab={chartTab}
-        chartTab={chartTab}
-        selectedMonth={timeRange === 'month' ? currMonth : selectedMonth}
-        year={timeRange === '5y' ? currYear : year}
-        timeRange={timeRange}
-        selectedYear={selectedYear}
-        selectedDay={selectedDay}
-        onEdit={openEdit}
-      />
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+        <TransactionList
+          transactions={transactions}
+          activeTab={chartTab}
+          chartTab={chartTab}
+          selectedMonth={timeRange === 'month' ? currMonth : selectedMonth}
+          year={timeRange === '5y' ? currYear : year}
+          timeRange={timeRange}
+          selectedYear={selectedYear}
+          selectedDay={selectedDay}
+          onEdit={openEdit}
+        />
+      </ScrollView>
 
       <Pressable
         onPress={openAdd}
