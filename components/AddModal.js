@@ -65,15 +65,19 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
 
   return (
     <Modal visible={open} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable className="flex-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={onClose} />
+      <View style={{ flex: 1 }}>
+        <Pressable style={{ flex: 1 }} onPress={onClose} />
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}
-      >
-        <GlassView variant="modal" radius={24} corners="t" className="px-6 pt-5" style={{ maxHeight: '85%' }}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <GlassView
+            variant="modal"
+            radius={24}
+            corners="t"
+            className="px-6 pt-5"
+            style={{ maxHeight: '85%', paddingBottom: insets.bottom }}
+          >
           <ScrollView
-            style={{ flexShrink: 1 }}
+            style={{ flexGrow: 0, flexShrink: 1 }}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={{ paddingBottom: 8 }}
@@ -138,8 +142,10 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
           </ScrollView>
 
           {/* Fixed footer — always visible regardless of scroll position, so the
-              action button can never end up scrolled out of view (was the bug). */}
-          <View style={{ paddingTop: 12, paddingBottom: Math.max(insets.bottom, 16) }}>
+              action button can never end up scrolled out of view (was the bug).
+              Bottom safe-area padding lives on the GlassView itself so it's part
+              of the visible card, not a gap exposing the backdrop behind it. */}
+          <View style={{ paddingTop: 12 }}>
             {isEdit ? (
               <View className="flex-row gap-3">
                 <GlassPressable
@@ -171,8 +177,9 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
               </GlassPressable>
             )}
           </View>
-        </GlassView>
-      </KeyboardAvoidingView>
+          </GlassView>
+        </KeyboardAvoidingView>
+      </View>
 
       {/* Calendar overlay — lives inside this same Modal (avoids nested-Modal quirks on iOS) */}
       {calOpen && (
