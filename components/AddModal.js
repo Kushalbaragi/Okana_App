@@ -1,5 +1,5 @@
 import { memo, useState, useEffect, useRef } from 'react';
-import { Modal, View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
+import { Modal, View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Rect, Line } from 'react-native-svg';
 import { today, toTitleCase } from '../utils/format';
@@ -25,6 +25,13 @@ function CalIcon() {
 
 function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  // A concrete pixel cap, not a percentage string — percentage heights are
+  // ambiguous in RN's layout engine once nested inside flex + ScrollView
+  // (resolves fine in the web preview's browser-based layout, but silently
+  // collapses content on real native devices). This was the root cause of
+  // the Description field/submit button rendering squished on-device.
+  const sheetMaxHeight = Math.round(windowHeight * 0.85);
   const isEdit = !!editData;
   const [type, setType] = useState('expense');
   const [amount, setAmount] = useState('');
@@ -68,16 +75,19 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
       <View style={{ flex: 1 }}>
         <Pressable style={{ flex: 1 }} onPress={onClose} />
 
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ maxHeight: sheetMaxHeight }}
+        >
           <GlassView
             variant="modal"
             radius={24}
             corners="t"
             className="px-6 pt-5"
-            style={{ maxHeight: '85%', paddingBottom: insets.bottom }}
+            style={{ maxHeight: sheetMaxHeight, paddingBottom: insets.bottom }}
           >
           <ScrollView
-            style={{ flexGrow: 0, flexShrink: 1 }}
+            style={{ flexGrow: 0, flexShrink: 1, maxHeight: sheetMaxHeight - 100 }}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={{ paddingBottom: 8 }}
