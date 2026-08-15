@@ -69,7 +69,7 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}
       >
-        <GlassView variant="modal" className="rounded-t-3xl px-6 pt-5 pb-10" style={{ maxHeight: '85%' }}>
+        <GlassView variant="modal" radius={24} corners="t" className="px-6 pt-5 pb-10" style={{ maxHeight: '85%' }}>
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <View className="w-8 h-1 rounded-full mx-auto mb-5" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }} />
 
@@ -109,7 +109,7 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
               <GlassPressable
                 variant="glass"
                 onPress={() => setCalOpen(true)}
-                className="w-full rounded-xl px-4 py-3 flex-row items-center justify-between"
+                className="w-full px-4 py-3 flex-row items-center justify-between"
               >
                 <Text className="text-white text-sm">{formatDisplay(date)}</Text>
                 <CalIcon />
@@ -132,9 +132,10 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
               <View className="flex-row gap-3">
                 <GlassPressable
                   variant="active"
+                  radius={16}
                   disabled={!canSubmit}
                   onPress={handleSubmit}
-                  className="flex-1 py-[14px] rounded-2xl items-center"
+                  className="flex-1 py-[14px] items-center"
                 >
                   <Text className="text-white text-sm font-semibold">Update</Text>
                 </GlassPressable>
@@ -149,9 +150,10 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
             ) : (
               <GlassPressable
                 variant="active"
+                radius={16}
                 disabled={!canSubmit}
                 onPress={handleSubmit}
-                className="w-full py-[14px] rounded-2xl items-center"
+                className="w-full py-[14px] items-center"
               >
                 <Text className="text-white text-sm font-semibold">Add {type.charAt(0).toUpperCase() + type.slice(1)}</Text>
               </GlassPressable>

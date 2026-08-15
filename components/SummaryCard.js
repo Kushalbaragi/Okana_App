@@ -70,8 +70,9 @@ function RangeSelector({ value, onChange, currentYear, currentMonth }) {
           <GlassPressable
             key={opt.id}
             variant="active"
+            radius={9999}
             onPress={() => onChange(opt.id)}
-            className="px-3 py-1 rounded-full"
+            className="px-3 py-1"
           >
             <Text className="text-white text-[11px] font-medium">{opt.label}</Text>
           </GlassPressable>

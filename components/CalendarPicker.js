@@ -43,13 +43,13 @@ function CalendarPicker({ value, onChange, onClose }) {
   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
 
   return (
-    <GlassView variant="glass" className="rounded-2xl p-4 w-full">
+    <GlassView variant="glass" radius={16} className="p-4 w-full">
       <View className="flex-row items-center justify-between mb-4">
-        <GlassPressable variant="glass" onPress={prev} className="w-8 h-8 rounded-full items-center justify-center">
+        <GlassPressable variant="glass" radius={9999} onPress={prev} className="w-8 h-8 items-center justify-center">
           <Text className="text-white/60 text-lg">‹</Text>
         </GlassPressable>
         <Text className="text-white text-sm font-semibold">{MONTHS[month]} {year}</Text>
-        <GlassPressable variant="glass" onPress={next} className="w-8 h-8 rounded-full items-center justify-center">
+        <GlassPressable variant="glass" radius={9999} onPress={next} className="w-8 h-8 items-center justify-center">
           <Text className="text-white/60 text-lg">›</Text>
         </GlassPressable>
       </View>
@@ -74,8 +74,9 @@ function CalendarPicker({ value, onChange, onClose }) {
                 {isSelected ? (
                   <GlassPressable
                     variant="active"
+                    radius={9999}
                     onPress={() => pick(d)}
-                    className="w-8 h-8 rounded-full items-center justify-center"
+                    className="w-8 h-8 items-center justify-center"
                   >
                     <Text className="text-white text-sm font-semibold">{d}</Text>
                   </GlassPressable>

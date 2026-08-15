@@ -13,8 +13,9 @@ export default function WelcomeScreen() {
       <Text className="text-white/40 text-sm text-center mb-8">Let's get your account set up.</Text>
       <GlassPressable
         variant="active"
+        radius={16}
         onPress={() => router.replace('/(app)')}
-        className="w-full max-w-[400px] py-[14px] rounded-2xl items-center"
+        className="w-full max-w-[400px] py-[14px] items-center"
       >
         <Text className="text-white text-sm font-semibold">Start Tracking</Text>
       </GlassPressable>

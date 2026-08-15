@@ -112,9 +112,10 @@ export default function ResetPasswordScreen() {
 
           <GlassPressable
             variant="active"
+            radius={16}
             onPress={handleSubmit}
             disabled={loading}
-            className="w-full py-[14px] rounded-2xl mt-2 flex-row items-center justify-center gap-2"
+            className="w-full py-[14px] mt-2 flex-row items-center justify-center gap-2"
           >
             {loading ? (
               <>
