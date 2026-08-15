@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Crypto from 'expo-crypto'
 import { supabase } from '../lib/supabase'
@@ -33,7 +33,12 @@ export function useTransactions() {
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(false)
 
-  async function refresh() {
+  // Wrapped in useCallback (with functional setState updaters below, so
+  // none of these need `transactions` in their own closure) so consumers
+  // like AddModal — a heavy, always-in-the-tree component full of
+  // BlurViews — get referentially stable props and can actually skip
+  // re-rendering via memo() when unrelated Dashboard state changes.
+  const refresh = useCallback(async () => {
     if (!user) { setTransactions([]); return }
     setLoading(true)
     const { data, error } = await supabase
@@ -49,7 +54,7 @@ export function useTransactions() {
     }
     // On error (offline), keep showing cached data silently
     setLoading(false)
-  }
+  }, [user])
 
   useEffect(() => {
     if (!user) { setTransactions([]); return }
@@ -64,7 +69,7 @@ export function useTransactions() {
     return () => { cancelled = true }
   }, [user])
 
-  async function addTransaction({ type, amount, date, description }) {
+  const addTransaction = useCallback(async ({ type, amount, date, description }) => {
     if (!user) return
 
     const optimistic = {
@@ -77,8 +82,7 @@ export function useTransactions() {
       _pending:    true,
     }
 
-    const next = [optimistic, ...transactions]
-    setTransactions(next)
+    setTransactions(prev => [optimistic, ...prev])
 
     const { data, error } = await supabase
       .from('transactions')
@@ -101,9 +105,9 @@ export function useTransactions() {
         return updated
       })
     }
-  }
+  }, [user])
 
-  async function editTransaction(id, { type, amount, date, description }) {
+  const editTransaction = useCallback(async (id, { type, amount, date, description }) => {
     if (!user) return
 
     setTransactions(prev => {
@@ -135,9 +139,9 @@ export function useTransactions() {
         saveCache(user.id, txs)
       }
     }
-  }
+  }, [user])
 
-  async function deleteTransaction(id) {
+  const deleteTransaction = useCallback(async (id) => {
     if (!user) return
 
     setTransactions(prev => {
@@ -165,7 +169,7 @@ export function useTransactions() {
         saveCache(user.id, txs)
       }
     }
-  }
+  }, [user])
 
   return { transactions, loading, addTransaction, editTransaction, deleteTransaction, refresh }
 }

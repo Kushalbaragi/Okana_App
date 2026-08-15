@@ -8,6 +8,7 @@ import { today, toTitleCase } from '../utils/format';
 import CalendarPicker from './CalendarPicker';
 import { GlassView, GlassPressable } from './Glass';
 
+const BLUR_METHOD = Platform.OS === 'android' ? 'dimezisBlurView' : undefined;
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatDisplay(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -102,12 +103,22 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
   const backdropStyle = useAnimatedStyle(() => ({ opacity: backdropOpacity.value }));
   const sheetStyle = useAnimatedStyle(() => ({ transform: [{ translateY: sheetTranslateY.value }] }));
 
+  // Unmount the whole tree while closed instead of just hiding it behind
+  // Modal's own visible=false — this component has ~10 GlassView/
+  // GlassPressable instances (each backed by a real-time BlurView), plus a
+  // ScrollView and TextInputs. Left mounted, all of that stays in the React
+  // tree and keeps re-rendering (and consuming a memo() slot that a stale
+  // inline onClose prop already defeats) on every unrelated Dashboard state
+  // change — this is the single heaviest subtree in the app to be paying
+  // that cost for nothing while the modal is closed.
+  if (!visible) return null;
+
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <View style={{ flex: 1 }}>
         <Pressable style={{ flex: 1 }} onPress={onClose}>
           <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
-            <BlurView intensity={35} tint="dark" style={StyleSheet.absoluteFill} />
+            <BlurView intensity={35} tint="dark" experimentalBlurMethod={BLUR_METHOD} style={StyleSheet.absoluteFill} />
             <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.55)' }]} />
           </Animated.View>
         </Pressable>

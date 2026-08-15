@@ -1,5 +1,11 @@
 import { BlurView } from 'expo-blur';
-import { View, Pressable, TextInput, StyleSheet } from 'react-native';
+import { View, Pressable, TextInput, StyleSheet, Platform } from 'react-native';
+
+// Android's default real-time blur is notably heavier than iOS's native
+// UIVisualEffectView-backed one; expo-blur's `dimezisBlurView` method is
+// the standard fix (a purpose-built fast Android blur implementation).
+// No effect on iOS/web.
+const BLUR_METHOD = Platform.OS === 'android' ? 'dimezisBlurView' : undefined;
 
 // Mirrors the web app's .glass / .glass-active / .glass-modal CSS classes —
 // backdrop-filter has no RN equivalent, so these layer a BlurView behind a
@@ -33,7 +39,7 @@ export function GlassView({ variant = 'glass', radius = 0, corners, style, class
   const r = radiusStyle(radius, corners);
   return (
     <View style={[{ overflow: 'hidden' }, r, style]} className={className} {...props}>
-      <BlurView intensity={INTENSITY[variant]} tint="dark" style={[StyleSheet.absoluteFill, r]} />
+      <BlurView intensity={INTENSITY[variant]} tint="dark" experimentalBlurMethod={BLUR_METHOD} style={[StyleSheet.absoluteFill, r]} />
       <View style={[StyleSheet.absoluteFill, { backgroundColor: TINT[variant] }, r]} />
       {children}
     </View>
@@ -53,7 +59,7 @@ export function GlassPressable({ variant = 'active', radius = RADIUS.xl, corners
       className={className}
       {...props}
     >
-      <BlurView intensity={INTENSITY[variant]} tint="dark" style={[StyleSheet.absoluteFill, r]} />
+      <BlurView intensity={INTENSITY[variant]} tint="dark" experimentalBlurMethod={BLUR_METHOD} style={[StyleSheet.absoluteFill, r]} />
       <View style={[StyleSheet.absoluteFill, { backgroundColor: TINT[variant] }, r]} />
       {children}
     </Pressable>
@@ -64,7 +70,7 @@ export function GlassTextInput({ radius = RADIUS.xl, style, className, inputClas
   const r = radiusStyle(radius);
   return (
     <View style={[{ overflow: 'hidden' }, r, style]} className={className}>
-      <BlurView intensity={INTENSITY.glass} tint="dark" style={[StyleSheet.absoluteFill, r]} />
+      <BlurView intensity={INTENSITY.glass} tint="dark" experimentalBlurMethod={BLUR_METHOD} style={[StyleSheet.absoluteFill, r]} />
       <View style={[StyleSheet.absoluteFill, { backgroundColor: TINT.glass }, r]} />
       <TextInput
         placeholderTextColor="#333333"

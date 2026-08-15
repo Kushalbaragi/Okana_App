@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { View, Text, Pressable, ScrollView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
@@ -99,46 +99,60 @@ export default function Dashboard() {
     return () => { cancelled = true; };
   }, [user, transactions, txLoading]);
 
-  async function closeRecap() {
+  const closeRecap = useCallback(async () => {
     setRecapOpen(false);
     if (!user) return;
     const todayStr = today();
     await AsyncStorage.setItem(`okana_recap_seen_${user.id}_${todayStr}`, '1');
     setRecapSeen(true);
-  }
+  }, [user]);
 
-  function openRecapFromCalendar() {
+  const openRecapFromCalendar = useCallback(() => {
     setCalendarOpen(false);
     setRecapOpen(true);
-  }
+  }, []);
 
   const recapForCalendar = recapAvailable
     ? { available: true, seen: recapSeen, monthName: recapMonthName, onOpen: openRecapFromCalendar }
     : null;
 
-  function handleTimeRangeChange(next) {
+  const handleTimeRangeChange = useCallback((next) => {
     setTimeRange(next);
     setSelectedDay(null);
     if (next === 'year') setYear(currYear);
-  }
+  }, [currYear]);
 
-  function openAdd() {
+  const openAdd = useCallback(() => {
     setEditData(null);
     setModalOpen(true);
-  }
+  }, []);
 
-  function openEdit(tx) {
+  const openEdit = useCallback((tx) => {
     setEditData(tx);
     setModalOpen(true);
-  }
+  }, []);
+
+  // Stable no-arg toggles for the modal props below — each was previously
+  // an inline arrow function created fresh every render, which defeated
+  // memo() on Header/AddModal/SpendCalendarModal/Drawer/DailyInsightModal:
+  // any unrelated Dashboard state change (e.g. switching chart tabs) handed
+  // them a "new" onClose/onMenuOpen prop and forced a full re-render of
+  // each of those subtrees, AddModal's ~10-BlurView tree being the worst
+  // of it.
+  const openDrawer = useCallback(() => setDrawerOpen(true), []);
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+  const openCalendar = useCallback(() => setCalendarOpen(true), []);
+  const closeCalendar = useCallback(() => setCalendarOpen(false), []);
+  const closeAddModal = useCallback(() => setModalOpen(false), []);
+  const closeDailyInsight = useCallback(() => setDailyInsight(null), []);
 
   return (
     <View className="flex-1 bg-bg">
       <Header
-        onMenuOpen={() => setDrawerOpen(true)}
+        onMenuOpen={openDrawer}
         chartTab={chartTab}
         onChartTabChange={setChartTab}
-        onCalendarOpen={() => setCalendarOpen(true)}
+        onCalendarOpen={openCalendar}
       />
 
       <SummaryCard
@@ -179,7 +193,7 @@ export default function Dashboard() {
 
       <AddModal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={closeAddModal}
         onAdd={addTransaction}
         onEdit={editTransaction}
         onDelete={deleteTransaction}
@@ -188,14 +202,14 @@ export default function Dashboard() {
 
       <SpendCalendarModal
         open={calendarOpen}
-        onClose={() => setCalendarOpen(false)}
+        onClose={closeCalendar}
         transactions={transactions}
         recap={recapForCalendar}
       />
 
-      <DailyInsightModal insight={dailyInsight} onClose={() => setDailyInsight(null)} />
+      <DailyInsightModal insight={dailyInsight} onClose={closeDailyInsight} />
 
-      <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <Drawer open={drawerOpen} onClose={closeDrawer} />
 
       <MonthlyRecapModal
         open={recapOpen}
