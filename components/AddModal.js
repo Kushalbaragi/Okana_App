@@ -1,5 +1,6 @@
 import { memo, useState, useEffect, useRef } from 'react';
 import { Modal, View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Rect, Line } from 'react-native-svg';
 import { today, toTitleCase } from '../utils/format';
 import CalendarPicker from './CalendarPicker';
@@ -23,6 +24,7 @@ function CalIcon() {
 }
 
 function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
+  const insets = useSafeAreaInsets();
   const isEdit = !!editData;
   const [type, setType] = useState('expense');
   const [amount, setAmount] = useState('');
@@ -69,8 +71,13 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}
       >
-        <GlassView variant="modal" radius={24} corners="t" className="px-6 pt-5 pb-10" style={{ maxHeight: '85%' }}>
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <GlassView variant="modal" radius={24} corners="t" className="px-6 pt-5" style={{ maxHeight: '85%' }}>
+          <ScrollView
+            style={{ flexShrink: 1 }}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: 8 }}
+          >
             <View className="w-8 h-1 rounded-full mx-auto mb-5" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }} />
 
             <View className="flex-row rounded-full p-[3px] mb-5" style={{ backgroundColor: 'rgba(255,255,255,0.07)' }}>
@@ -128,6 +135,11 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
               />
             </View>
 
+          </ScrollView>
+
+          {/* Fixed footer — always visible regardless of scroll position, so the
+              action button can never end up scrolled out of view (was the bug). */}
+          <View style={{ paddingTop: 12, paddingBottom: Math.max(insets.bottom, 16) }}>
             {isEdit ? (
               <View className="flex-row gap-3">
                 <GlassPressable
@@ -158,7 +170,7 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
                 <Text className="text-white text-sm font-semibold">Add {type.charAt(0).toUpperCase() + type.slice(1)}</Text>
               </GlassPressable>
             )}
-          </ScrollView>
+          </View>
         </GlassView>
       </KeyboardAvoidingView>
 
