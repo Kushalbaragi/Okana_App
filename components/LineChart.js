@@ -62,11 +62,8 @@ function LineChart({ incomeData, expenseData, labels, animKey }) {
   const showLabel = i => n <= 7 || i % 2 === 0 || i === n - 1;
   const clipWidth = CHART_W + 10;
 
-  // scaleX from the left edge instead of animating `width` directly — width
-  // is a layout prop that forces SVG geometry recomputation every frame,
-  // same reasoning as BarChart's bars.
   const clipAnimatedProps = useAnimatedProps(() => ({
-    transform: [{ scaleX: progress.value }],
+    width: clipWidth * progress.value,
   }));
 
   return (
@@ -81,14 +78,7 @@ function LineChart({ incomeData, expenseData, labels, animKey }) {
           <Stop offset="100%" stopColor="#f87171" stopOpacity="0" />
         </LinearGradient>
         <ClipPath id="lineChartClip">
-          <AnimatedRect
-            x={-2}
-            y={-20}
-            width={clipWidth}
-            height={svgH + 30}
-            origin={[-2, 0]}
-            animatedProps={clipAnimatedProps}
-          />
+          <AnimatedRect x={-2} y={-20} height={svgH + 30} animatedProps={clipAnimatedProps} />
         </ClipPath>
       </Defs>
 

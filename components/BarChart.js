@@ -16,24 +16,22 @@ function Bar({ x, width, rx, targetHeight, delay, fill, animKey, onPress, disabl
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animKey, targetHeight]);
 
-  // Grow via a scaleY transform anchored at the baseline (matches web's
-  // `transformOrigin: '50% 100%'` + `scaleY` keyframe) instead of animating
-  // height/y directly every frame — height/y are layout props that force
-  // the SVG geometry to recompute each frame, which is what made switching
-  // tabs (re-triggering every bar's animation at once) feel janky on-device.
-  const animatedProps = useAnimatedProps(() => ({
-    transform: [{ scaleY: progress.value }],
-  }));
+  // Tried anchoring a scaleY transform at the baseline via react-native-svg's
+  // `origin` prop (to avoid animating layout props every frame) — on native
+  // it didn't anchor where expected, so bars grew from a fixed top edge
+  // downward instead of from the baseline upward. Animating height/y
+  // directly is the reliable way to get "grows from the bottom" here.
+  const animatedProps = useAnimatedProps(() => {
+    const h = targetHeight * progress.value;
+    return { height: h, y: BAR_HEIGHT - h };
+  });
 
   return (
     <AnimatedRect
       x={x}
-      y={BAR_HEIGHT - targetHeight}
       width={width}
-      height={targetHeight}
       rx={rx}
       fill={fill}
-      origin={[x + width / 2, BAR_HEIGHT]}
       animatedProps={animatedProps}
       onPress={disabled ? undefined : onPress}
     />
