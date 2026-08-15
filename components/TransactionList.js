@@ -95,7 +95,7 @@ function TransactionList({
           <Text className="text-white/25 text-base text-center">
             No {isOverview ? 'transactions' : `${activeTab}s`} for this period
           </Text>
-          <Text className="text-white/15 text-sm mt-1">Tap + to add one</Text>
+          <Text className="text-white/15 text-base mt-1">Tap + to add one</Text>
         </View>
       ) : shouldGroup ? (
         <View>

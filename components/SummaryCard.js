@@ -71,7 +71,7 @@ function AnimatedDelta({ text, style }) {
   return (
     <View className="flex-row" key={text}>
       {[...text].map((char, i) => (
-        <Digit key={i} char={char} delay={i * 20} distance={4} className="text-sm" style={style} />
+        <Digit key={i} char={char} delay={i * 20} distance={4} className="text-base" style={style} />
       ))}
     </View>
   );
@@ -94,7 +94,7 @@ function RangeSelector({ value, onChange, currentYear, currentMonth }) {
             onPress={() => onChange(opt.id)}
             className="px-3 py-1"
           >
-            <Text className="text-white text-sm font-medium">{opt.label}</Text>
+            <Text className="text-white text-base font-medium">{opt.label}</Text>
           </GlassPressable>
         ) : (
           <Pressable
@@ -102,7 +102,7 @@ function RangeSelector({ value, onChange, currentYear, currentMonth }) {
             onPress={() => onChange(opt.id)}
             className="px-3 py-1 rounded-full"
           >
-            <Text className="text-white/30 text-sm font-medium">{opt.label}</Text>
+            <Text className="text-white/30 text-base font-medium">{opt.label}</Text>
           </Pressable>
         )
       ))}
@@ -210,10 +210,10 @@ function SummaryCard({
         {isOverview ? null : deltaText ? (
           <View className="flex-row items-center" style={{ gap: 3 }}>
             <AnimatedDelta text={deltaText} style={{ color: deltaColor }} />
-            {arrow && <Text className="text-xs font-medium" style={{ color: deltaColor }}>{arrow}</Text>}
+            {arrow && <Text className="text-base font-medium" style={{ color: deltaColor }}>{arrow}</Text>}
           </View>
         ) : (
-          <Text className="text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>—</Text>
+          <Text className="text-base" style={{ color: 'rgba(255,255,255,0.2)' }}>—</Text>
         )}
       </View>
 

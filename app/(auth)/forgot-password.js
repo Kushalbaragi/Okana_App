@@ -16,11 +16,11 @@ function SuccessScreen() {
         <CheckIcon />
       </View>
       <Text className="text-white text-xl font-semibold mb-2">Check your inbox</Text>
-      <Text className="text-white/40 text-sm text-center max-w-[260px] mb-8">
+      <Text className="text-white/40 text-base text-center max-w-[260px] mb-8">
         We've sent a password reset link to your email address.
       </Text>
       <Link href="/(auth)/login">
-        <Text className="text-white/50 text-sm">Back to login</Text>
+        <Text className="text-white/50 text-base">Back to login</Text>
       </Link>
     </View>
   );
@@ -55,11 +55,11 @@ export default function ForgotPasswordScreen() {
     <View className="flex-1 bg-bg justify-center px-6">
       <View className="w-full max-w-[400px] self-center">
         <View className="items-center mb-10">
-          <Text className="text-white/30 text-sm">We'll send you a reset link.</Text>
+          <Text className="text-white/30 text-base">We'll send you a reset link.</Text>
         </View>
 
         <Text className="text-white text-2xl font-semibold mb-2 text-center">Forgot password?</Text>
-        <Text className="text-white/35 text-sm text-center mb-8">Enter your email and we'll send a reset link.</Text>
+        <Text className="text-white/35 text-base text-center mb-8">Enter your email and we'll send a reset link.</Text>
 
         <View className="gap-4">
           <View>
@@ -73,7 +73,7 @@ export default function ForgotPasswordScreen() {
             />
           </View>
 
-          {!!error && <Text className="text-red-400 text-sm text-center">{error}</Text>}
+          {!!error && <Text className="text-red-400 text-base text-center">{error}</Text>}
 
           <GlassPressable
             variant="active"
@@ -94,9 +94,9 @@ export default function ForgotPasswordScreen() {
         </View>
 
         <View className="flex-row justify-center mt-6">
-          <Text className="text-white/35 text-sm">Remember your password? </Text>
+          <Text className="text-white/35 text-base">Remember your password? </Text>
           <Link href="/(auth)/login">
-            <Text className="text-white font-medium text-sm">Log In</Text>
+            <Text className="text-white font-medium text-base">Log In</Text>
           </Link>
         </View>
       </View>

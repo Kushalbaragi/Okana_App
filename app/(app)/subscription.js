@@ -80,13 +80,13 @@ export default function SubscriptionPage() {
         <View className="px-4 pb-16" style={{ gap: 12 }}>
           {!!error && (
             <View className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderWidth: 1, borderColor: 'rgba(248,113,113,0.2)' }}>
-              <Text className="text-red-300 text-[13px]">{error}</Text>
+              <Text className="text-red-300 text-base">{error}</Text>
             </View>
           )}
 
           {cancelSuccess && (
             <View className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(74,222,128,0.08)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.25)' }}>
-              <Text className="text-[13px]" style={{ color: '#4ade80' }}>You've successfully unsubscribed</Text>
+              <Text className="text-base" style={{ color: '#4ade80' }}>You've successfully unsubscribed</Text>
             </View>
           )}
 
@@ -102,7 +102,7 @@ export default function SubscriptionPage() {
                 <>
                   <Divider />
                   <View className="px-4 py-[14px]">
-                    <Text className="text-white/40 text-xs">
+                    <Text className="text-white/40 text-base">
                       {trialInfo.cancelAtPeriodEnd
                         ? `Plus access ends ${formatChargeDate(trialInfo.chargeDate)} — you won't be charged`
                         : `You'll be charged ₹${PRICE_PER_YEAR} on ${formatChargeDate(trialInfo.chargeDate)}`}
@@ -114,7 +114,7 @@ export default function SubscriptionPage() {
                 <>
                   <Divider />
                   <View className="px-4 py-[14px]">
-                    <Text className="text-white/40 text-xs">Access until {formatChargeDate(trialInfo.chargeDate)}</Text>
+                    <Text className="text-white/40 text-base">Access until {formatChargeDate(trialInfo.chargeDate)}</Text>
                   </View>
                 </>
               )}
@@ -145,7 +145,7 @@ export default function SubscriptionPage() {
                   </View>
                 ) : (
                   <View className="px-4 py-[14px]">
-                    <Text className="text-white/30 text-[13px]">No payment method on file</Text>
+                    <Text className="text-white/30 text-base">No payment method on file</Text>
                   </View>
                 )}
               </Card>
@@ -160,7 +160,7 @@ export default function SubscriptionPage() {
               >
                 <Text className="text-base font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>Coming soon</Text>
               </View>
-              <Text className="w-full text-center text-white/25 text-xs">
+              <Text className="w-full text-center text-white/25 text-base">
                 Subscribing from the app is on its way — manage your plan from the web for now.
               </Text>
             </View>
@@ -171,7 +171,7 @@ export default function SubscriptionPage() {
               <SectionLabel>Cancel Plan</SectionLabel>
               <Card>
                 <View className="flex-row items-center justify-between gap-3 px-4 py-[14px]">
-                  <Text className="text-white/40 text-xs flex-1" style={{ lineHeight: 18 }}>
+                  <Text className="text-white/40 text-base flex-1" style={{ lineHeight: 20 }}>
                     If you cancel, you'll keep full access until {formatChargeDate(trialInfo.chargeDate)}.
                   </Text>
                   <Pressable
@@ -179,7 +179,7 @@ export default function SubscriptionPage() {
                     className="px-3 py-[7px] rounded-full"
                     style={{ borderWidth: 1, borderColor: 'rgba(248,113,113,0.35)' }}
                   >
-                    <Text className="text-[12px] font-medium" style={{ color: 'rgba(248,113,113,0.85)' }}>Cancel</Text>
+                    <Text className="text-base font-medium" style={{ color: 'rgba(248,113,113,0.85)' }}>Cancel</Text>
                   </Pressable>
                 </View>
               </Card>
@@ -196,7 +196,7 @@ export default function SubscriptionPage() {
           <Text className="text-white font-semibold text-base mb-2">
             End access on {trialInfo.chargeDate ? formatChargeDate(trialInfo.chargeDate) : 'period end'}?
           </Text>
-          <Text className="text-white/45 text-sm mb-6" style={{ lineHeight: 20 }}>
+          <Text className="text-white/45 text-base mb-6" style={{ lineHeight: 22 }}>
             If you cancel now, you'll still be able to access all features until {trialInfo.chargeDate ? formatChargeDate(trialInfo.chargeDate) : 'then'}.
           </Text>
           <View className="flex-row" style={{ gap: 12 }}>

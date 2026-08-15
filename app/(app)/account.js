@@ -61,7 +61,7 @@ function ChangePasswordModal({ open, onClose }) {
               </Pressable>
             </View>
 
-            {!!error && <Text className="text-red-400 text-sm mb-4">{error}</Text>}
+            {!!error && <Text className="text-red-400 text-base mb-4">{error}</Text>}
 
             <GlassPressable
               variant="active"
@@ -87,7 +87,7 @@ function ConfirmModal({ open, title, message, confirmLabel, onConfirm, onCancel 
         style={{ maxWidth: 360, backgroundColor: 'rgba(20,20,20,0.98)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
       >
         <Text className="text-white font-semibold text-base mb-2">{title}</Text>
-        <Text className="text-white/45 text-sm mb-6" style={{ lineHeight: 20 }}>{message}</Text>
+        <Text className="text-white/45 text-base mb-6" style={{ lineHeight: 22 }}>{message}</Text>
         <View className="flex-row" style={{ gap: 12 }}>
           <Pressable onPress={onCancel} className="flex-1 py-3 rounded-xl items-center" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
             <Text className="text-white/60 text-base font-medium">Cancel</Text>
@@ -112,7 +112,7 @@ function SuccessOverlay({ open, title, subtitle }) {
           <CheckIcon size={28} />
         </View>
         <Text className="text-white font-semibold text-base">{title}</Text>
-        <Text className="text-white/40 text-sm mt-1">{subtitle}</Text>
+        <Text className="text-white/40 text-base mt-1">{subtitle}</Text>
       </View>
     </AnimatedModal>
   );
@@ -212,7 +212,7 @@ export default function AccountPage() {
                   style={{ borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.2)', paddingBottom: 4 }}
                 />
                 <Pressable onPress={saveName} disabled={savingName}>
-                  <Text className="text-sm text-white/60">{savingName ? 'Saving…' : 'Save'}</Text>
+                  <Text className="text-base text-white/60">{savingName ? 'Saving…' : 'Save'}</Text>
                 </Pressable>
               </View>
             ) : (

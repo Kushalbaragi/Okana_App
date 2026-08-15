@@ -46,7 +46,7 @@ export default function SignupScreen() {
       <View className="w-full max-w-[400px] self-center">
         <View className="items-center mb-10">
           <Text className="text-white text-xl font-semibold mb-1">Okana</Text>
-          <Text className="text-white/30 text-sm">Your money, beautifully tracked.</Text>
+          <Text className="text-white/30 text-base">Your money, beautifully tracked.</Text>
         </View>
 
         <View className="gap-4">
@@ -90,7 +90,7 @@ export default function SignupScreen() {
             />
           </View>
 
-          {!!error && <Text className="text-red-400 text-sm text-center">{error}</Text>}
+          {!!error && <Text className="text-red-400 text-base text-center">{error}</Text>}
 
           <GlassPressable
             variant="active"
@@ -111,9 +111,9 @@ export default function SignupScreen() {
         </View>
 
         <View className="flex-row justify-center mt-6">
-          <Text className="text-white/35 text-sm">Already have an account? </Text>
+          <Text className="text-white/35 text-base">Already have an account? </Text>
           <Link href="/(auth)/login">
-            <Text className="text-white font-medium text-sm">Log In</Text>
+            <Text className="text-white font-medium text-base">Log In</Text>
           </Link>
         </View>
       </View>

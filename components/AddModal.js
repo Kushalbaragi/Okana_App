@@ -151,7 +151,7 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
                     className="flex-1 py-[6px] rounded-full items-center"
                     style={type === t ? { backgroundColor: 'rgba(255,255,255,0.14)' } : null}
                   >
-                    <Text className={type === t ? 'text-white text-sm font-medium' : 'text-white/35 text-sm font-medium'}>
+                    <Text className={type === t ? 'text-white text-base font-medium' : 'text-white/35 text-base font-medium'}>
                       {t.charAt(0).toUpperCase() + t.slice(1)}
                     </Text>
                   </Pressable>

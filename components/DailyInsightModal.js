@@ -27,14 +27,14 @@ function DailyInsightModal({ insight, onClose }) {
           </View>
 
           <Text className="text-white text-base font-semibold mb-2">{insight.headline}</Text>
-          <Text className="text-white/50 text-sm text-center mb-6" style={{ lineHeight: 20 }}>{insight.message}</Text>
+          <Text className="text-white/50 text-base text-center mb-6" style={{ lineHeight: 22 }}>{insight.message}</Text>
 
           <Pressable
             onPress={onClose}
             className="w-full py-3 rounded-2xl items-center"
             style={{ backgroundColor: tone.button }}
           >
-            <Text className="text-sm font-semibold" style={{ color: tone.text }}>Got it</Text>
+            <Text className="text-base font-semibold" style={{ color: tone.text }}>Got it</Text>
           </Pressable>
         </View>
       )}

@@ -77,7 +77,7 @@ function MonthlyRecapModal({ open, slides, monthLabel, onClose }) {
       </View>
 
       <View className="flex-row items-center justify-between px-4 pt-3">
-        <Text className="text-white/50 text-xs font-semibold tracking-wide">{monthLabel} Recap</Text>
+        <Text className="text-white/50 text-base font-semibold tracking-wide">{monthLabel} Recap</Text>
         <Pressable onPress={onClose} className="w-8 h-8 items-center justify-center">
           <Text className="text-white/60 text-lg">✕</Text>
         </Pressable>
@@ -94,7 +94,7 @@ function MonthlyRecapModal({ open, slides, monthLabel, onClose }) {
           <Text className="text-white/40 text-xs font-semibold tracking-wider mb-3" style={{ textTransform: 'uppercase' }}>{slide.kicker}</Text>
           <Text className="text-white font-bold tracking-tight mb-3" style={{ fontSize: 44, lineHeight: 52 }}>{slide.value}</Text>
           <Text className="text-white/70 text-base font-medium mb-2 text-center">{slide.headline}</Text>
-          <Text className="text-white/45 text-sm text-center" style={{ lineHeight: 20, maxWidth: 280 }}>{slide.message}</Text>
+          <Text className="text-white/45 text-base text-center" style={{ lineHeight: 22, maxWidth: 280 }}>{slide.message}</Text>
         </View>
       </Pressable>
     </View>

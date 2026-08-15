@@ -22,7 +22,7 @@ function SuccessScreen() {
         <CheckIcon />
       </View>
       <Text className="text-white text-xl font-semibold mb-2">Password updated!</Text>
-      <Text className="text-white/40 text-sm text-center max-w-[260px]">Redirecting to login…</Text>
+      <Text className="text-white/40 text-base text-center max-w-[260px]">Redirecting to login…</Text>
     </View>
   );
 }
@@ -73,7 +73,7 @@ export default function ResetPasswordScreen() {
     return (
       <View className="flex-1 bg-bg justify-center items-center px-6">
         <Spinner />
-        <Text className="text-white/30 text-sm mt-4">Verifying reset link…</Text>
+        <Text className="text-white/30 text-base mt-4">Verifying reset link…</Text>
       </View>
     );
   }
@@ -82,7 +82,7 @@ export default function ResetPasswordScreen() {
     <View className="flex-1 bg-bg justify-center px-6">
       <View className="w-full max-w-[400px] self-center">
         <View className="items-center mb-10">
-          <Text className="text-white/30 text-sm">Choose a strong password.</Text>
+          <Text className="text-white/30 text-base">Choose a strong password.</Text>
         </View>
 
         <Text className="text-white text-2xl font-semibold mb-8 text-center">Set new password</Text>
@@ -108,7 +108,7 @@ export default function ResetPasswordScreen() {
             />
           </View>
 
-          {!!error && <Text className="text-red-400 text-sm text-center">{error}</Text>}
+          {!!error && <Text className="text-red-400 text-base text-center">{error}</Text>}
 
           <GlassPressable
             variant="active"

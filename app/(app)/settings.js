@@ -87,7 +87,7 @@ function InfoModal({ open, title, onClose, children }) {
 
 function P({ children, bold }) {
   return (
-    <Text className="text-white/45 text-sm mb-3" style={{ lineHeight: 20 }}>
+    <Text className="text-white/45 text-base mb-3" style={{ lineHeight: 22 }}>
       {bold ? <Text style={{ color: 'rgba(255,255,255,0.7)', fontWeight: '600' }}>{bold} </Text> : null}
       {children}
     </Text>
@@ -226,7 +226,7 @@ export default function SettingsPage() {
       </InfoModal>
 
       <InfoModal open={modal === 'contact'} title="Contact" onClose={() => setModal(null)}>
-        <Text className="text-white/45 text-sm mb-3">Have a question or need help? Reach out directly.</Text>
+        <Text className="text-white/45 text-base mb-3">Have a question or need help? Reach out directly.</Text>
         <Pressable
           onPress={() => Linking.openURL('mailto:kushalbaragi@gmail.com')}
           className="flex-row items-center py-3 px-4 rounded-xl"
@@ -241,7 +241,7 @@ export default function SettingsPage() {
       <InfoModal open={modal === 'feedback'} title={feedbackSent ? '✓ Feedback sent!' : 'Send Feedback'} onClose={() => setModal(null)}>
         {!feedbackSent && (
           <>
-            <Text className="text-white/40 text-sm mb-4" style={{ lineHeight: 20 }}>
+            <Text className="text-white/40 text-base mb-4" style={{ lineHeight: 22 }}>
               Tell us what you love, what's broken, or what you'd like to see next.
             </Text>
             <TextInput
@@ -255,7 +255,7 @@ export default function SettingsPage() {
               className="text-white text-base px-4 py-3 mb-4"
               style={{ minHeight: 100, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.07)' }}
             />
-            {!!feedbackError && <Text className="text-red-400 text-xs mb-4">{feedbackError}</Text>}
+            {!!feedbackError && <Text className="text-red-400 text-base mb-4">{feedbackError}</Text>}
             <Pressable
               onPress={sendFeedback}
               disabled={!feedbackText.trim() || feedbackSending}
@@ -277,7 +277,7 @@ export default function SettingsPage() {
             <Text className="text-white font-bold" style={{ fontSize: 24 }}>K</Text>
           </View>
           <Text className="text-white font-semibold text-base">Kushal Baragi</Text>
-          <Text className="text-white/40 text-sm text-center">Built this app to make personal finance simple, beautiful, and private.</Text>
+          <Text className="text-white/40 text-base text-center">Built this app to make personal finance simple, beautiful, and private.</Text>
           <View className="flex-row justify-center" style={{ gap: 12 }}>
             <Pressable
               onPress={() => Linking.openURL('https://instagram.com/kushalbaragi')}

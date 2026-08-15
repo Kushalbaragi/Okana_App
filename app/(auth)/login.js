@@ -37,7 +37,7 @@ export default function LoginScreen() {
       <View className="w-full max-w-[400px] self-center">
         <View className="items-center mb-10">
           <Text className="text-white text-xl font-semibold mb-1">Okana</Text>
-          <Text className="text-white/30 text-sm">Your money, beautifully tracked.</Text>
+          <Text className="text-white/30 text-base">Your money, beautifully tracked.</Text>
         </View>
 
         <View className="gap-4">
@@ -56,7 +56,7 @@ export default function LoginScreen() {
             <View className="flex-row items-center justify-between mb-2">
               <Text className="text-white/35 text-sm font-medium uppercase tracking-wider">Password</Text>
               <Link href="/(auth)/forgot-password">
-                <Text className="text-white/35 text-sm">Forgot password?</Text>
+                <Text className="text-white/35 text-base">Forgot password?</Text>
               </Link>
             </View>
             <GlassTextInput
@@ -67,7 +67,7 @@ export default function LoginScreen() {
             />
           </View>
 
-          {!!error && <Text className="text-red-400 text-sm text-center">{error}</Text>}
+          {!!error && <Text className="text-red-400 text-base text-center">{error}</Text>}
 
           <GlassPressable
             variant="active"
@@ -88,9 +88,9 @@ export default function LoginScreen() {
         </View>
 
         <View className="flex-row justify-center mt-6">
-          <Text className="text-white/35 text-sm">Don't have an account? </Text>
+          <Text className="text-white/35 text-base">Don't have an account? </Text>
           <Link href="/(auth)/signup">
-            <Text className="text-white font-medium text-sm">Sign Up</Text>
+            <Text className="text-white font-medium text-base">Sign Up</Text>
           </Link>
         </View>
       </View>

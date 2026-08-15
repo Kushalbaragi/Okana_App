@@ -12,7 +12,7 @@ function Feature({ children }) {
       <View className="w-4 h-4 rounded-full items-center justify-center" style={{ backgroundColor: 'rgba(74,222,128,0.12)' }}>
         <CheckIcon size={13} />
       </View>
-      <Text className="text-white/60 text-[13px]">{children}</Text>
+      <Text className="text-white/60 text-base">{children}</Text>
     </View>
   );
 }
@@ -32,7 +32,7 @@ function WelcomeModal({ name, onContinue }) {
       >
         <Text style={{ fontSize: 36, marginBottom: 16 }}>🎉</Text>
         <Text className="text-white text-lg font-semibold mb-2">Welcome, {name}!</Text>
-        <Text className="text-white/45 text-sm text-center mb-6" style={{ lineHeight: 20 }}>
+        <Text className="text-white/45 text-base text-center mb-6" style={{ lineHeight: 22 }}>
           Your money, beautifully tracked. Let's get your account set up.
         </Text>
         <Pressable
@@ -40,7 +40,7 @@ function WelcomeModal({ name, onContinue }) {
           className="w-full py-[13px] rounded-2xl items-center"
           style={{ backgroundColor: 'rgba(255,255,255,0.14)' }}
         >
-          <Text className="text-white text-sm font-semibold">Start Tracking</Text>
+          <Text className="text-white text-base font-semibold">Start Tracking</Text>
         </Pressable>
       </View>
     </AnimatedModal>
@@ -69,7 +69,7 @@ export default function WelcomeScreen() {
           <Text style={{ fontSize: 24 }}>✨</Text>
         </View>
         <Text className="text-white text-xl font-semibold text-center mb-2">Start your 30-day free trial</Text>
-        <Text className="text-white/40 text-sm text-center mb-8" style={{ lineHeight: 20 }}>
+        <Text className="text-white/40 text-base text-center mb-8" style={{ lineHeight: 22 }}>
           Full access to Okana Plus, free for 30 days. Native in-app purchases are coming soon — for now,
           subscribing is available on the web at the same ₹{PRICE_PER_YEAR}/year price.
         </Text>
@@ -82,11 +82,11 @@ export default function WelcomeScreen() {
           className="w-full py-[14px] rounded-2xl items-center mb-3"
           style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
         >
-          <Text className="text-sm font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>Coming soon</Text>
+          <Text className="text-base font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>Coming soon</Text>
         </View>
 
         <Pressable onPress={finish}>
-          <Text className="text-white/40 text-sm text-center">Skip for now</Text>
+          <Text className="text-white/40 text-base text-center">Skip for now</Text>
         </Pressable>
       </View>
     </View>

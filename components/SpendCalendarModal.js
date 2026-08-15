@@ -75,7 +75,7 @@ function SpendCalendarModal({ open, onClose, transactions, recap }) {
                 >
                   <Text style={{ fontSize: 13 }}>📊</Text>
                 </View>
-                <Text className="text-white/80 text-[13px] font-medium">{recap.monthName} Review</Text>
+                <Text className="text-white/80 text-base font-medium">{recap.monthName} Review</Text>
               </View>
               <Text style={{ color: 'rgba(255,255,255,0.4)' }}>›</Text>
             </Pressable>
@@ -89,7 +89,7 @@ function SpendCalendarModal({ open, onClose, transactions, recap }) {
             >
               <Text style={{ color: 'rgba(255,255,255,0.5)' }}>‹</Text>
             </Pressable>
-            <Text className="text-white/80 text-sm font-semibold">{MONTHS[month]} {year}</Text>
+            <Text className="text-white/80 text-base font-semibold">{MONTHS[month]} {year}</Text>
             <Pressable
               onPress={nextMonth}
               className="w-7 h-7 rounded-full items-center justify-center"
@@ -137,18 +137,19 @@ function SpendCalendarModal({ open, onClose, transactions, recap }) {
 
           {selectedDate && (
             <View className="mt-3 rounded-lg p-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.07)' }}>
-              <Text className="text-white/60 text-[11px] font-semibold mb-1.5">{formatDateFull(selectedDate)}</Text>
+              <Text className="text-white/60 text-base font-semibold mb-1.5">{formatDateFull(selectedDate)}</Text>
               {dayTxs.length === 0 ? (
-                <Text className="text-white/30 text-[11px]">No transactions — spend-free day 🎉</Text>
+                <Text className="text-white/30 text-base">No transactions — spend-free day 🎉</Text>
               ) : (
                 <View style={{ gap: 6 }}>
                   {dayTxs.map(tx => (
                     <View key={tx.id} className="flex-row items-center justify-between" style={{ gap: 8 }}>
-                      <Text className="text-white/70 text-[11px]" numberOfLines={1} style={{ flex: 1 }}>
+                      <Text className="text-white/70 text-base" numberOfLines={1} style={{ flex: 1 }}>
                         {tx.description || (tx.type === 'income' ? 'Income' : 'Expense')}
                       </Text>
                       <Text
-                        style={{ fontSize: 11, fontWeight: '500', color: tx.type === 'income' ? '#4ade80' : 'rgba(255,255,255,0.5)' }}
+                        className="text-base"
+                        style={{ fontWeight: '500', color: tx.type === 'income' ? '#4ade80' : 'rgba(255,255,255,0.5)' }}
                       >
                         {tx.type === 'income' ? '+' : '-'}{formatCurrencyFull(tx.amount)}
                       </Text>
