@@ -89,7 +89,7 @@ export default function ResetPasswordScreen() {
 
         <View className="gap-4">
           <View>
-            <Text className="text-white/35 text-xs font-medium mb-2 uppercase tracking-wider">New Password</Text>
+            <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">New Password</Text>
             <GlassTextInput
               value={password}
               onChangeText={t => { setPassword(t); setError(''); }}
@@ -99,7 +99,7 @@ export default function ResetPasswordScreen() {
           </View>
 
           <View>
-            <Text className="text-white/35 text-xs font-medium mb-2 uppercase tracking-wider">Confirm Password</Text>
+            <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Confirm Password</Text>
             <GlassTextInput
               value={confirm}
               onChangeText={t => { setConfirm(t); setError(''); }}
@@ -108,7 +108,7 @@ export default function ResetPasswordScreen() {
             />
           </View>
 
-          {!!error && <Text className="text-red-400 text-xs text-center">{error}</Text>}
+          {!!error && <Text className="text-red-400 text-sm text-center">{error}</Text>}
 
           <GlassPressable
             variant="active"
@@ -120,10 +120,10 @@ export default function ResetPasswordScreen() {
             {loading ? (
               <>
                 <Spinner />
-                <Text className="text-white text-sm font-semibold">Updating…</Text>
+                <Text className="text-white text-base font-semibold">Updating…</Text>
               </>
             ) : (
-              <Text className="text-white text-sm font-semibold">Update Password</Text>
+              <Text className="text-white text-base font-semibold">Update Password</Text>
             )}
           </GlassPressable>
         </View>

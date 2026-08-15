@@ -7,7 +7,7 @@ function MonthGroup({ group, isOverview, isIncome, onEdit }) {
   return (
     <View>
       <View className="flex-row items-center justify-between mb-2 mt-6">
-        <Text className="text-white/35 text-xs font-medium uppercase tracking-wider">
+        <Text className="text-white/35 text-sm font-medium uppercase tracking-wider">
           {monthLabel(group.month, group.year)}
         </Text>
       </View>
@@ -86,16 +86,16 @@ function TransactionList({
 
   return (
     <View className="px-4 pb-28">
-      <Text className="text-white/25 text-xs font-medium uppercase tracking-wide mt-4 mb-3 px-1">
+      <Text className="text-white/25 text-sm font-medium uppercase tracking-wide mt-4 mb-3 px-1">
         Transactions
       </Text>
 
       {count === 0 ? (
         <View className="items-center justify-center py-14 px-4">
-          <Text className="text-white/25 text-sm text-center">
+          <Text className="text-white/25 text-base text-center">
             No {isOverview ? 'transactions' : `${activeTab}s`} for this period
           </Text>
-          <Text className="text-white/15 text-xs mt-1">Tap + to add one</Text>
+          <Text className="text-white/15 text-sm mt-1">Tap + to add one</Text>
         </View>
       ) : shouldGroup ? (
         <View>

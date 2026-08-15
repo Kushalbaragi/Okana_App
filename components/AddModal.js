@@ -106,7 +106,7 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
                   className="flex-1 py-[6px] rounded-full items-center"
                   style={type === t ? { backgroundColor: 'rgba(255,255,255,0.14)' } : null}
                 >
-                  <Text className={type === t ? 'text-white text-xs font-medium' : 'text-white/35 text-xs font-medium'}>
+                  <Text className={type === t ? 'text-white text-sm font-medium' : 'text-white/35 text-sm font-medium'}>
                     {t.charAt(0).toUpperCase() + t.slice(1)}
                   </Text>
                 </Pressable>
@@ -133,25 +133,25 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
             </View>
 
             <View className="mb-4">
-              <Text className="text-white/35 text-xs font-medium mb-2 uppercase tracking-wider">Date</Text>
+              <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Date</Text>
               <GlassPressable
                 variant="glass"
                 onPress={() => setCalOpen(true)}
                 className="w-full px-4 py-3 flex-row items-center justify-between"
               >
-                <Text className="text-white text-sm">{formatDisplay(date)}</Text>
+                <Text className="text-white text-base">{formatDisplay(date)}</Text>
                 <CalIcon />
               </GlassPressable>
             </View>
 
             <View className="mb-6">
-              <Text className="text-white/35 text-xs font-medium mb-2 uppercase tracking-wider">Description</Text>
+              <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Description</Text>
               <TextInput
                 value={description}
                 onChangeText={setDescription}
                 placeholder="What was this for?"
                 placeholderTextColor="#333333"
-                className="w-full rounded-xl px-4 py-3 text-white text-sm"
+                className="w-full rounded-xl px-4 py-3 text-white text-base"
                 style={{ backgroundColor: 'rgba(255,255,255,0.07)' }}
               />
             </View>
@@ -172,14 +172,14 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
                   onPress={handleSubmit}
                   className="flex-1 py-[14px] items-center"
                 >
-                  <Text className="text-white text-sm font-semibold">Update</Text>
+                  <Text className="text-white text-base font-semibold">Update</Text>
                 </GlassPressable>
                 <Pressable
                   onPress={() => { onDelete(editData.id); onClose(); }}
                   className="flex-1 py-[14px] rounded-2xl items-center"
                   style={{ backgroundColor: 'rgba(248,113,113,0.12)' }}
                 >
-                  <Text className="text-sm font-semibold" style={{ color: 'rgba(248,113,113,0.85)' }}>Delete</Text>
+                  <Text className="text-base font-semibold" style={{ color: 'rgba(248,113,113,0.85)' }}>Delete</Text>
                 </Pressable>
               </View>
             ) : (
@@ -190,7 +190,7 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
                 onPress={handleSubmit}
                 className="w-full py-[14px] items-center"
               >
-                <Text className="text-white text-sm font-semibold">Add {type.charAt(0).toUpperCase() + type.slice(1)}</Text>
+                <Text className="text-white text-base font-semibold">Add {type.charAt(0).toUpperCase() + type.slice(1)}</Text>
               </GlassPressable>
             )}
           </View>

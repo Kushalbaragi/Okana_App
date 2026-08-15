@@ -5,9 +5,9 @@ import { formatCurrencyFull, dateBoxParts } from '../utils/format';
 function DateBox({ dateStr }) {
   const { day, month } = dateBoxParts(dateStr);
   return (
-    <View className="items-center justify-center w-7 h-7 rounded bg-white/5 shrink-0 mr-2.5">
-      <Text className="text-white/70 text-[9px] font-semibold leading-none">{day}</Text>
-      <Text className="text-white/30 text-[6.5px] font-medium leading-none mt-0.5 tracking-tight">{month}</Text>
+    <View className="items-center justify-center w-8 h-8 rounded bg-white/5 shrink-0 mr-2.5">
+      <Text className="text-white/70 text-[11px] font-semibold leading-none">{day}</Text>
+      <Text className="text-white/30 text-[8px] font-medium leading-none mt-0.5 tracking-tight">{month}</Text>
     </View>
   );
 }
@@ -21,13 +21,13 @@ function TransactionItem({ tx, onEdit, isIncome }) {
     >
       <View className="flex-row items-center flex-1 pr-3">
         <DateBox dateStr={tx.date} />
-        <Text numberOfLines={1} className="text-white text-sm flex-shrink">
+        <Text numberOfLines={1} className="text-white text-base flex-shrink">
           {tx.description || (isIncome ? 'Income' : 'Expense')}
         </Text>
       </View>
 
       <Text
-        className="text-sm font-medium shrink-0"
+        className="text-base font-medium shrink-0"
         style={{ color: isIncome ? 'rgba(74,222,128,0.8)' : 'rgba(255,255,255,0.45)' }}
       >
         {isIncome ? '+' : '-'}{formatCurrencyFull(tx.amount)}

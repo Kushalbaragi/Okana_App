@@ -42,7 +42,7 @@ export default function LoginScreen() {
 
         <View className="gap-4">
           <View>
-            <Text className="text-white/35 text-xs font-medium mb-2 uppercase tracking-wider">Email</Text>
+            <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Email</Text>
             <GlassTextInput
               value={form.email}
               onChangeText={t => setField('email', t)}
@@ -54,9 +54,9 @@ export default function LoginScreen() {
 
           <View>
             <View className="flex-row items-center justify-between mb-2">
-              <Text className="text-white/35 text-xs font-medium uppercase tracking-wider">Password</Text>
+              <Text className="text-white/35 text-sm font-medium uppercase tracking-wider">Password</Text>
               <Link href="/(auth)/forgot-password">
-                <Text className="text-white/35 text-xs">Forgot password?</Text>
+                <Text className="text-white/35 text-sm">Forgot password?</Text>
               </Link>
             </View>
             <GlassTextInput
@@ -67,7 +67,7 @@ export default function LoginScreen() {
             />
           </View>
 
-          {!!error && <Text className="text-red-400 text-xs text-center">{error}</Text>}
+          {!!error && <Text className="text-red-400 text-sm text-center">{error}</Text>}
 
           <GlassPressable
             variant="active"
@@ -79,10 +79,10 @@ export default function LoginScreen() {
             {loading ? (
               <>
                 <Spinner />
-                <Text className="text-white text-sm font-semibold">Logging in…</Text>
+                <Text className="text-white text-base font-semibold">Logging in…</Text>
               </>
             ) : (
-              <Text className="text-white text-sm font-semibold">Log In</Text>
+              <Text className="text-white text-base font-semibold">Log In</Text>
             )}
           </GlassPressable>
         </View>

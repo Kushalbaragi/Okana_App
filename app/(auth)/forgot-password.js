@@ -63,7 +63,7 @@ export default function ForgotPasswordScreen() {
 
         <View className="gap-4">
           <View>
-            <Text className="text-white/35 text-xs font-medium mb-2 uppercase tracking-wider">Email</Text>
+            <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Email</Text>
             <GlassTextInput
               value={email}
               onChangeText={t => { setEmail(t); setError(''); }}
@@ -73,7 +73,7 @@ export default function ForgotPasswordScreen() {
             />
           </View>
 
-          {!!error && <Text className="text-red-400 text-xs text-center">{error}</Text>}
+          {!!error && <Text className="text-red-400 text-sm text-center">{error}</Text>}
 
           <GlassPressable
             variant="active"
@@ -85,10 +85,10 @@ export default function ForgotPasswordScreen() {
             {loading ? (
               <>
                 <Spinner />
-                <Text className="text-white text-sm font-semibold">Sending…</Text>
+                <Text className="text-white text-base font-semibold">Sending…</Text>
               </>
             ) : (
-              <Text className="text-white text-sm font-semibold">Send Reset Link</Text>
+              <Text className="text-white text-base font-semibold">Send Reset Link</Text>
             )}
           </GlassPressable>
         </View>

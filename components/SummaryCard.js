@@ -47,7 +47,7 @@ function AnimatedDelta({ text, style }) {
         <Animated.Text
           key={i}
           entering={FadeInUp.delay(i * 20).duration(350)}
-          className="text-xs"
+          className="text-sm"
           style={style}
         >
           {char === ' ' ? ' ' : char}
@@ -74,7 +74,7 @@ function RangeSelector({ value, onChange, currentYear, currentMonth }) {
             onPress={() => onChange(opt.id)}
             className="px-3 py-1"
           >
-            <Text className="text-white text-[11px] font-medium">{opt.label}</Text>
+            <Text className="text-white text-sm font-medium">{opt.label}</Text>
           </GlassPressable>
         ) : (
           <Pressable
@@ -82,7 +82,7 @@ function RangeSelector({ value, onChange, currentYear, currentMonth }) {
             onPress={() => onChange(opt.id)}
             className="px-3 py-1 rounded-full"
           >
-            <Text className="text-white/30 text-[11px] font-medium">{opt.label}</Text>
+            <Text className="text-white/30 text-sm font-medium">{opt.label}</Text>
           </Pressable>
         )
       ))}
@@ -180,7 +180,7 @@ function SummaryCard({
 
   return (
     <View className="mx-4 mb-2 p-5">
-      <Text className="text-white/40 text-sm text-center mb-1">{periodLabel}</Text>
+      <Text className="text-white/40 text-base text-center mb-1">{periodLabel}</Text>
 
       <View className="items-center justify-center mb-1">
         <AnimatedAmount value={Math.abs(displayAmount)} color={isOverview ? (netPositive ? '#4ade80' : '#f87171') : '#ffffff'} />

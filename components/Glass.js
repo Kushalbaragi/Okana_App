@@ -68,7 +68,7 @@ export function GlassTextInput({ radius = RADIUS.xl, style, className, inputClas
       <View style={[StyleSheet.absoluteFill, { backgroundColor: TINT.glass }, r]} />
       <TextInput
         placeholderTextColor="#333333"
-        className={inputClassName || 'text-white text-sm px-4 py-3'}
+        className={inputClassName || 'text-white text-base px-4 py-3'}
         {...props}
       />
     </View>

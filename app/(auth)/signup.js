@@ -51,7 +51,7 @@ export default function SignupScreen() {
 
         <View className="gap-4">
           <View>
-            <Text className="text-white/35 text-xs font-medium mb-2 uppercase tracking-wider">Name</Text>
+            <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Name</Text>
             <GlassTextInput
               value={form.name}
               onChangeText={t => setField('name', t)}
@@ -60,7 +60,7 @@ export default function SignupScreen() {
           </View>
 
           <View>
-            <Text className="text-white/35 text-xs font-medium mb-2 uppercase tracking-wider">Email</Text>
+            <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Email</Text>
             <GlassTextInput
               value={form.email}
               onChangeText={t => setField('email', t)}
@@ -71,7 +71,7 @@ export default function SignupScreen() {
           </View>
 
           <View>
-            <Text className="text-white/35 text-xs font-medium mb-2 uppercase tracking-wider">Password</Text>
+            <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Password</Text>
             <GlassTextInput
               value={form.password}
               onChangeText={t => setField('password', t)}
@@ -81,7 +81,7 @@ export default function SignupScreen() {
           </View>
 
           <View>
-            <Text className="text-white/35 text-xs font-medium mb-2 uppercase tracking-wider">Confirm Password</Text>
+            <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Confirm Password</Text>
             <GlassTextInput
               value={form.confirmPassword}
               onChangeText={t => setField('confirmPassword', t)}
@@ -90,7 +90,7 @@ export default function SignupScreen() {
             />
           </View>
 
-          {!!error && <Text className="text-red-400 text-xs text-center">{error}</Text>}
+          {!!error && <Text className="text-red-400 text-sm text-center">{error}</Text>}
 
           <GlassPressable
             variant="active"
@@ -102,10 +102,10 @@ export default function SignupScreen() {
             {loading ? (
               <>
                 <Spinner />
-                <Text className="text-white text-sm font-semibold">Creating account…</Text>
+                <Text className="text-white text-base font-semibold">Creating account…</Text>
               </>
             ) : (
-              <Text className="text-white text-sm font-semibold">Create Account</Text>
+              <Text className="text-white text-base font-semibold">Create Account</Text>
             )}
           </GlassPressable>
         </View>

@@ -48,7 +48,7 @@ function CalendarPicker({ value, onChange, onClose }) {
         <GlassPressable variant="glass" radius={9999} onPress={prev} className="w-8 h-8 items-center justify-center">
           <Text className="text-white/60 text-lg">‹</Text>
         </GlassPressable>
-        <Text className="text-white text-sm font-semibold">{MONTHS[month]} {year}</Text>
+        <Text className="text-white text-base font-semibold">{MONTHS[month]} {year}</Text>
         <GlassPressable variant="glass" radius={9999} onPress={next} className="w-8 h-8 items-center justify-center">
           <Text className="text-white/60 text-lg">›</Text>
         </GlassPressable>
@@ -78,7 +78,7 @@ function CalendarPicker({ value, onChange, onClose }) {
                     onPress={() => pick(d)}
                     className="w-8 h-8 items-center justify-center"
                   >
-                    <Text className="text-white text-sm font-semibold">{d}</Text>
+                    <Text className="text-white text-base font-semibold">{d}</Text>
                   </GlassPressable>
                 ) : (
                   <Pressable
@@ -86,7 +86,7 @@ function CalendarPicker({ value, onChange, onClose }) {
                     className="w-8 h-8 rounded-full items-center justify-center"
                     style={isToday ? { borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' } : null}
                   >
-                    <Text className={isToday ? 'text-white text-sm font-medium' : 'text-white/60 text-sm'}>{d}</Text>
+                    <Text className={isToday ? 'text-white text-base font-medium' : 'text-white/60 text-base'}>{d}</Text>
                   </Pressable>
                 )}
               </View>

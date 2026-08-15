@@ -17,7 +17,7 @@ export default function WelcomeScreen() {
         onPress={() => router.replace('/(app)')}
         className="w-full max-w-[400px] py-[14px] items-center"
       >
-        <Text className="text-white text-sm font-semibold">Start Tracking</Text>
+        <Text className="text-white text-base font-semibold">Start Tracking</Text>
       </GlassPressable>
     </View>
   );
