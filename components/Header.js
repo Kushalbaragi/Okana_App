@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { View, Text, Pressable } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { HamburgerIcon, CalendarIcon } from './icons';
 
@@ -42,8 +43,13 @@ function ChartTabToggle({ value, onChange }) {
 }
 
 function Header({ onMenuOpen, chartTab, onChartTabChange, onCalendarOpen }) {
+  // Safe-area-aware — a fixed pt-6 isn't enough clearance under the status
+  // bar / notch / Dynamic Island on real devices (fine in the web preview,
+  // which has no such concept, but overlapped the status bar on-device).
+  const insets = useSafeAreaInsets();
+
   return (
-    <View className="flex-row items-center justify-between pt-6 pb-3 px-5">
+    <View className="flex-row items-center justify-between pb-3 px-5" style={{ paddingTop: insets.top + 12 }}>
       <Pressable onPress={onMenuOpen} className="w-9 h-9 items-center justify-center rounded-xl">
         <HamburgerIcon />
       </Pressable>
