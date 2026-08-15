@@ -111,7 +111,7 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
 
             <View className="mb-6 items-center">
               <View className="flex-row items-center justify-center gap-1">
-                <Text className="text-4xl font-light text-white/35">₹</Text>
+                <Text className="text-4xl font-light text-white/35" style={{ lineHeight: 56 }}>₹</Text>
                 <TextInput
                   ref={amountRef}
                   value={amount}
@@ -119,8 +119,11 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
                   placeholder="0"
                   placeholderTextColor="#333333"
                   keyboardType="decimal-pad"
-                  className="text-5xl font-semibold text-center text-white"
-                  style={{ minWidth: 120 }}
+                  className="font-semibold text-center text-white"
+                  // text-5xl's default lineHeight (1x font-size) is too tight for
+                  // iOS to render tall digit glyphs in a TextInput without
+                  // clipping their tops — set both explicitly with headroom.
+                  style={{ minWidth: 120, fontSize: 48, lineHeight: 56 }}
                 />
               </View>
             </View>
