@@ -2,24 +2,33 @@ import { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../hooks/useTransactions';
+import Header from '../../components/Header';
+import SummaryCard from '../../components/SummaryCard';
 import TransactionList from '../../components/TransactionList';
 import AddModal from '../../components/AddModal';
-import { formatCurrency, getMonthTotal, monthLabel, currentMonthYear } from '../../utils/format';
-
-const TABS = ['expense', 'income', 'overview'];
+import { currentMonthYear } from '../../utils/format';
 
 export default function Dashboard() {
   const { logout } = useAuth();
   const { transactions, addTransaction, editTransaction, deleteTransaction } = useTransactions();
 
   const { month: currMonth, year: currYear } = currentMonthYear();
-  const [activeTab, setActiveTab] = useState('expense');
+
+  const [chartTab, setChartTab] = useState('expense');
+  const [timeRange, setTimeRange] = useState('month');
+  const [year, setYear] = useState(currYear);
+  const [selectedMonth, setSelectedMonth] = useState(currMonth);
+  const [selectedYear, setSelectedYear] = useState(null);
+  const [selectedDay, setSelectedDay] = useState(null);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editData, setEditData] = useState(null);
 
-  const total = activeTab === 'overview'
-    ? getMonthTotal(transactions, 'income', currMonth, currYear) - getMonthTotal(transactions, 'expense', currMonth, currYear)
-    : getMonthTotal(transactions, activeTab, currMonth, currYear);
+  function handleTimeRangeChange(next) {
+    setTimeRange(next);
+    setSelectedDay(null);
+    if (next === 'year') setYear(currYear);
+  }
 
   function openAdd() {
     setEditData(null);
@@ -33,43 +42,36 @@ export default function Dashboard() {
 
   return (
     <View className="flex-1 bg-bg">
-      <View className="flex-row items-center justify-between px-4 pt-14 pb-2">
-        <View className="flex-row" style={{ gap: 6 }}>
-          {TABS.map(tab => (
-            <Pressable
-              key={tab}
-              onPress={() => setActiveTab(tab)}
-              className="px-3 py-1.5 rounded-full"
-              style={activeTab === tab ? { backgroundColor: 'rgba(255,255,255,0.14)' } : null}
-            >
-              <Text className={activeTab === tab ? 'text-white text-xs font-semibold capitalize' : 'text-white/40 text-xs font-medium capitalize'}>
-                {tab}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-        <Pressable onPress={logout}>
-          <Text className="text-white/30 text-xs">Log Out</Text>
-        </Pressable>
-      </View>
+      <Header
+        onMenuOpen={logout}
+        chartTab={chartTab}
+        onChartTabChange={setChartTab}
+        onCalendarOpen={() => {}}
+      />
 
-      <View className="items-center py-6">
-        <Text className="text-white/40 text-sm mb-1">{monthLabel(currMonth, currYear)}</Text>
-        <Text
-          className="text-4xl font-semibold tracking-tight"
-          style={activeTab === 'overview' ? { color: total >= 0 ? '#4ade80' : '#f87171' } : { color: '#ffffff' }}
-        >
-          {formatCurrency(Math.abs(total))}
-        </Text>
-      </View>
+      <SummaryCard
+        transactions={transactions}
+        chartTab={chartTab}
+        timeRange={timeRange}
+        onTimeRangeChange={handleTimeRangeChange}
+        selectedMonth={selectedMonth}
+        year={year}
+        onMonthChange={setSelectedMonth}
+        selectedYear={selectedYear}
+        onYearChange={setSelectedYear}
+        selectedDay={selectedDay}
+        onDayChange={setSelectedDay}
+      />
 
       <TransactionList
         transactions={transactions}
-        activeTab={activeTab}
-        chartTab={activeTab}
-        selectedMonth={currMonth}
-        year={currYear}
-        timeRange="month"
+        activeTab={chartTab}
+        chartTab={chartTab}
+        selectedMonth={timeRange === 'month' ? currMonth : selectedMonth}
+        year={timeRange === '5y' ? currYear : year}
+        timeRange={timeRange}
+        selectedYear={selectedYear}
+        selectedDay={selectedDay}
         onEdit={openEdit}
       />
 
