@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../hooks/useTransactions';
 import Header from '../../components/Header';
@@ -7,13 +8,19 @@ import SummaryCard from '../../components/SummaryCard';
 import TransactionList from '../../components/TransactionList';
 import AddModal from '../../components/AddModal';
 import Drawer from '../../components/Drawer';
-import { currentMonthYear } from '../../utils/format';
+import SpendCalendarModal from '../../components/SpendCalendarModal';
+import DailyInsightModal from '../../components/DailyInsightModal';
+import MonthlyRecapModal from '../../components/MonthlyRecapModal';
+import { currentMonthYear, monthLabel, today } from '../../utils/format';
+import { getDailyInsight } from '../../utils/insights';
+import { getMonthlyRecapSlides, hasAnyRecapData, prevMonthYear, MONTH_NAMES } from '../../utils/monthlyRecap';
 
 export default function Dashboard() {
-  const { logout } = useAuth();
-  const { transactions, addTransaction, editTransaction, deleteTransaction } = useTransactions();
+  const { user } = useAuth();
+  const { transactions, loading: txLoading, addTransaction, editTransaction, deleteTransaction } = useTransactions();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   const { month: currMonth, year: currYear } = currentMonthYear();
 
@@ -26,6 +33,88 @@ export default function Dashboard() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editData, setEditData] = useState(null);
+
+  const [dailyInsight, setDailyInsight] = useState(null);
+  const [recapOpen, setRecapOpen] = useState(false);
+  const [recapSlides, setRecapSlides] = useState([]);
+  const [recapMonthLabel, setRecapMonthLabel] = useState('');
+  const [recapMonthName, setRecapMonthName] = useState('');
+  const [recapAvailable, setRecapAvailable] = useState(false);
+  const [recapSeen, setRecapSeen] = useState(false);
+
+  // Mirrors web App.jsx's popup-trigger effect, rewritten against
+  // AsyncStorage (async) instead of localStorage (sync). Recap takes
+  // priority over the daily insight on the first open after a month
+  // rollover; otherwise the daily insight shows once per day.
+  useEffect(() => {
+    if (!user || !transactions.length || txLoading) return;
+    let cancelled = false;
+
+    (async () => {
+      const todayStr = today();
+      const { month, year: cy } = currentMonthYear();
+      const prev = prevMonthYear(month, cy);
+
+      const availKey = `okana_recap_available_date_${user.id}`;
+      const isAvailableToday = (await AsyncStorage.getItem(availKey)) === todayStr;
+
+      if (isAvailableToday && hasAnyRecapData(transactions, prev.month, prev.year)) {
+        const seenVal = await AsyncStorage.getItem(`okana_recap_seen_${user.id}_${todayStr}`);
+        if (cancelled) return;
+        setRecapSlides(getMonthlyRecapSlides(transactions, prev.month, prev.year));
+        setRecapMonthLabel(monthLabel(prev.month, prev.year));
+        setRecapMonthName(MONTH_NAMES[prev.month]);
+        setRecapAvailable(true);
+        setRecapSeen(seenVal === '1');
+      } else if (!cancelled) {
+        setRecapAvailable(false);
+      }
+
+      const shownKey = `okana_insight_shown_${user.id}`;
+      const shownVal = await AsyncStorage.getItem(shownKey);
+      if (shownVal === todayStr) return;
+      await AsyncStorage.setItem(shownKey, todayStr);
+
+      const recapShownKey = `okana_recap_shown_${user.id}`;
+      const recapMonthId = `${prev.year}-${String(prev.month).padStart(2, '0')}`;
+      const alreadyShown = (await AsyncStorage.getItem(recapShownKey)) === recapMonthId;
+
+      if (!alreadyShown && hasAnyRecapData(transactions, prev.month, prev.year)) {
+        await AsyncStorage.setItem(recapShownKey, recapMonthId);
+        await AsyncStorage.setItem(availKey, todayStr);
+        if (cancelled) return;
+        setRecapSlides(getMonthlyRecapSlides(transactions, prev.month, prev.year));
+        setRecapMonthLabel(monthLabel(prev.month, prev.year));
+        setRecapMonthName(MONTH_NAMES[prev.month]);
+        setRecapAvailable(true);
+        setRecapSeen(false);
+        setRecapOpen(true);
+        return;
+      }
+
+      const insight = getDailyInsight(transactions, todayStr);
+      if (insight && !cancelled) setDailyInsight(insight);
+    })();
+
+    return () => { cancelled = true; };
+  }, [user, transactions, txLoading]);
+
+  async function closeRecap() {
+    setRecapOpen(false);
+    if (!user) return;
+    const todayStr = today();
+    await AsyncStorage.setItem(`okana_recap_seen_${user.id}_${todayStr}`, '1');
+    setRecapSeen(true);
+  }
+
+  function openRecapFromCalendar() {
+    setCalendarOpen(false);
+    setRecapOpen(true);
+  }
+
+  const recapForCalendar = recapAvailable
+    ? { available: true, seen: recapSeen, monthName: recapMonthName, onOpen: openRecapFromCalendar }
+    : null;
 
   function handleTimeRangeChange(next) {
     setTimeRange(next);
@@ -49,7 +138,7 @@ export default function Dashboard() {
         onMenuOpen={() => setDrawerOpen(true)}
         chartTab={chartTab}
         onChartTabChange={setChartTab}
-        onCalendarOpen={() => {}}
+        onCalendarOpen={() => setCalendarOpen(true)}
       />
 
       <SummaryCard
@@ -95,7 +184,23 @@ export default function Dashboard() {
         editData={editData}
       />
 
+      <SpendCalendarModal
+        open={calendarOpen}
+        onClose={() => setCalendarOpen(false)}
+        transactions={transactions}
+        recap={recapForCalendar}
+      />
+
+      <DailyInsightModal insight={dailyInsight} onClose={() => setDailyInsight(null)} />
+
       <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+
+      <MonthlyRecapModal
+        open={recapOpen}
+        slides={recapSlides}
+        monthLabel={recapMonthLabel}
+        onClose={closeRecap}
+      />
     </View>
   );
 }
