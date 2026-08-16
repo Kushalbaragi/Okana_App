@@ -115,7 +115,7 @@ function TransactionList({
       )}
       renderSectionHeader={({ section }) =>
         section.title ? (
-          <View className="flex-row items-center justify-between mb-2 mt-6 bg-bg">
+          <View className={`flex-row items-center justify-between mb-2 bg-bg ${section.key === sections[0]?.key ? 'mt-0' : 'mt-6'}`}>
             <Text className="text-white/35 text-sm font-medium uppercase tracking-wider">
               {section.title}
             </Text>
