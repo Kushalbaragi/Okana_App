@@ -188,7 +188,7 @@ export default function Dashboard() {
       <Pressable
         onPress={openAdd}
         className="absolute bottom-20 self-center w-20 h-20 rounded-full items-center justify-center"
-        style={{ backgroundColor: 'rgba(255,255,255,0.14)', left: '50%', marginLeft: -40 }}
+        style={{ backgroundColor: 'rgba(255,255,255,0.24)', left: '50%', marginLeft: -40 }}
       >
         <PlusIcon size={30} />
       </Pressable>
