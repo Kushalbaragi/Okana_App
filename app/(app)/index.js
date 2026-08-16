@@ -3,6 +3,7 @@ import { View, Pressable } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../hooks/useTransactions';
+import { useBudget } from '../../hooks/useBudget';
 import Header from '../../components/Header';
 import SummaryCard from '../../components/SummaryCard';
 import TransactionList from '../../components/TransactionList';
@@ -11,6 +12,7 @@ import Drawer from '../../components/Drawer';
 import SpendCalendarModal from '../../components/SpendCalendarModal';
 import DailyInsightModal from '../../components/DailyInsightModal';
 import MonthlyRecapModal from '../../components/MonthlyRecapModal';
+import BudgetSetupModal from '../../components/BudgetSetupModal';
 import { PlusIcon } from '../../components/icons';
 import { currentMonthYear, monthLabel, today } from '../../utils/format';
 import { getDailyInsight } from '../../utils/insights';
@@ -19,6 +21,7 @@ import { getMonthlyRecapSlides, hasAnyRecapData, prevMonthYear, MONTH_NAMES } fr
 export default function Dashboard() {
   const { user } = useAuth();
   const { transactions, loading: txLoading, addTransaction, editTransaction, deleteTransaction } = useTransactions();
+  const budget = useBudget(user, transactions);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -42,6 +45,10 @@ export default function Dashboard() {
   const [recapMonthName, setRecapMonthName] = useState('');
   const [recapAvailable, setRecapAvailable] = useState(false);
   const [recapSeen, setRecapSeen] = useState(false);
+
+  const [budgetSetupOpen, setBudgetSetupOpen] = useState(false);
+  const [budgetSetupPending, setBudgetSetupPending] = useState(false);
+  const [dailyPopupsResolved, setDailyPopupsResolved] = useState(false);
 
   // Mirrors web App.jsx's popup-trigger effect, rewritten against
   // AsyncStorage (async) instead of localStorage (sync). Recap takes
@@ -73,7 +80,7 @@ export default function Dashboard() {
 
       const shownKey = `okana_insight_shown_${user.id}`;
       const shownVal = await AsyncStorage.getItem(shownKey);
-      if (shownVal === todayStr) return;
+      if (shownVal === todayStr) { if (!cancelled) setDailyPopupsResolved(true); return; }
       await AsyncStorage.setItem(shownKey, todayStr);
 
       const recapShownKey = `okana_recap_shown_${user.id}`;
@@ -90,15 +97,47 @@ export default function Dashboard() {
         setRecapAvailable(true);
         setRecapSeen(false);
         setRecapOpen(true);
+        setDailyPopupsResolved(true);
         return;
       }
 
       const insight = getDailyInsight(transactions, todayStr);
       if (insight && !cancelled) setDailyInsight(insight);
+      if (!cancelled) setDailyPopupsResolved(true);
     })();
 
     return () => { cancelled = true; };
   }, [user, transactions, txLoading]);
+
+  // Budget setup popup: due on the first app-open of a month with no budget
+  // set yet. Kept as its OWN effect rather than folded into the once-a-day
+  // chain above — that chain only gets one real pass per day (subsequent
+  // re-runs short-circuit on the `shownKey` check), but `budget.loading`
+  // comes from a separate async fetch in useBudget that doesn't reliably
+  // resolve before that single daily pass runs, which would silently skip
+  // this check on some days. This effect just re-evaluates whenever the
+  // budget fetch settles, independent of that gate.
+  useEffect(() => {
+    if (!user || budget.loading || budget.hasBudget) return;
+    let cancelled = false;
+
+    (async () => {
+      const { month, year: cy } = currentMonthYear();
+      const monthId = `${cy}-${String(month + 1).padStart(2, '0')}`;
+      const shownMonth = await AsyncStorage.getItem(`okana_budget_setup_shown_${user.id}`);
+      if (!cancelled && shownMonth !== monthId) setBudgetSetupPending(true);
+    })();
+
+    return () => { cancelled = true; };
+  }, [user, budget.loading, budget.hasBudget]);
+
+  // Only actually opens once today's recap/insight decision has resolved
+  // (and neither is currently showing) — never ahead of or instead of them.
+  useEffect(() => {
+    if (budgetSetupPending && dailyPopupsResolved && !recapOpen && !dailyInsight) {
+      setBudgetSetupOpen(true);
+    }
+  }, [budgetSetupPending, dailyPopupsResolved, recapOpen, dailyInsight]);
 
   const closeRecap = useCallback(async () => {
     setRecapOpen(false);
@@ -116,6 +155,29 @@ export default function Dashboard() {
   const recapForCalendar = recapAvailable
     ? { available: true, seen: recapSeen, monthName: recapMonthName, onOpen: openRecapFromCalendar }
     : null;
+
+  const closeBudgetSetup = useCallback(async () => {
+    setBudgetSetupOpen(false);
+    setBudgetSetupPending(false);
+    if (!user) return;
+    const { month, year: cy } = currentMonthYear();
+    const monthId = `${cy}-${String(month + 1).padStart(2, '0')}`;
+    await AsyncStorage.setItem(`okana_budget_setup_shown_${user.id}`, monthId);
+  }, [user]);
+
+  const openBudgetSetupFromCalendar = useCallback(() => {
+    setCalendarOpen(false);
+    setBudgetSetupOpen(true);
+  }, []);
+
+  const budgetForCalendar = {
+    loading: budget.loading,
+    hasBudget: budget.hasBudget,
+    amount: budget.amount,
+    spent: budget.spentThisMonth,
+    percent: budget.percent,
+    onSetup: openBudgetSetupFromCalendar,
+  };
 
   const handleTimeRangeChange = useCallback((next) => {
     setTimeRange(next);
@@ -207,6 +269,7 @@ export default function Dashboard() {
         onClose={closeCalendar}
         transactions={transactions}
         recap={recapForCalendar}
+        budget={budgetForCalendar}
       />
 
       <DailyInsightModal insight={dailyInsight} onClose={closeDailyInsight} />
@@ -219,6 +282,8 @@ export default function Dashboard() {
         monthLabel={recapMonthLabel}
         onClose={closeRecap}
       />
+
+      <BudgetSetupModal open={budgetSetupOpen} onClose={closeBudgetSetup} onSubmit={budget.setBudget} />
     </View>
   );
 }

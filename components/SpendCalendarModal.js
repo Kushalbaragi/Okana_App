@@ -12,6 +12,7 @@ import {
   spendShadeFor,
   today,
 } from '../utils/format';
+import BudgetStatusBar from './BudgetStatusBar';
 
 const BLUR_METHOD = Platform.OS === 'android' ? 'dimezisBlurView' : undefined;
 const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
@@ -29,7 +30,7 @@ function toStr(d) {
 // correctly in the web preview (react-native-web fakes Modal with plain
 // fixed-position divs) — on a real iOS/Android device the second Modal
 // never rendered, so the day sheet silently did nothing.
-function SpendCalendarModal({ open, onClose, transactions, recap }) {
+function SpendCalendarModal({ open, onClose, transactions, recap, budget }) {
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const now = new Date();
@@ -154,6 +155,8 @@ function SpendCalendarModal({ open, onClose, transactions, recap }) {
                       <Text style={{ color: 'rgba(255,255,255,0.4)' }}>›</Text>
                     </Pressable>
                   )}
+
+                  {budget && <BudgetStatusBar {...budget} />}
 
                   <View className="flex-row items-center justify-between mb-4">
                     <Pressable

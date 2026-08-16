@@ -155,6 +155,12 @@ export function getLifetimeYearly(transactions) {
   return { income, expense, labels: years.map(String), years }
 }
 
+export function budgetStatusColor(percent) {
+  if (percent >= 100) return { fill: 'rgba(248,113,113,0.7)', text: '#f87171' }
+  if (percent >= 90)  return { fill: 'rgba(234,179,8,0.7)',   text: '#eab308' }
+  return { fill: 'rgba(74,222,128,0.6)', text: '#4ade80' }
+}
+
 export function getDelta(transactions, type, month, year) {
   const current = getMonthTotal(transactions, type, month, year)
   const prevMonth = month === 0 ? 11 : month - 1

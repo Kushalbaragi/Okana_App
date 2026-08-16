@@ -1,0 +1,83 @@
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { supabase } from '../lib/supabase'
+import { currentMonthYear, getMonthTotal } from '../utils/format'
+import { scheduleForNextMorning } from '../utils/notifications'
+
+function monthStartStr(month, year) {
+  return `${year}-${String(month + 1).padStart(2, '0')}-01`
+}
+
+export function useBudget(user, transactions) {
+  const { month, year } = currentMonthYear()
+  const monthStart = monthStartStr(month, year)
+
+  const [budgetRow, setBudgetRow] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  const refresh = useCallback(async () => {
+    if (!user) { setBudgetRow(null); setLoading(false); return }
+    setLoading(true)
+    const { data } = await supabase
+      .from('monthly_budgets')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('month_start', monthStart)
+      .maybeSingle()
+    setBudgetRow(data || null)
+    setLoading(false)
+  }, [user, monthStart])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  const setBudget = useCallback(async (amountNumber) => {
+    if (!user) return
+    const { data, error } = await supabase
+      .from('monthly_budgets')
+      .upsert(
+        { user_id: user.id, month_start: monthStart, budget_amount: amountNumber },
+        { onConflict: 'user_id,month_start' },
+      )
+      .select()
+      .single()
+    if (!error && data) setBudgetRow(data)
+  }, [user, monthStart])
+
+  const spentThisMonth = useMemo(
+    () => getMonthTotal(transactions, 'expense', month, year),
+    [transactions, month, year],
+  )
+
+  const percent = budgetRow ? Math.round((spentThisMonth / budgetRow.budget_amount) * 100) : null
+
+  // Fires at most once per threshold per month — the optimistic local flip
+  // (before awaiting the notification/DB write) stops this effect from
+  // re-scheduling on the next re-render while the write is in flight.
+  // Reset-per-month is automatic since each calendar month is its own row.
+  useEffect(() => {
+    if (!user || loading || !budgetRow) return
+    const pct = (spentThisMonth / budgetRow.budget_amount) * 100
+
+    ;(async () => {
+      if (pct >= 90 && !budgetRow.notified_90) {
+        setBudgetRow(prev => (prev ? { ...prev, notified_90: true } : prev))
+        await scheduleForNextMorning({ body: "You've used 90% of your monthly budget." })
+        await supabase.from('monthly_budgets').update({ notified_90: true }).eq('id', budgetRow.id)
+      }
+      if (pct >= 100 && !budgetRow.notified_100) {
+        setBudgetRow(prev => (prev ? { ...prev, notified_100: true } : prev))
+        await scheduleForNextMorning({ body: "You've exceeded your monthly budget." })
+        await supabase.from('monthly_budgets').update({ notified_100: true }).eq('id', budgetRow.id)
+      }
+    })()
+  }, [user, loading, budgetRow, spentThisMonth])
+
+  return {
+    loading,
+    hasBudget: !!budgetRow,
+    amount: budgetRow?.budget_amount ?? null,
+    spentThisMonth,
+    percent,
+    setBudget,
+    refresh,
+  }
+}
