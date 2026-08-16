@@ -119,8 +119,11 @@ export default function Dashboard() {
   const handleTimeRangeChange = useCallback((next) => {
     setTimeRange(next);
     setSelectedDay(null);
-    if (next === 'year') setYear(currYear);
-  }, [currYear]);
+    if (next === 'year') {
+      setYear(currYear);
+      setSelectedMonth(currMonth);
+    }
+  }, [currYear, currMonth]);
 
   const openAdd = useCallback(() => {
     setEditData(null);
