@@ -1,16 +1,8 @@
+import { MONTH_NAMES } from './monthlyRecap'
+import { shiftDate } from './format'
+
 export const TRIAL_DAYS = 30
 export const PRICE_PER_YEAR = 499
-
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-]
-
-function shiftDate(dateStr, days) {
-  const d = new Date(dateStr)
-  d.setDate(d.getDate() + days)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 
 export function getTrialInfo(trialStartStr, todayStr) {
   if (!trialStartStr) {

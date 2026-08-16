@@ -23,6 +23,16 @@ export function today() {
   return new Date().toISOString().slice(0, 10)
 }
 
+export function toDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+export function shiftDate(dateStr, days) {
+  const d = new Date(dateStr)
+  d.setDate(d.getDate() + days)
+  return toDateStr(d)
+}
+
 export function dateBoxParts(dateStr) {
   const d = new Date(dateStr)
   return { day: d.getDate(), month: MONTHS_ABBR[d.getMonth()].toUpperCase() }

@@ -11,18 +11,15 @@ import {
   getEarliestDate,
   spendShadeFor,
   today,
+  toDateStr as toStr,
 } from '../utils/format';
+import { MONTH_NAMES as MONTHS } from '../utils/monthlyRecap';
 import BudgetStatusBar from './BudgetStatusBar';
 
 const BLUR_METHOD = Platform.OS === 'android' ? 'dimezisBlurView' : undefined;
 const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 
 const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-
-function toStr(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 // Hand-rolled (rather than reusing AnimatedModal twice) because the day
 // sheet and the calendar card need to live in the SAME native Modal.

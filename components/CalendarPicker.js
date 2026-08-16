@@ -1,17 +1,14 @@
 import { memo, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { GlassView, GlassPressable } from './Glass';
+import { MONTH_NAMES as MONTHS } from '../utils/monthlyRecap';
+import { toDateStr as toStr } from '../utils/format';
 
 const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 function parseLocal(str) {
   const [y, m, d] = str.split('-').map(Number);
   return new Date(y, m - 1, d);
-}
-
-function toStr(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function CalendarPicker({ value, onChange, onClose }) {

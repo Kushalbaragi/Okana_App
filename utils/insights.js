@@ -1,10 +1,4 @@
-import { formatCurrency, formatCurrencyFull, getMonthTotal, getDailyTotals, getEarliestDate, today } from './format'
-
-function shiftDate(dateStr, days) {
-  const d = new Date(dateStr)
-  d.setDate(d.getDate() + days)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+import { formatCurrency, formatCurrencyFull, getMonthTotal, getDailyTotals, getEarliestDate, today, shiftDate } from './format'
 
 function sumInRange(transactions, type, startStr, endStr) {
   return transactions

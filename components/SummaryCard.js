@@ -13,9 +13,9 @@ import {
   getLifetimeYearly,
   currentMonthYear,
 } from '../utils/format';
+import { MONTH_NAMES } from '../utils/monthlyRecap';
 
 const MONTH_LABELS_SHORT = ['J','F','M','A','M','J','J','A','S','O','N','D'];
-const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 const fmt = new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR',
