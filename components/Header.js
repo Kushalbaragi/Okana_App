@@ -4,8 +4,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { HamburgerIcon, CalendarIcon } from './icons';
 
-const BTN_W = 92; // fits "Overview" at text-base, matching the app-wide font-size pass
-const PAD   = 3;
+const BTN_W = 86; // fits "Overview" at text-base with tightened tracking below
+const PAD   = 2;
 const TABS  = ['expense', 'income', 'overview'];
 
 function ChartTabToggle({ value, onChange }) {
@@ -22,7 +22,7 @@ function ChartTabToggle({ value, onChange }) {
     >
       <Animated.View
         style={[
-          { position: 'absolute', top: 3, bottom: 3, width: BTN_W, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.14)' },
+          { position: 'absolute', top: PAD, bottom: PAD, width: BTN_W, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.14)' },
           pillStyle,
         ]}
       />
@@ -31,9 +31,12 @@ function ChartTabToggle({ value, onChange }) {
           key={tab}
           onPress={() => onChange(tab)}
           style={{ width: BTN_W }}
-          className="py-[6px] items-center"
+          className="py-[5px] items-center"
         >
-          <Text className={value === tab ? 'text-white text-base font-medium' : 'text-white/35 text-base font-medium'}>
+          <Text
+            className={value === tab ? 'text-white text-base font-medium' : 'text-white/35 text-base font-medium'}
+            style={{ letterSpacing: -0.3 }}
+          >
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
           </Text>
         </Pressable>

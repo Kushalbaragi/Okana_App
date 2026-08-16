@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, useWindowDimensions } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
 import {
   formatCurrencyFull,
   formatDateFull,
@@ -10,6 +11,8 @@ import {
   today,
 } from '../utils/format';
 import { AnimatedModal } from './AnimatedModal';
+
+const DAY_CARD_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 
 const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -23,10 +26,43 @@ function SpendCalendarModal({ open, onClose, transactions, recap }) {
   const now = new Date();
   const [view, setView] = useState(new Date(now.getFullYear(), now.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(null);
+  const [displayDate, setDisplayDate] = useState(null);
+  const [dayCardVisible, setDayCardVisible] = useState(false);
+  const dayCardProgress = useSharedValue(0);
 
   useEffect(() => {
-    if (open) setSelectedDate(null);
+    if (open) {
+      setSelectedDate(null);
+      setDisplayDate(null);
+      setDayCardVisible(false);
+      dayCardProgress.value = 0;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // A separate card that slides up below the calendar (instead of the day's
+  // transactions expanding inline inside the calendar card itself) — keeps
+  // displayDate around through the close animation so the card doesn't blank
+  // out mid-slide-down while selectedDate has already gone back to null.
+  useEffect(() => {
+    if (selectedDate) {
+      setDisplayDate(selectedDate);
+      setDayCardVisible(true);
+      dayCardProgress.value = withTiming(1, { duration: 340, easing: DAY_CARD_EASING });
+    } else if (dayCardVisible) {
+      dayCardProgress.value = withTiming(
+        0,
+        { duration: 200, easing: Easing.in(Easing.cubic) },
+        finished => { if (finished) runOnJS(setDayCardVisible)(false); },
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate]);
+
+  const dayCardStyle = useAnimatedStyle(() => ({
+    opacity: dayCardProgress.value,
+    transform: [{ translateY: (1 - dayCardProgress.value) * 24 }],
+  }));
 
   const year = view.getFullYear();
   const month = view.getMonth();
@@ -40,9 +76,9 @@ function SpendCalendarModal({ open, onClose, transactions, recap }) {
 
   const dayTxs = useMemo(
     () => transactions
-      .filter(tx => tx.date === selectedDate)
+      .filter(tx => tx.date === displayDate)
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
-    [transactions, selectedDate],
+    [transactions, displayDate],
   );
 
   const cells = [];
@@ -135,13 +171,31 @@ function SpendCalendarModal({ open, onClose, transactions, recap }) {
             </View>
           ))}
 
-          {selectedDate && (
-            <View className="mt-3 rounded-lg p-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.07)' }}>
-              <Text className="text-white/60 text-base font-semibold mb-1.5">{formatDateFull(selectedDate)}</Text>
-              {dayTxs.length === 0 ? (
-                <Text className="text-white/30 text-base">No transactions — spend-free day 🎉</Text>
-              ) : (
-                <View style={{ gap: 6 }}>
+          <View className="flex-row items-center justify-center mt-3" style={{ gap: 12 }}>
+            <View className="flex-row items-center" style={{ gap: 4 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(34,197,94,0.5)' }} />
+              <Text className="text-white/30" style={{ fontSize: 10 }}>No spend</Text>
+            </View>
+            <View className="flex-row items-center" style={{ gap: 4 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(239,68,68,0.5)' }} />
+              <Text className="text-white/30" style={{ fontSize: 10 }}>Spent</Text>
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+
+      {dayCardVisible && (
+        <Animated.View style={[{ width: '100%', maxWidth: 340, marginTop: 12 }, dayCardStyle]}>
+          <View
+            className="w-full rounded-2xl px-5 py-4"
+            style={{ maxHeight: windowHeight * 0.28, backgroundColor: '#1c1c1f', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+          >
+            <Text className="text-white/60 text-base font-semibold mb-2.5">{formatDateFull(displayDate)}</Text>
+            {dayTxs.length === 0 ? (
+              <Text className="text-white/30 text-base">No transactions — spend-free day 🎉</Text>
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false} style={{ flexGrow: 0 }}>
+                <View style={{ gap: 10 }}>
                   {dayTxs.map(tx => (
                     <View key={tx.id} className="flex-row items-center justify-between" style={{ gap: 8 }}>
                       <Text className="text-white/70 text-base" numberOfLines={1} style={{ flex: 1 }}>
@@ -156,22 +210,11 @@ function SpendCalendarModal({ open, onClose, transactions, recap }) {
                     </View>
                   ))}
                 </View>
-              )}
-            </View>
-          )}
-
-          <View className="flex-row items-center justify-center mt-3" style={{ gap: 12 }}>
-            <View className="flex-row items-center" style={{ gap: 4 }}>
-              <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(34,197,94,0.5)' }} />
-              <Text className="text-white/30" style={{ fontSize: 10 }}>No spend</Text>
-            </View>
-            <View className="flex-row items-center" style={{ gap: 4 }}>
-              <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(239,68,68,0.5)' }} />
-              <Text className="text-white/30" style={{ fontSize: 10 }}>Spent</Text>
-            </View>
+              </ScrollView>
+            )}
           </View>
-        </ScrollView>
-      </View>
+        </Animated.View>
+      )}
     </AnimatedModal>
   );
 }
