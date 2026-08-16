@@ -3,15 +3,21 @@ import { View, Text, Pressable } from 'react-native';
 import { formatCurrency, budgetStatusColor } from '../utils/format';
 
 const SEGMENT_COUNT = 24;
+const WRAPPER_STYLE = {
+  paddingBottom: 14,
+  marginBottom: 14,
+  borderBottomWidth: 1,
+  borderBottomColor: 'rgba(255,255,255,0.08)',
+};
 
 function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }) {
   if (loading) return null;
 
   if (!hasBudget) {
     return (
-      <Pressable onPress={onSetup} className="flex-row items-center justify-between mb-5">
-        <Text className="text-white text-base font-semibold">Monthly Budget</Text>
-        <Text className="text-white/40 text-base">Set a budget ›</Text>
+      <Pressable onPress={onSetup} className="flex-row items-center justify-between" style={WRAPPER_STYLE}>
+        <Text className="text-white text-sm font-semibold">Monthly Budget</Text>
+        <Text className="text-white/40 text-sm">Set a budget ›</Text>
       </Pressable>
     );
   }
@@ -26,20 +32,20 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
   const isOver = percent >= 100;
 
   return (
-    <View className="mb-5">
-      <View className="flex-row items-center justify-between mb-2.5">
-        <Text className="text-white text-base font-semibold">Monthly Budget</Text>
-        <Text className="text-white/50 text-base">{formatCurrency(spent)} / {formatCurrency(amount)}</Text>
+    <View style={WRAPPER_STYLE}>
+      <View className="flex-row items-center justify-between mb-2">
+        <Text className="text-white text-sm font-semibold">Monthly Budget</Text>
+        <Text className="text-white/50 text-sm">{formatCurrency(spent)} / {formatCurrency(amount)}</Text>
       </View>
 
-      <View className="flex-row mb-2.5" style={{ gap: 3 }}>
+      <View className="flex-row mb-2" style={{ gap: 2 }}>
         {Array.from({ length: SEGMENT_COUNT }).map((_, i) => (
           <View
             key={i}
             style={{
               flex: 1,
-              height: 20,
-              borderRadius: 4,
+              height: 6,
+              borderRadius: 2,
               backgroundColor: i < filledCount ? fill : 'rgba(255,255,255,0.08)',
             }}
           />
@@ -47,8 +53,8 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
       </View>
 
       <View className="flex-row items-center justify-between">
-        <Text className="text-base font-semibold" style={{ color: text }}>{percent}% used</Text>
-        <Text className="text-white/40 text-base">
+        <Text className="text-sm font-semibold" style={{ color: text }}>{percent}% spent</Text>
+        <Text className="text-white/40 text-sm">
           {isOver ? `${formatCurrency(Math.abs(remaining))} over` : `${formatCurrency(remaining)} left`}
         </Text>
       </View>
