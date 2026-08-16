@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Crypto from 'expo-crypto'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { hapticAdded, hapticDeleted } from '../utils/haptics'
 
 function fromRow(row) {
   return {
@@ -83,6 +84,7 @@ export function useTransactions() {
     }
 
     setTransactions(prev => [optimistic, ...prev])
+    hapticAdded()
 
     const { data, error } = await supabase
       .from('transactions')
@@ -149,6 +151,7 @@ export function useTransactions() {
       saveCache(user.id, updated)
       return updated
     })
+    hapticDeleted()
 
     const { error } = await supabase
       .from('transactions')

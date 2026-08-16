@@ -19,6 +19,13 @@ export function formatCurrencyFull(amount) {
   }).format(amount)
 }
 
+export function formatNumber(amount) {
+  return new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
 export function today() {
   return new Date().toISOString().slice(0, 10)
 }
