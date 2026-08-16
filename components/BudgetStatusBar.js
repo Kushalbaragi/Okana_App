@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { formatNumber, budgetStatusColor } from '../utils/format';
+import { formatCurrency, budgetStatusColor } from '../utils/format';
 
 // flex:1 segments auto-size to whatever width the calendar card ends up at
 // (capped at maxWidth:340 in SpendCalendarModal, narrower on small screens)
@@ -31,12 +31,16 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
   const cappedPercent = Math.min(percent, 100);
   const filledCount = Math.round((cappedPercent / 100) * SEGMENT_COUNT);
   const { fill } = budgetStatusColor(percent);
+  const remaining = amount - spent;
+  const remainingLabel = remaining < 0
+    ? `${formatCurrency(Math.abs(remaining))} over`
+    : `${formatCurrency(remaining)} left`;
 
   return (
     <View style={WRAPPER_STYLE}>
       <View className="flex-row items-center justify-between mb-2.5">
         <Text className="text-white text-sm font-semibold">Budget</Text>
-        <Text className="text-white/50 text-sm">{formatNumber(spent)} / {formatNumber(amount)}</Text>
+        <Text className="text-white/50 text-sm">{formatCurrency(spent)} / {formatCurrency(amount)}</Text>
       </View>
 
       <View className="flex-row" style={{ gap: 1 }}>
@@ -53,7 +57,7 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
         ))}
       </View>
 
-      <Text className="text-white/40 text-sm text-right mt-1.5">{percent}%</Text>
+      <Text className="text-white/40 text-sm text-right mt-1.5">{remainingLabel}</Text>
     </View>
   );
 }
