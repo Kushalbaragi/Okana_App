@@ -2,10 +2,14 @@ import { memo } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { formatCurrency, budgetStatusColor } from '../utils/format';
 
-const SEGMENT_COUNT = 24;
+// flex:1 segments auto-size to whatever width the calendar card ends up at
+// (capped at maxWidth:340 in SpendCalendarModal, narrower on small screens)
+// — that's what keeps the bar fitting any device width without horizontal
+// scroll, rather than computing a device-specific segment count.
+const SEGMENT_COUNT = 42;
 const WRAPPER_STYLE = {
-  paddingBottom: 14,
-  marginBottom: 14,
+  paddingBottom: 10,
+  marginBottom: 10,
   borderBottomWidth: 1,
   borderBottomColor: 'rgba(255,255,255,0.08)',
 };
@@ -23,13 +27,14 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
   }
 
   // Fill from the CAPPED percent, never the raw one — this is what keeps
-  // the bar from ever exceeding its container even at 150%+. The percent
-  // text below it still shows the true, uncapped number.
+  // the bar from ever exceeding its container even at 150%+.
   const cappedPercent = Math.min(percent, 100);
   const filledCount = Math.round((cappedPercent / 100) * SEGMENT_COUNT);
   const { fill, text } = budgetStatusColor(percent);
   const remaining = amount - spent;
-  const isOver = percent >= 100;
+  const remainingLabel = remaining < 0
+    ? `${formatCurrency(Math.abs(remaining))} over`
+    : `${formatCurrency(remaining)} left`;
 
   return (
     <View style={WRAPPER_STYLE}>
@@ -38,7 +43,7 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
         <Text className="text-white/50 text-sm">{formatCurrency(spent)} / {formatCurrency(amount)}</Text>
       </View>
 
-      <View className="flex-row mb-2" style={{ gap: 2 }}>
+      <View className="flex-row" style={{ gap: 2 }}>
         {Array.from({ length: SEGMENT_COUNT }).map((_, i) => (
           <View
             key={i}
@@ -52,12 +57,7 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
         ))}
       </View>
 
-      <View className="flex-row items-center justify-between">
-        <Text className="text-sm font-semibold" style={{ color: text }}>{percent}% spent</Text>
-        <Text className="text-white/40 text-sm">
-          {isOver ? `${formatCurrency(Math.abs(remaining))} over` : `${formatCurrency(remaining)} left`}
-        </Text>
-      </View>
+      <Text className="text-sm text-right mt-1.5" style={{ color: text }}>{remainingLabel}</Text>
     </View>
   );
 }
