@@ -37,6 +37,29 @@ export function getSubscriptionDisplayStatus(subscription, todayStr) {
     return { status: 'not_started', daysLeft: TRIAL_DAYS, chargeDate: null, cancelAtPeriodEnd: false, paymentFailed: false, everBilled: false }
   }
 
+  // RevenueCat-driven rows (native App Store / Play Store purchases) carry
+  // their own status vocabulary (in_grace_period, in_billing_retry_period,
+  // on_hold, paused, revoked, canceled, ...) that doesn't map cleanly onto
+  // Razorpay's. Rather than hand-mapping every one — semantics differ
+  // subtly per platform and can't be verified against a live payload yet —
+  // trust `expires_at`, the column meant to be authoritative regardless of
+  // platform once every writer populates it.
+  if (subscription.platform === 'apple' || subscription.platform === 'google') {
+    const expiresAt = subscription.expires_at ? new Date(subscription.expires_at) : null
+    const isActive = subscription.status === 'active' || (expiresAt && expiresAt > new Date(todayStr))
+    if (!isActive) {
+      return { status: 'expired', daysLeft: 0, chargeDate: subscription.expires_at, cancelAtPeriodEnd: false, paymentFailed: subscription.status === 'on_hold', everBilled: true }
+    }
+    return {
+      status: 'subscribed',
+      daysLeft: 0,
+      chargeDate: subscription.expires_at,
+      cancelAtPeriodEnd: subscription.auto_renew === false,
+      paymentFailed: ['in_grace_period', 'in_billing_retry_period'].includes(subscription.status),
+      everBilled: true,
+    }
+  }
+
   if (subscription.status === 'active') {
     return {
       status: 'subscribed',
