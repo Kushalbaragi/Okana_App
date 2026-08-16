@@ -30,7 +30,7 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
   // the bar from ever exceeding its container even at 150%+.
   const cappedPercent = Math.min(percent, 100);
   const filledCount = Math.round((cappedPercent / 100) * SEGMENT_COUNT);
-  const { fill, text } = budgetStatusColor(percent);
+  const { fill } = budgetStatusColor(percent);
   const remaining = amount - spent;
   const remainingLabel = remaining < 0
     ? `${formatCurrency(Math.abs(remaining))} over`
@@ -38,7 +38,7 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
 
   return (
     <View style={WRAPPER_STYLE}>
-      <View className="flex-row items-center justify-between mb-2">
+      <View className="flex-row items-center justify-between mb-2.5">
         <Text className="text-white text-sm font-semibold">Monthly Budget</Text>
         <Text className="text-white/50 text-sm">{formatCurrency(spent)} / {formatCurrency(amount)}</Text>
       </View>
@@ -49,15 +49,15 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
             key={i}
             style={{
               flex: 1,
-              height: 6,
-              borderRadius: 2,
+              height: 18,
+              borderRadius: 3,
               backgroundColor: i < filledCount ? fill : 'rgba(255,255,255,0.08)',
             }}
           />
         ))}
       </View>
 
-      <Text className="text-sm text-right mt-1.5" style={{ color: text }}>{remainingLabel}</Text>
+      <Text className="text-white/40 text-sm text-right mt-1.5">{remainingLabel}</Text>
     </View>
   );
 }
