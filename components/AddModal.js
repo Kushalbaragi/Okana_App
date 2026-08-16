@@ -1,4 +1,4 @@
-import { memo, useState, useEffect, useRef } from 'react';
+import { memo, useCallback, useState, useEffect, useRef } from 'react';
 import { Modal, View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -42,6 +42,11 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
   const [description, setDescription] = useState('');
   const [calOpen, setCalOpen] = useState(false);
   const amountRef = useRef(null);
+  // Stable reference — CalendarPicker is memo()-wrapped, and AddModal
+  // re-renders on every keystroke in the amount/description fields, so an
+  // inline arrow here would defeat that memo the whole time the calendar
+  // overlay is open.
+  const closeCalendar = useCallback(() => setCalOpen(false), []);
 
   // RN's built-in Modal animationType only animates the WHOLE modal content
   // as one transform — the backdrop was sliding up together with the sheet
@@ -248,10 +253,10 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
       {calOpen && (
         <Pressable
           style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }]}
-          onPress={() => setCalOpen(false)}
+          onPress={closeCalendar}
         >
           <View style={{ width: '100%', maxWidth: 360 }}>
-            <CalendarPicker value={date} onChange={setDate} onClose={() => setCalOpen(false)} />
+            <CalendarPicker value={date} onChange={setDate} onClose={closeCalendar} />
           </View>
         </Pressable>
       )}

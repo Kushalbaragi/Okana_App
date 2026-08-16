@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Pressable } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
@@ -152,9 +152,15 @@ export default function Dashboard() {
     setRecapOpen(true);
   }, []);
 
-  const recapForCalendar = recapAvailable
-    ? { available: true, seen: recapSeen, monthName: recapMonthName, onOpen: openRecapFromCalendar }
-    : null;
+  // Memoized — SpendCalendarModal is always mounted (unlike Drawer, which
+  // just returns null when closed) and memo()-wrapped, so a fresh object
+  // reference here on every unrelated Dashboard re-render (switching chart
+  // tabs, adding a transaction, etc.) would defeat that memo every time.
+  const recapForCalendar = useMemo(() => (
+    recapAvailable
+      ? { available: true, seen: recapSeen, monthName: recapMonthName, onOpen: openRecapFromCalendar }
+      : null
+  ), [recapAvailable, recapSeen, recapMonthName, openRecapFromCalendar]);
 
   const closeBudgetSetup = useCallback(async () => {
     setBudgetSetupOpen(false);
@@ -170,14 +176,14 @@ export default function Dashboard() {
     setBudgetSetupOpen(true);
   }, []);
 
-  const budgetForCalendar = {
+  const budgetForCalendar = useMemo(() => ({
     loading: budget.loading,
     hasBudget: budget.hasBudget,
     amount: budget.amount,
     spent: budget.spentThisMonth,
     percent: budget.percent,
     onSetup: openBudgetSetupFromCalendar,
-  };
+  }), [budget.loading, budget.hasBudget, budget.amount, budget.spentThisMonth, budget.percent, openBudgetSetupFromCalendar]);
 
   const handleTimeRangeChange = useCallback((next) => {
     setTimeRange(next);
