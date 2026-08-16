@@ -186,10 +186,10 @@ export default function Dashboard() {
 
       <Pressable
         onPress={openAdd}
-        className="absolute bottom-11 self-center w-16 h-16 rounded-full items-center justify-center"
-        style={{ backgroundColor: 'rgba(255,255,255,0.14)', left: '50%', marginLeft: -32 }}
+        className="absolute bottom-20 self-center w-20 h-20 rounded-full items-center justify-center"
+        style={{ backgroundColor: 'rgba(255,255,255,0.14)', left: '50%', marginLeft: -40 }}
       >
-        <Text className="text-white text-4xl" style={{ marginTop: -3 }}>+</Text>
+        <Text className="text-white text-5xl" style={{ marginTop: -4 }}>+</Text>
       </Pressable>
 
       <AddModal
