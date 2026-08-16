@@ -1,30 +1,7 @@
 import { memo, useMemo } from 'react';
-import { View, Text, FlatList } from 'react-native';
+import { View, Text, SectionList } from 'react-native';
 import TransactionItem from './TransactionItem';
 import { monthLabel } from '../utils/format';
-
-function MonthGroup({ group, isOverview, isIncome, onEdit }) {
-  return (
-    <View>
-      <View className="flex-row items-center justify-between mb-2 mt-6">
-        <Text className="text-white/35 text-sm font-medium uppercase tracking-wider">
-          {monthLabel(group.month, group.year)}
-        </Text>
-      </View>
-
-      <View className="bg-surface rounded-xl overflow-hidden px-3">
-        {group.txs.map(tx => (
-          <TransactionItem
-            key={tx.id}
-            tx={tx}
-            isIncome={isOverview ? tx.type === 'income' : isIncome}
-            onEdit={onEdit}
-          />
-        ))}
-      </View>
-    </View>
-  );
-}
 
 const ListHeader = (
   <Text className="text-white/25 text-sm font-medium uppercase tracking-wide mt-4 mb-3 px-1">
@@ -74,23 +51,25 @@ function TransactionList({
       );
   }, [transactions, activeTab, isOverview, selectedMonth, year, timeRange, selectedYear, selectedDay]);
 
-  const groups = useMemo(() => {
-    if (!shouldGroup) return null;
+  // Single source of truth for both render paths — SectionList just gets
+  // one untitled section when the view isn't grouped, so there's only one
+  // rendering strategy (and one set of virtualization knobs) to reason
+  // about instead of two diverging FlatList branches.
+  const sections = useMemo(() => {
+    if (!shouldGroup) {
+      return filtered.length ? [{ key: 'all', title: null, data: filtered }] : [];
+    }
     const map = {};
     filtered.forEach(tx => {
       const d   = new Date(tx.date);
       const key = `${d.getFullYear()}-${String(d.getMonth()).padStart(2, '0')}`;
-      if (!map[key]) map[key] = { year: d.getFullYear(), month: d.getMonth(), txs: [] };
-      map[key].txs.push(tx);
+      if (!map[key]) map[key] = { key, title: monthLabel(d.getMonth(), d.getFullYear()), data: [] };
+      map[key].data.push(tx);
     });
-    return Object.values(map).sort((a, b) =>
-      b.year !== a.year ? b.year - a.year : b.month - a.month,
-    );
+    return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
   }, [filtered, shouldGroup]);
 
-  const count = filtered.length;
-
-  if (count === 0) {
+  if (filtered.length === 0) {
     return (
       <View className="px-4 pb-28">
         {ListHeader}
@@ -105,50 +84,53 @@ function TransactionList({
   }
 
   // "All Time" / Overview has no date bound — it can be every transaction
-  // the user has ever logged. Rendering that with a plain `.map()` inside a
-  // ScrollView mounts every item at once, which is exactly what made
-  // switching to "All Time" feel slow with real history. FlatList
-  // virtualizes instead: grouped view virtualizes per month (so opening a
-  // multi-year history only mounts the handful of months on screen),
-  // flat view virtualizes per transaction.
-  if (shouldGroup) {
-    return (
-      <FlatList
-        data={groups}
-        keyExtractor={g => `${g.year}-${g.month}`}
-        renderItem={({ item }) => (
-          <MonthGroup group={item} isOverview={isOverview} isIncome={isIncome} onEdit={onEdit} />
-        )}
-        ListHeaderComponent={ListHeader}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 112 }}
-        showsVerticalScrollIndicator={false}
-        style={{ flex: 1 }}
-      />
-    );
-  }
-
+  // the user has ever logged, potentially spanning years with many
+  // transactions per month. SectionList virtualizes per row across
+  // sections (unlike a hand-rolled "one FlatList item = one month's full
+  // unvirtualized sub-list", which still mounts every transaction in
+  // whichever months happen to be on screen). Rounded-card look is
+  // reproduced per-row via section-relative index instead of a shared
+  // non-virtualized wrapper.
   return (
-    <FlatList
-      data={filtered}
+    <SectionList
+      sections={sections}
       keyExtractor={tx => tx.id}
-      renderItem={({ item, index }) => (
+      renderItem={({ item, index, section }) => (
         <View
           className="bg-surface px-3"
           style={{
             overflow: 'hidden',
             borderTopLeftRadius: index === 0 ? 12 : 0,
             borderTopRightRadius: index === 0 ? 12 : 0,
-            borderBottomLeftRadius: index === filtered.length - 1 ? 12 : 0,
-            borderBottomRightRadius: index === filtered.length - 1 ? 12 : 0,
+            borderBottomLeftRadius: index === section.data.length - 1 ? 12 : 0,
+            borderBottomRightRadius: index === section.data.length - 1 ? 12 : 0,
           }}
         >
-          <TransactionItem tx={item} isIncome={isIncome} onEdit={onEdit} />
+          <TransactionItem
+            tx={item}
+            isIncome={isOverview ? item.type === 'income' : isIncome}
+            onEdit={onEdit}
+          />
         </View>
       )}
+      renderSectionHeader={({ section }) =>
+        section.title ? (
+          <View className="flex-row items-center justify-between mb-2 mt-6 bg-bg">
+            <Text className="text-white/35 text-sm font-medium uppercase tracking-wider">
+              {section.title}
+            </Text>
+          </View>
+        ) : null
+      }
       ListHeaderComponent={ListHeader}
       contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 112 }}
       showsVerticalScrollIndicator={false}
       style={{ flex: 1 }}
+      stickySectionHeadersEnabled={false}
+      initialNumToRender={12}
+      maxToRenderPerBatch={10}
+      windowSize={7}
+      removeClippedSubviews
     />
   );
 }
