@@ -6,7 +6,7 @@ import { formatCurrency, budgetStatusColor } from '../utils/format';
 // (capped at maxWidth:340 in SpendCalendarModal, narrower on small screens)
 // — that's what keeps the bar fitting any device width without horizontal
 // scroll, rather than computing a device-specific segment count.
-const SEGMENT_COUNT = 42;
+const SEGMENT_COUNT = 84;
 const WRAPPER_STYLE = {
   paddingBottom: 10,
   marginBottom: 10,
@@ -43,7 +43,7 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
         <Text className="text-white/50 text-sm">{formatCurrency(spent)} / {formatCurrency(amount)}</Text>
       </View>
 
-      <View className="flex-row" style={{ gap: 2 }}>
+      <View className="flex-row" style={{ gap: 1 }}>
         {Array.from({ length: SEGMENT_COUNT }).map((_, i) => (
           <View
             key={i}
