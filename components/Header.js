@@ -4,8 +4,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { HamburgerIcon, CalendarIcon } from './icons';
 
-const BTN_W = 74; // fits "Overview" at the reduced 14px size below
-const PAD   = 1;
+const BTN_W = 88; // a hair under the original 92 — "Overview" still fits at text-base
+const PAD   = 2;
 const TABS  = ['expense', 'income', 'overview'];
 
 function ChartTabToggle({ value, onChange }) {
@@ -31,12 +31,9 @@ function ChartTabToggle({ value, onChange }) {
           key={tab}
           onPress={() => onChange(tab)}
           style={{ width: BTN_W }}
-          className="py-1 items-center"
+          className="py-[5px] items-center"
         >
-          <Text
-            className={value === tab ? 'text-white font-medium' : 'text-white/35 font-medium'}
-            style={{ fontSize: 14, letterSpacing: -0.2 }}
-          >
+          <Text className={value === tab ? 'text-white text-base font-medium' : 'text-white/35 text-base font-medium'}>
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
           </Text>
         </Pressable>

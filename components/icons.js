@@ -66,6 +66,15 @@ export function HamburgerIcon() {
   );
 }
 
+export function PlusIcon({ size = 26, color = '#ffffff' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Line x1="12" y1="3" x2="12" y2="21" stroke={color} strokeWidth="2.4" strokeLinecap="round" />
+      <Line x1="3" y1="12" x2="21" y2="12" stroke={color} strokeWidth="2.4" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 export function CalendarIcon({ size = 18 }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 18 18" fill="none">

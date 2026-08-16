@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Pressable } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../hooks/useTransactions';
@@ -11,6 +11,7 @@ import Drawer from '../../components/Drawer';
 import SpendCalendarModal from '../../components/SpendCalendarModal';
 import DailyInsightModal from '../../components/DailyInsightModal';
 import MonthlyRecapModal from '../../components/MonthlyRecapModal';
+import { PlusIcon } from '../../components/icons';
 import { currentMonthYear, monthLabel, today } from '../../utils/format';
 import { getDailyInsight } from '../../utils/insights';
 import { getMonthlyRecapSlides, hasAnyRecapData, prevMonthYear, MONTH_NAMES } from '../../utils/monthlyRecap';
@@ -189,7 +190,7 @@ export default function Dashboard() {
         className="absolute bottom-20 self-center w-20 h-20 rounded-full items-center justify-center"
         style={{ backgroundColor: 'rgba(255,255,255,0.14)', left: '50%', marginLeft: -40 }}
       >
-        <Text className="text-white text-5xl" style={{ marginTop: -4 }}>+</Text>
+        <PlusIcon size={30} />
       </Pressable>
 
       <AddModal
