@@ -71,7 +71,7 @@ export function useTransactions() {
   }, [user])
 
   const addTransaction = useCallback(async ({ type, amount, date, description }) => {
-    if (!user) return
+    if (!user) return { success: false, error: 'Not signed in' }
 
     const optimistic = {
       id:          Crypto.randomUUID(),
@@ -86,31 +86,37 @@ export function useTransactions() {
     setTransactions(prev => [optimistic, ...prev])
     hapticAdded()
 
-    const { data, error } = await supabase
-      .from('transactions')
-      .insert({
-        user_id:     user.id,
-        type,
-        amount:      parseFloat(amount),
-        date,
-        description: description.trim(),
-      })
-      .select()
-      .single()
+    try {
+      const { data, error } = await supabase
+        .from('transactions')
+        .insert({
+          user_id:     user.id,
+          type,
+          amount:      parseFloat(amount),
+          date,
+          description: description.trim(),
+        })
+        .select()
+        .single()
 
-    if (error) {
-      setTransactions(prev => prev.filter(tx => tx.id !== optimistic.id))
-    } else {
+      if (error) {
+        setTransactions(prev => prev.filter(tx => tx.id !== optimistic.id))
+        return { success: false, error: error.message }
+      }
       setTransactions(prev => {
         const updated = prev.map(tx => tx.id === optimistic.id ? fromRow(data) : tx)
         saveCache(user.id, updated)
         return updated
       })
+      return { success: true }
+    } catch (err) {
+      setTransactions(prev => prev.filter(tx => tx.id !== optimistic.id))
+      return { success: false, error: err.message || 'Network error. Please try again.' }
     }
   }, [user])
 
   const editTransaction = useCallback(async (id, { type, amount, date, description }) => {
-    if (!user) return
+    if (!user) return { success: false, error: 'Not signed in' }
 
     setTransactions(prev => {
       const updated = prev.map(tx =>
@@ -122,24 +128,30 @@ export function useTransactions() {
       return updated
     })
 
-    const { error } = await supabase
-      .from('transactions')
-      .update({ type, amount: parseFloat(amount), date, description: description.trim() })
-      .eq('id', id)
-      .eq('user_id', user.id)
-
-    if (error) {
-      const { data } = await supabase
+    try {
+      const { error } = await supabase
         .from('transactions')
-        .select('*')
+        .update({ type, amount: parseFloat(amount), date, description: description.trim() })
+        .eq('id', id)
         .eq('user_id', user.id)
-        .order('date', { ascending: false })
-        .order('created_at', { ascending: false })
-      if (data) {
-        const txs = data.map(fromRow)
-        setTransactions(txs)
-        saveCache(user.id, txs)
+
+      if (error) {
+        const { data } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('date', { ascending: false })
+          .order('created_at', { ascending: false })
+        if (data) {
+          const txs = data.map(fromRow)
+          setTransactions(txs)
+          saveCache(user.id, txs)
+        }
+        return { success: false, error: error.message }
       }
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: err.message || 'Network error. Please try again.' }
     }
   }, [user])
 

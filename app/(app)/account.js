@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, Image } from 'react-native';
 import { useRouter } from 'expo-router';
+import Animated, { useSharedValue, useAnimatedStyle, withDelay, withSequence, withTiming, Easing } from 'react-native-reanimated';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
 import { useSubscription } from '../../hooks/useSubscription';
 import { supabase } from '../../lib/supabase';
@@ -79,9 +81,9 @@ function ChangePasswordModal({ open, onClose }) {
   );
 }
 
-function ConfirmModal({ open, title, message, confirmLabel, onConfirm, onCancel }) {
+function ConfirmModal({ open, title, message, confirmLabel, onConfirm, onCancel, onClosed }) {
   return (
-    <AnimatedModal open={open} onClose={onCancel} variant="center">
+    <AnimatedModal open={open} onClose={onCancel} onClosed={onClosed} variant="center">
       <View
         className="w-full rounded-2xl p-6"
         style={{ maxWidth: 360, backgroundColor: 'rgba(20,20,20,0.98)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
@@ -101,18 +103,50 @@ function ConfirmModal({ open, title, message, confirmLabel, onConfirm, onCancel 
   );
 }
 
-function SuccessOverlay({ open, title, subtitle }) {
+const COUNTDOWN_FROM = 5;
+
+function SuccessOverlay({ open, title, redirectTo, onDone }) {
+  const [count, setCount] = useState(COUNTDOWN_FROM);
+  const scale = useSharedValue(0);
+
+  // Ticks the countdown down to 1 while the overlay is showing, then fires
+  // onDone — gives the user time to actually read the confirmation instead
+  // of the redirect happening almost instantly.
+  useEffect(() => {
+    if (!open) { setCount(COUNTDOWN_FROM); return; }
+    const t = setTimeout(() => {
+      if (count <= 1) { onDone?.(); return; }
+      setCount(c => c - 1);
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [open, count, onDone]);
+
+  // A small overshoot "pop" on the checkmark each time this opens, rather
+  // than just relying on AnimatedModal's own fade/scale-in for the whole card.
+  // Delayed slightly so it starts once the modal itself has mostly settled
+  // in (its own entrance runs ~380ms) instead of both animating at once —
+  // reads as one deliberate sequence rather than two competing motions.
+  useEffect(() => {
+    if (!open) { scale.value = 0; return; }
+    scale.value = withDelay(200, withSequence(
+      withTiming(1.12, { duration: 420, easing: Easing.out(Easing.back(1.4)) }),
+      withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) }),
+    ));
+  }, [open, scale]);
+
+  const checkStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
   return (
     <AnimatedModal open={open} onClose={() => {}} variant="center" dim={0.85} blurIntensity={10}>
       <View className="items-center">
-        <View
+        <Animated.View
           className="w-16 h-16 rounded-full items-center justify-center mb-5"
-          style={{ backgroundColor: 'rgba(74,222,128,0.12)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.3)' }}
+          style={[{ backgroundColor: 'rgba(74,222,128,0.12)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.3)' }, checkStyle]}
         >
           <CheckIcon size={28} />
-        </View>
+        </Animated.View>
         <Text className="text-white font-semibold text-base">{title}</Text>
-        <Text className="text-white/40 text-base mt-1">{subtitle}</Text>
+        <Text className="text-white/40 text-base mt-1">Redirecting to {redirectTo} page in {count}</Text>
       </View>
     </AnimatedModal>
   );
@@ -133,6 +167,14 @@ export default function AccountPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteSuccess, setDeleteSuccess] = useState(false);
   const [working, setWorking] = useState(false);
+  const [actionError, setActionError] = useState('');
+
+  // Opening SuccessOverlay before its ConfirmModal has actually finished
+  // closing means two native <Modal>s mounted at once — broken on Android
+  // (same issue fixed on the Dashboard's calendar/budget/recap flow). Stash
+  // which success state to show and let ConfirmModal's onClosed — fired only
+  // once it's truly gone — trigger it.
+  const pendingAfterConfirmClose = useRef(null); // 'erase' | 'delete' | null
 
   async function saveName() {
     if (!nameInput.trim() || nameInput.trim() === profile?.name) { setEditingName(false); return; }
@@ -144,29 +186,74 @@ export default function AccountPage() {
 
   async function handleEraseData() {
     setWorking(true);
-    await supabase.from('transactions').delete().eq('user_id', user.id);
-    setWorking(false);
-    setShowEraseConfirm(false);
-    setEraseSuccess(true);
-    setTimeout(() => { setEraseSuccess(false); router.back(); }, 1500);
+    setActionError('');
+    try {
+      const { error: txError } = await supabase.from('transactions').delete().eq('user_id', user.id);
+      if (txError) throw txError;
+      const { error: budgetError } = await supabase.from('monthly_budgets').delete().eq('user_id', user.id);
+      if (budgetError) throw budgetError;
+      // Lets the budget-setup popup fire again on the next Dashboard visit —
+      // otherwise the "already shown this month" flag would keep suppressing
+      // it even though there's no budget anymore.
+      await AsyncStorage.removeItem(`okana_budget_setup_shown_${user.id}`);
+      pendingAfterConfirmClose.current = 'erase';
+      setShowEraseConfirm(false);
+    } catch (err) {
+      setShowEraseConfirm(false);
+      setActionError(err.message || 'Something went wrong. Please try again.');
+    } finally {
+      setWorking(false);
+    }
   }
 
   async function handleDeleteAccount() {
     setWorking(true);
-    const TERMINAL = ['cancelled', 'expired', 'completed'];
-    if (subscription && !TERMINAL.includes(subscription.status)) {
-      await cancelSubscription({ immediate: true });
+    setActionError('');
+    try {
+      const TERMINAL = ['cancelled', 'expired', 'completed'];
+      if (subscription && !TERMINAL.includes(subscription.status)) {
+        await cancelSubscription({ immediate: true });
+      }
+      const { error: txError } = await supabase.from('transactions').delete().eq('user_id', user.id);
+      if (txError) throw txError;
+      // monthly_budgets has a (no-cascade) FK to auth.users — must be cleared
+      // before delete_user() or the account delete itself fails.
+      const { error: budgetError } = await supabase.from('monthly_budgets').delete().eq('user_id', user.id);
+      if (budgetError) throw budgetError;
+      const { error: rpcError } = await supabase.rpc('delete_user');
+      if (rpcError) throw rpcError;
+      pendingAfterConfirmClose.current = 'delete';
+      setShowDeleteConfirm(false);
+    } catch (err) {
+      setShowDeleteConfirm(false);
+      setActionError(err.message || 'Something went wrong. Please try again.');
+    } finally {
+      setWorking(false);
     }
-    await supabase.from('transactions').delete().eq('user_id', user.id);
-    await supabase.rpc('delete_user');
-    setWorking(false);
-    setShowDeleteConfirm(false);
-    setDeleteSuccess(true);
-    setTimeout(async () => {
-      await logout();
-      router.replace('/(auth)/login');
-    }, 1800);
   }
+
+  const handleEraseConfirmClosed = useCallback(() => {
+    if (pendingAfterConfirmClose.current !== 'erase') return;
+    pendingAfterConfirmClose.current = null;
+    setEraseSuccess(true);
+  }, []);
+
+  const handleDeleteConfirmClosed = useCallback(() => {
+    if (pendingAfterConfirmClose.current !== 'delete') return;
+    pendingAfterConfirmClose.current = null;
+    setDeleteSuccess(true);
+  }, []);
+
+  const handleEraseDone = useCallback(() => {
+    setEraseSuccess(false);
+    router.back();
+  }, [router]);
+
+  const handleDeleteDone = useCallback(async () => {
+    setDeleteSuccess(false);
+    await logout();
+    router.replace('/(auth)/login');
+  }, [router, logout]);
 
   const initials = (profile?.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
@@ -245,7 +332,7 @@ export default function AccountPage() {
           </View>
         </View>
 
-        <View className="mx-4 mt-4 mb-8 rounded-2xl overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' }}>
+        <View className="mx-4 mt-4 rounded-2xl overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' }}>
           <Pressable onPress={() => setShowEraseConfirm(true)} className="flex-row items-center justify-between px-4 py-4">
             <Text className="text-red-400 text-base">Erase Data</Text>
             <ChevronRight />
@@ -256,6 +343,11 @@ export default function AccountPage() {
             <ChevronRight />
           </Pressable>
         </View>
+
+        {!!actionError && (
+          <Text className="text-red-400 text-base text-center mx-4 mt-3 mb-8">{actionError}</Text>
+        )}
+        {!actionError && <View className="mb-8" />}
       </ScrollView>
 
       <ChangePasswordModal open={showPwModal} onClose={() => setShowPwModal(false)} />
@@ -267,6 +359,7 @@ export default function AccountPage() {
         confirmLabel={working ? 'Erasing…' : 'Erase Data'}
         onConfirm={handleEraseData}
         onCancel={() => setShowEraseConfirm(false)}
+        onClosed={handleEraseConfirmClosed}
       />
 
       <ConfirmModal
@@ -276,10 +369,11 @@ export default function AccountPage() {
         confirmLabel={working ? 'Deleting…' : 'Delete Account'}
         onConfirm={handleDeleteAccount}
         onCancel={() => setShowDeleteConfirm(false)}
+        onClosed={handleDeleteConfirmClosed}
       />
 
-      <SuccessOverlay open={eraseSuccess} title="Data erased" subtitle="Redirecting…" />
-      <SuccessOverlay open={deleteSuccess} title="Account deleted" subtitle="Redirecting…" />
+      <SuccessOverlay open={eraseSuccess} title="Data erased" redirectTo="Home" onDone={handleEraseDone} />
+      <SuccessOverlay open={deleteSuccess} title="Account deleted" redirectTo="Login" onDone={handleDeleteDone} />
     </View>
   );
 }

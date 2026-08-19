@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Pressable } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, Pressable } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../hooks/useTransactions';
 import { useBudget } from '../../hooks/useBudget';
+import { useSubscription } from '../../hooks/useSubscription';
+import { getSubscriptionDisplayStatus, getPendingSubscriptionPopup, PRICE_PER_YEAR } from '../../utils/trial';
 import Header from '../../components/Header';
 import SummaryCard from '../../components/SummaryCard';
 import TransactionList from '../../components/TransactionList';
@@ -13,15 +17,61 @@ import SpendCalendarModal from '../../components/SpendCalendarModal';
 import DailyInsightModal from '../../components/DailyInsightModal';
 import MonthlyRecapModal from '../../components/MonthlyRecapModal';
 import BudgetSetupModal from '../../components/BudgetSetupModal';
+import { AnimatedModal } from '../../components/AnimatedModal';
 import { PlusIcon } from '../../components/icons';
 import { currentMonthYear, monthLabel, today } from '../../utils/format';
 import { getDailyInsight } from '../../utils/insights';
 import { getMonthlyRecapSlides, hasAnyRecapData, prevMonthYear, MONTH_NAMES } from '../../utils/monthlyRecap';
 
+// Mirrors the web app's App.jsx — same copy, same keys.
+const SINGLE_CTA_POPUPS = {
+  'trial-tomorrow': {
+    emoji: '⏳',
+    headline: 'Your Okana Plus trial ends tomorrow',
+    message: `Your saved payment method will be charged ₹${PRICE_PER_YEAR} for the annual plan after your trial ends.`,
+    cta: 'Continue with Okana Plus',
+  },
+  'success': {
+    emoji: '🎉',
+    headline: "You're now subscribed to Okana Plus",
+    message: 'Your annual subscription has started successfully.',
+    cta: 'Continue Tracking',
+  },
+};
+
+const DOUBLE_CTA_POPUPS = {
+  'trial-ended': {
+    emoji: '⏳',
+    headline: 'Your free trial ends today',
+    message: 'Okana Plus features will no longer be available after today. Subscribe to keep unlimited access.',
+  },
+  'payment-failed': {
+    emoji: '⚠️',
+    headline: 'Payment failed',
+    message: "We couldn't process your Okana Plus payment. Please update your payment method to continue accessing Plus features.",
+  },
+  'sub-ended': {
+    emoji: '👋',
+    headline: 'Your Okana Plus subscription has ended',
+    message: "You're now using Okana Free and no longer have access to Plus-only features.",
+  },
+};
+
 export default function Dashboard() {
+  const router = useRouter();
   const { user } = useAuth();
-  const { transactions, loading: txLoading, addTransaction, editTransaction, deleteTransaction } = useTransactions();
+  const { transactions, loading: txLoading, addTransaction, editTransaction, deleteTransaction, refresh: refreshTransactions } = useTransactions();
   const budget = useBudget(user, transactions);
+  const { subscription, loading: subLoading } = useSubscription(user);
+  const trialInfo = useMemo(() => getSubscriptionDisplayStatus(subscription, today()), [subscription]);
+
+  // Erase Data / other changes made from Account (a separate stacked screen)
+  // update Supabase directly without touching this screen's own useTransactions/
+  // useBudget state — refetch both whenever Dashboard regains focus so
+  // returning here reflects them instead of showing stale, pre-erase data.
+  useFocusEffect(
+    useCallback(() => { refreshTransactions(); budget.refresh(); }, [refreshTransactions, budget.refresh])
+  );
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -50,12 +100,28 @@ export default function Dashboard() {
   const [budgetSetupPending, setBudgetSetupPending] = useState(false);
   const [dailyPopupsResolved, setDailyPopupsResolved] = useState(false);
 
+  const [proRequired, setProRequired] = useState(false);
+  const [pendingSubPopup, setPendingSubPopup] = useState(null);
+  const [activeSubPopup, setActiveSubPopup] = useState(null);
+
+  // Tracks whether AddModal's own native <Modal> has actually finished
+  // closing (not just whether `modalOpen` is false) — see addModalClosed
+  // usage below for why this matters.
+  const [addModalClosed, setAddModalClosed] = useState(true);
+
   // Mirrors web App.jsx's popup-trigger effect, rewritten against
   // AsyncStorage (async) instead of localStorage (sync). Recap takes
   // priority over the daily insight on the first open after a month
   // rollover; otherwise the daily insight shows once per day.
+  //
+  // Deliberately does NOT require transactions.length > 0 — hasAnyRecapData/
+  // getDailyInsight both handle an empty array fine (nothing to show), and
+  // gating on it left dailyPopupsResolved permanently false for a brand-new
+  // user, which in turn blocked the budget-setup popup from ever opening
+  // until their first transaction — colliding with AddModal closing right
+  // at that exact moment (the "stuck after adding first transaction" bug).
   useEffect(() => {
-    if (!user || !transactions.length || txLoading) return;
+    if (!user || txLoading || !addModalClosed) return;
     let cancelled = false;
 
     (async () => {
@@ -96,18 +162,30 @@ export default function Dashboard() {
         setRecapMonthName(MONTH_NAMES[prev.month]);
         setRecapAvailable(true);
         setRecapSeen(false);
+        // A short buffer before presenting this modal — this effect can fire
+        // in the same tick as AddModal closing (adding a transaction changes
+        // `transactions`, which is this effect's own dependency), and two
+        // native RN <Modal>s open at once is a known broken state on Android
+        // (see the note in SpendCalendarModal.js). Let whatever's closing
+        // actually finish first.
+        await new Promise(r => setTimeout(r, 320));
+        if (cancelled) return;
         setRecapOpen(true);
         setDailyPopupsResolved(true);
         return;
       }
 
       const insight = getDailyInsight(transactions, todayStr);
-      if (insight && !cancelled) setDailyInsight(insight);
+      if (insight) {
+        await new Promise(r => setTimeout(r, 320));
+        if (cancelled) return;
+        setDailyInsight(insight);
+      }
       if (!cancelled) setDailyPopupsResolved(true);
     })();
 
     return () => { cancelled = true; };
-  }, [user, transactions, txLoading]);
+  }, [user, transactions, txLoading, addModalClosed]);
 
   // Budget setup popup: due on the first app-open of a month with no budget
   // set yet. Kept as its OWN effect rather than folded into the once-a-day
@@ -133,11 +211,51 @@ export default function Dashboard() {
 
   // Only actually opens once today's recap/insight decision has resolved
   // (and neither is currently showing) — never ahead of or instead of them.
+  // Same simultaneous-Modal concern as above — staggered behind a short delay.
   useEffect(() => {
-    if (budgetSetupPending && dailyPopupsResolved && !recapOpen && !dailyInsight) {
-      setBudgetSetupOpen(true);
-    }
-  }, [budgetSetupPending, dailyPopupsResolved, recapOpen, dailyInsight]);
+    if (!(budgetSetupPending && dailyPopupsResolved && !recapOpen && !dailyInsight && addModalClosed)) return;
+    let cancelled = false;
+    const t = setTimeout(() => { if (!cancelled) setBudgetSetupOpen(true); }, 320);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [budgetSetupPending, dailyPopupsResolved, recapOpen, dailyInsight, addModalClosed]);
+
+  // Subscription lifecycle notices (trial ending tomorrow, payment failed,
+  // subscription started/ended) — mirrors web App.jsx's equivalent effect.
+  // Flags one as due independent of the daily-shown-key chain above, since
+  // these are once-per-event notices (see getPendingSubscriptionPopup), not
+  // once-per-day ones.
+  useEffect(() => {
+    if (!user || subLoading) return;
+    let cancelled = false;
+    (async () => {
+      const pending = getPendingSubscriptionPopup(subscription, trialInfo, user.id);
+      if (!pending) return;
+      const seen = await AsyncStorage.getItem(pending.key);
+      if (cancelled || seen === '1') return;
+      setPendingSubPopup(pending);
+    })();
+    return () => { cancelled = true; };
+  }, [user, subLoading, subscription, trialInfo.status, trialInfo.paymentFailed, trialInfo.daysLeft, trialInfo.cancelAtPeriodEnd, trialInfo.everBilled]);
+
+  // Only actually shows once today's spending summary / recap / budget
+  // prompt (if any) has resolved — spending data always comes first.
+  // Staggered behind the same short delay for the same simultaneous-Modal
+  // reason as the effects above.
+  useEffect(() => {
+    if (!pendingSubPopup) return;
+    if (!dailyPopupsResolved || recapOpen || dailyInsight || budgetSetupOpen || !addModalClosed) return;
+    let cancelled = false;
+    (async () => {
+      const seen = await AsyncStorage.getItem(pendingSubPopup.key);
+      if (seen === '1') { if (!cancelled) setPendingSubPopup(null); return; }
+      await AsyncStorage.setItem(pendingSubPopup.key, '1');
+      await new Promise(r => setTimeout(r, 320));
+      if (cancelled) return;
+      setActiveSubPopup(pendingSubPopup.type);
+      setPendingSubPopup(null);
+    })();
+    return () => { cancelled = true; };
+  }, [pendingSubPopup, dailyPopupsResolved, recapOpen, dailyInsight, budgetSetupOpen, addModalClosed]);
 
   const closeRecap = useCallback(async () => {
     setRecapOpen(false);
@@ -147,9 +265,23 @@ export default function Dashboard() {
     setRecapSeen(true);
   }, [user]);
 
+  // Opening a second native Modal before SpendCalendarModal's own close
+  // animation has actually finished is broken on Android (see the note in
+  // SpendCalendarModal.js) — rather than guess a delay long enough to cover
+  // it, stash what should open next and let SpendCalendarModal's onClosed
+  // (fired only once it's truly gone) trigger it.
+  const pendingAfterCalendarClose = useRef(null); // 'recap' | 'budget' | null
+
   const openRecapFromCalendar = useCallback(() => {
+    pendingAfterCalendarClose.current = 'recap';
     setCalendarOpen(false);
-    setRecapOpen(true);
+  }, []);
+
+  const handleCalendarClosed = useCallback(() => {
+    const pending = pendingAfterCalendarClose.current;
+    pendingAfterCalendarClose.current = null;
+    if (pending === 'recap') setRecapOpen(true);
+    else if (pending === 'budget') setBudgetSetupOpen(true);
   }, []);
 
   // Memoized — SpendCalendarModal is always mounted (unlike Drawer, which
@@ -171,9 +303,10 @@ export default function Dashboard() {
     await AsyncStorage.setItem(`okana_budget_setup_shown_${user.id}`, monthId);
   }, [user]);
 
+  // Same deferred-open reasoning as openRecapFromCalendar above.
   const openBudgetSetupFromCalendar = useCallback(() => {
+    pendingAfterCalendarClose.current = 'budget';
     setCalendarOpen(false);
-    setBudgetSetupOpen(true);
   }, []);
 
   const budgetForCalendar = useMemo(() => ({
@@ -195,11 +328,26 @@ export default function Dashboard() {
   }, [currYear, currMonth]);
 
   const openAdd = useCallback(() => {
+    if (trialInfo.status === 'expired') { setProRequired(true); return; }
+    setAddModalClosed(false);
     setEditData(null);
     setModalOpen(true);
-  }, []);
+  }, [trialInfo.status]);
+
+  const closeProRequired = useCallback(() => setProRequired(false), []);
+  const subscribeFromProRequired = useCallback(() => {
+    setProRequired(false);
+    router.push('/(app)/subscription');
+  }, [router]);
+
+  const closeActiveSubPopup = useCallback(() => setActiveSubPopup(null), []);
+  const subscribeFromPopup = useCallback(() => {
+    setActiveSubPopup(null);
+    router.push('/(app)/subscription');
+  }, [router]);
 
   const openEdit = useCallback((tx) => {
+    setAddModalClosed(false);
     setEditData(tx);
     setModalOpen(true);
   }, []);
@@ -216,6 +364,7 @@ export default function Dashboard() {
   const openCalendar = useCallback(() => setCalendarOpen(true), []);
   const closeCalendar = useCallback(() => setCalendarOpen(false), []);
   const closeAddModal = useCallback(() => setModalOpen(false), []);
+  const handleAddModalClosed = useCallback(() => setAddModalClosed(true), []);
   const closeDailyInsight = useCallback(() => setDailyInsight(null), []);
 
   return (
@@ -264,6 +413,7 @@ export default function Dashboard() {
       <AddModal
         open={modalOpen}
         onClose={closeAddModal}
+        onClosed={handleAddModalClosed}
         onAdd={addTransaction}
         onEdit={editTransaction}
         onDelete={deleteTransaction}
@@ -273,6 +423,7 @@ export default function Dashboard() {
       <SpendCalendarModal
         open={calendarOpen}
         onClose={closeCalendar}
+        onClosed={handleCalendarClosed}
         transactions={transactions}
         recap={recapForCalendar}
         budget={budgetForCalendar}
@@ -290,6 +441,64 @@ export default function Dashboard() {
       />
 
       <BudgetSetupModal open={budgetSetupOpen} onClose={closeBudgetSetup} onSubmit={budget.setBudget} />
+
+      <AnimatedModal open={proRequired} onClose={closeProRequired} variant="center">
+        <View
+          className="w-full rounded-2xl p-6 items-center"
+          style={{ maxWidth: 360, backgroundColor: 'rgba(20,20,20,0.98)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
+        >
+          <Text style={{ fontSize: 30 }} className="mb-3">🔒</Text>
+          <Text className="text-white font-semibold text-base mb-2 text-center">Pro subscription required</Text>
+          <Text className="text-white/45 text-base text-center mb-6" style={{ lineHeight: 22 }}>
+            Your subscription has ended. You can still view everything — subscribe to Okana Plus to keep adding new transactions.
+          </Text>
+          <View className="flex-row w-full" style={{ gap: 12 }}>
+            <Pressable onPress={closeProRequired} className="flex-1 py-[11px] rounded-xl items-center" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
+              <Text className="text-white/60 text-base font-medium">Not now</Text>
+            </Pressable>
+            <Pressable onPress={subscribeFromProRequired} className="flex-1 py-[11px] rounded-xl items-center" style={{ backgroundColor: 'rgba(74,222,128,0.25)' }}>
+              <Text className="text-base font-semibold" style={{ color: '#4ade80' }}>Subscribe Now</Text>
+            </Pressable>
+          </View>
+        </View>
+      </AnimatedModal>
+
+      <AnimatedModal open={!!(activeSubPopup && SINGLE_CTA_POPUPS[activeSubPopup])} onClose={closeActiveSubPopup} variant="center">
+        {activeSubPopup && SINGLE_CTA_POPUPS[activeSubPopup] && (
+          <View
+            className="w-full rounded-2xl p-6 items-center"
+            style={{ maxWidth: 360, backgroundColor: 'rgba(20,20,20,0.98)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
+          >
+            <Text style={{ fontSize: 30 }} className="mb-3">{SINGLE_CTA_POPUPS[activeSubPopup].emoji}</Text>
+            <Text className="text-white font-semibold text-base mb-2 text-center">{SINGLE_CTA_POPUPS[activeSubPopup].headline}</Text>
+            <Text className="text-white/45 text-base text-center mb-6" style={{ lineHeight: 22 }}>{SINGLE_CTA_POPUPS[activeSubPopup].message}</Text>
+            <Pressable onPress={closeActiveSubPopup} className="w-full py-[13px] rounded-2xl items-center" style={{ backgroundColor: 'rgba(74,222,128,0.25)' }}>
+              <Text className="text-base font-semibold" style={{ color: '#4ade80' }}>{SINGLE_CTA_POPUPS[activeSubPopup].cta}</Text>
+            </Pressable>
+          </View>
+        )}
+      </AnimatedModal>
+
+      <AnimatedModal open={!!(activeSubPopup && DOUBLE_CTA_POPUPS[activeSubPopup])} onClose={closeActiveSubPopup} variant="center">
+        {activeSubPopup && DOUBLE_CTA_POPUPS[activeSubPopup] && (
+          <View
+            className="w-full rounded-2xl p-6 items-center"
+            style={{ maxWidth: 360, backgroundColor: 'rgba(20,20,20,0.98)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
+          >
+            <Text style={{ fontSize: 30 }} className="mb-3">{DOUBLE_CTA_POPUPS[activeSubPopup].emoji}</Text>
+            <Text className="text-white font-semibold text-base mb-2 text-center">{DOUBLE_CTA_POPUPS[activeSubPopup].headline}</Text>
+            <Text className="text-white/45 text-base text-center mb-6" style={{ lineHeight: 22 }}>{DOUBLE_CTA_POPUPS[activeSubPopup].message}</Text>
+            <View className="flex-row w-full" style={{ gap: 12 }}>
+              <Pressable onPress={closeActiveSubPopup} className="flex-1 py-[11px] rounded-xl items-center" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
+                <Text className="text-white/60 text-base font-medium">Not now</Text>
+              </Pressable>
+              <Pressable onPress={subscribeFromPopup} className="flex-1 py-[11px] rounded-xl items-center" style={{ backgroundColor: 'rgba(74,222,128,0.25)' }}>
+                <Text className="text-base font-semibold" style={{ color: '#4ade80' }}>Subscribe Now</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+      </AnimatedModal>
     </View>
   );
 }

@@ -19,7 +19,7 @@ import BudgetStatusBar from './BudgetStatusBar';
 const BLUR_METHOD = Platform.OS === 'android' ? 'dimezisBlurView' : undefined;
 const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 
-const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // Monday-first
 
 // Hand-rolled (rather than reusing AnimatedModal twice) because the day
 // sheet and the calendar card need to live in the SAME native Modal.
@@ -27,7 +27,7 @@ const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 // correctly in the web preview (react-native-web fakes Modal with plain
 // fixed-position divs) — on a real iOS/Android device the second Modal
 // never rendered, so the day sheet silently did nothing.
-function SpendCalendarModal({ open, onClose, transactions, recap, budget }) {
+function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budget }) {
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const now = new Date();
@@ -53,7 +53,15 @@ function SpendCalendarModal({ open, onClose, transactions, recap, budget }) {
       cardProgress.value = withTiming(
         0,
         { duration: 220, easing: Easing.in(Easing.cubic) },
-        finished => { if (finished) runOnJS(setModalVisible)(false); },
+        finished => {
+          if (!finished) return;
+          runOnJS(setModalVisible)(false);
+          // Signals the native <Modal> is actually gone — callers use this
+          // (rather than a guessed timeout) to know it's safe to present a
+          // different Modal without two being mounted at once, which is
+          // broken on Android (see the file-level note above).
+          if (onClosed) runOnJS(onClosed)();
+        },
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -86,7 +94,10 @@ function SpendCalendarModal({ open, onClose, transactions, recap, budget }) {
 
   const year = view.getFullYear();
   const month = view.getMonth();
-  const firstDay = new Date(year, month, 1).getDay();
+  // getDay() is Sunday-indexed (0-6) — remap so Monday is column 0, matching
+  // the Monday-first DAYS header below.
+  const rawFirstDay = new Date(year, month, 1).getDay();
+  const firstDay = rawFirstDay === 0 ? 6 : rawFirstDay - 1;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const todayStr = today();
 

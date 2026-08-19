@@ -147,11 +147,14 @@ export function getDailyTotals(transactions, month, year) {
 
 // Yearly data from first transaction year to now (All Time)
 export function getLifetimeYearly(transactions) {
-  if (!transactions.length) return { income: [], expense: [], labels: [], years: [] }
   const currYear = new Date().getFullYear()
+  // A new account (or one with only this year's data) has just one year of
+  // history — LineChart needs at least 2 points to draw a line, so the
+  // range always spans at least currYear-1..currYear, padded with zeros.
+  if (!transactions.length) return { income: [0, 0], expense: [0, 0], labels: [String(currYear - 1), String(currYear)], years: [currYear - 1, currYear] }
   const earliest = transactions.reduce((min, tx) => {
     const y = new Date(tx.date).getFullYear(); return y < min ? y : min
-  }, currYear)
+  }, currYear - 1)
   const years   = Array.from({ length: currYear - earliest + 1 }, (_, i) => earliest + i)
   const income  = new Array(years.length).fill(0)
   const expense = new Array(years.length).fill(0)

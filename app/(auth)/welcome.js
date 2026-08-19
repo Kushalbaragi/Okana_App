@@ -68,25 +68,22 @@ export default function WelcomeScreen() {
         >
           <Text style={{ fontSize: 24 }}>✨</Text>
         </View>
-        <Text className="text-white text-xl font-semibold text-center mb-2">Start your 30-day free trial</Text>
+        <Text className="text-white text-xl font-semibold text-center mb-2">Your 30-day free trial is active</Text>
         <Text className="text-white/40 text-base text-center mb-8" style={{ lineHeight: 22 }}>
-          Full access to Okana Plus, free for 30 days. Native in-app purchases are coming soon — for now,
-          subscribing is available on the web at the same ₹{PRICE_PER_YEAR}/year price.
+          Full access to Okana Plus, on us, for 30 days — no card needed. Subscribing afterwards is available
+          on the web at ₹{PRICE_PER_YEAR}/year; native in-app purchases are coming soon.
         </Text>
 
         <View className="mb-8 self-center" style={{ gap: 10 }}>
           {FEATURES.map(f => <Feature key={f}>{f}</Feature>)}
         </View>
 
-        <View
-          className="w-full py-[14px] rounded-2xl items-center mb-3"
-          style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+        <Pressable
+          onPress={finish}
+          className="w-full py-[14px] rounded-2xl items-center"
+          style={{ backgroundColor: 'rgba(255,255,255,0.14)' }}
         >
-          <Text className="text-base font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>Coming soon</Text>
-        </View>
-
-        <Pressable onPress={finish}>
-          <Text className="text-white/40 text-base text-center">Skip for now</Text>
+          <Text className="text-white text-base font-semibold">Start Tracking</Text>
         </Pressable>
       </View>
     </View>

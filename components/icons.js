@@ -10,9 +10,12 @@ export function Spinner({ size = 16 }) {
 }
 
 export function CheckIcon({ size = 36, color = '#4ade80' }) {
+  // Centered on the path's own bounding box (10.5,12.5)-(25.5,23.5), not just
+  // the viewBox — the original points left it visibly off-center inside any
+  // circular badge wrapping it.
   return (
     <Svg width={size} height={size} viewBox="0 0 36 36" fill="none">
-      <Path d="M8 18l5 5 10-11" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M10.5 18.5L15.5 23.5L25.5 12.5" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }

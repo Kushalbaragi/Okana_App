@@ -1,8 +1,6 @@
 import { memo, useEffect } from 'react';
-import Svg, { Defs, LinearGradient, Stop, ClipPath, Rect, Path, Circle, Line, Text as SvgText, G } from 'react-native-svg';
-import Animated, { useSharedValue, useAnimatedProps, withTiming, Easing } from 'react-native-reanimated';
-
-const AnimatedRect = Animated.createAnimatedComponent(Rect);
+import Svg, { Defs, LinearGradient, Stop, Path, Circle, Line, Text as SvgText, G } from 'react-native-svg';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 
 const CHART_W = 300;
 const CHART_H = 72;
@@ -60,54 +58,57 @@ function LineChart({ incomeData, expenseData, labels, animKey }) {
   const expenseArea = areaPath(expensePts, bottom);
 
   const showLabel = i => n <= 7 || i % 2 === 0 || i === n - 1;
-  const clipWidth = CHART_W + 10;
 
-  const clipAnimatedProps = useAnimatedProps(() => ({
-    width: clipWidth * progress.value,
-  }));
+  // A plain opacity fade on the whole chart, driven by a normal Animated.View
+  // wrapper — swapped in for a previous clip-path reveal (AnimatedRect +
+  // useAnimatedProps driving an SVG clip width) that silently never painted
+  // on Android: the lines/areas stayed permanently clipped to zero width
+  // while the (unclipped) axis labels rendered fine, so the chart looked
+  // entirely empty. Opacity via Animated.View is a well-supported cross-
+  // platform primitive with no such failure mode.
+  const fadeStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
 
   return (
-    <Svg viewBox={`0 0 ${CHART_W} ${svgH}`} style={{ width: '100%', aspectRatio: CHART_W / svgH }}>
-      <Defs>
-        <LinearGradient id="ig" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0%"   stopColor="#4ade80" stopOpacity="0.16" />
-          <Stop offset="100%" stopColor="#4ade80" stopOpacity="0" />
-        </LinearGradient>
-        <LinearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0%"   stopColor="#f87171" stopOpacity="0.13" />
-          <Stop offset="100%" stopColor="#f87171" stopOpacity="0" />
-        </LinearGradient>
-        <ClipPath id="lineChartClip">
-          <AnimatedRect x={-2} y={-20} height={svgH + 30} animatedProps={clipAnimatedProps} />
-        </ClipPath>
-      </Defs>
+    <Animated.View style={fadeStyle}>
+      <Svg viewBox={`0 0 ${CHART_W} ${svgH}`} style={{ width: '100%', aspectRatio: CHART_W / svgH }}>
+        <Defs>
+          <LinearGradient id="ig" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%"   stopColor="#4ade80" stopOpacity="0.16" />
+            <Stop offset="100%" stopColor="#4ade80" stopOpacity="0" />
+          </LinearGradient>
+          <LinearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%"   stopColor="#f87171" stopOpacity="0.13" />
+            <Stop offset="100%" stopColor="#f87171" stopOpacity="0" />
+          </LinearGradient>
+        </Defs>
 
-      <G clipPath="url(#lineChartClip)">
-        <Path d={incomeArea}  fill="url(#ig)" />
-        <Path d={expenseArea} fill="url(#eg)" />
+        <G>
+          <Path d={incomeArea}  fill="url(#ig)" />
+          <Path d={expenseArea} fill="url(#eg)" />
 
-        <Path d={expenseLine} stroke="rgba(248,113,113,0.65)" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        <Path d={incomeLine}  stroke="rgba(74,222,128,0.75)"  strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          <Path d={expenseLine} stroke="rgba(248,113,113,0.65)" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          <Path d={incomeLine}  stroke="rgba(74,222,128,0.75)"  strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
-        <Circle cx={incomePts[n - 1].x}  cy={incomePts[n - 1].y}  r="2.5" fill="#4ade80" />
-        <Circle cx={expensePts[n - 1].x} cy={expensePts[n - 1].y} r="2.5" fill="#f87171" />
-      </G>
+          <Circle cx={incomePts[n - 1].x}  cy={incomePts[n - 1].y}  r="2.5" fill="#4ade80" />
+          <Circle cx={expensePts[n - 1].x} cy={expensePts[n - 1].y} r="2.5" fill="#f87171" />
+        </G>
 
-      <Line x1={0} y1={bottom} x2={CHART_W} y2={bottom} stroke="rgba(255,255,255,0.18)" strokeWidth="1" strokeDasharray="2 3" />
+        <Line x1={0} y1={bottom} x2={CHART_W} y2={bottom} stroke="rgba(255,255,255,0.18)" strokeWidth="1" strokeDasharray="2 3" />
 
-      {labels.map((lbl, i) => showLabel(i) && lbl && (
-        <SvgText
-          key={i}
-          x={i * stepX}
-          y={svgH - 2}
-          textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}
-          fontSize="8.5"
-          fill="rgba(255,255,255,0.22)"
-        >
-          {lbl}
-        </SvgText>
-      ))}
-    </Svg>
+        {labels.map((lbl, i) => showLabel(i) && lbl && (
+          <SvgText
+            key={i}
+            x={i * stepX}
+            y={svgH - 2}
+            textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}
+            fontSize="8.5"
+            fill="rgba(255,255,255,0.22)"
+          >
+            {lbl}
+          </SvgText>
+        ))}
+      </Svg>
+    </Animated.View>
   );
 }
 

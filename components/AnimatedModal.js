@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Modal, View, Pressable, StyleSheet, useWindowDimensions, Platform } from 'react-native';
+import { Modal, View, Pressable, StyleSheet, useWindowDimensions, Platform, Keyboard } from 'react-native';
 import { BlurView } from 'expo-blur';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
 
@@ -11,11 +11,38 @@ const BLUR_METHOD = Platform.OS === 'android' ? 'dimezisBlurView' : undefined;
 // a backdrop) — this drives backdrop opacity and content transform
 // independently with Reanimated instead, and keeps the Modal mounted
 // through the close animation so it can actually play.
-export function AnimatedModal({ open, onClose, variant = 'bottom', blurIntensity = 30, dim = 0.5, children }) {
+export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', blurIntensity = 30, dim = 0.5, children }) {
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const [visible, setVisible] = useState(open);
   const backdropOpacity = useSharedValue(0);
   const progress = useSharedValue(0); // 0 closed → 1 open
+
+  // Tracked manually (not via KeyboardAvoidingView) — React state naturally
+  // ignores a setState call with the same value, which is exactly the
+  // protection needed here: moving focus between two TextInputs fires a
+  // fresh keyboardWillShow even though the keyboard's height hasn't
+  // actually changed, and KeyboardAvoidingView's own internal animation was
+  // visibly re-triggering on every one of those, producing a jump each time
+  // focus moved. Same pattern already used in AddModal.js.
+  //
+  // The plain state value alone isn't enough though — mixed straight into an
+  // animated style array, a change to it applies instantly on React's next
+  // render instead of interpolating, so the content would still visibly
+  // snap the moment the keyboard height genuinely changes (open vs close).
+  // Animating a shared value toward it gets both: deduped triggers AND a
+  // smooth transition.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const keyboardOffset = useSharedValue(0);
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, e => setKeyboardHeight(e.endCoordinates.height));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+  useEffect(() => {
+    keyboardOffset.value = withTiming(keyboardHeight, { duration: 250, easing: Easing.out(Easing.cubic) });
+  }, [keyboardHeight, keyboardOffset]);
 
   useEffect(() => {
     if (open) {
@@ -27,7 +54,15 @@ export function AnimatedModal({ open, onClose, variant = 'bottom', blurIntensity
       progress.value = withTiming(
         0,
         { duration: 220, easing: Easing.in(Easing.cubic) },
-        finished => { if (finished) runOnJS(setVisible)(false); },
+        finished => {
+          if (!finished) return;
+          runOnJS(setVisible)(false);
+          // Fires only once the native <Modal> is actually gone — callers
+          // that need to present a different Modal right after this one
+          // closes should wait for this instead of guessing a delay. Two
+          // native Modals mounted at once is broken on Android.
+          if (onClosed) runOnJS(onClosed)();
+        },
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -36,7 +71,10 @@ export function AnimatedModal({ open, onClose, variant = 'bottom', blurIntensity
   const backdropStyle = useAnimatedStyle(() => ({ opacity: backdropOpacity.value }));
   const contentStyle = useAnimatedStyle(() => {
     if (variant === 'bottom') {
-      return { transform: [{ translateY: (1 - progress.value) * windowHeight }] };
+      // Folds the open/close slide and the keyboard-follow offset into one
+      // transform — when open (progress=1) this is just -keyboardOffset;
+      // while closed it's still safely off-screen regardless of keyboard state.
+      return { transform: [{ translateY: (1 - progress.value) * windowHeight - keyboardOffset.value }] };
     }
     // Scale + a settle-in translateY (instead of scale alone) — matches the
     // "digit-up"/ease-out-expo reveal feel used elsewhere in the web app
@@ -49,6 +87,7 @@ export function AnimatedModal({ open, onClose, variant = 'bottom', blurIntensity
       ],
     };
   });
+  const centerAreaStyle = useAnimatedStyle(() => ({ paddingBottom: keyboardOffset.value }));
 
   if (!visible) return null;
 
@@ -63,8 +102,12 @@ export function AnimatedModal({ open, onClose, variant = 'bottom', blurIntensity
         </Pressable>
 
         {variant === 'center' ? (
-          <View
-            style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }]}
+          // Animated paddingBottom shrinks the area this centers within once
+          // the keyboard is up, so a focused TextInput inside `children`
+          // doesn't end up covered by it — interpolated via keyboardOffset
+          // rather than snapping straight to the raw keyboard height.
+          <Animated.View
+            style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }, centerAreaStyle]}
             pointerEvents="box-none"
           >
             <Animated.View style={contentStyle} pointerEvents="auto">
@@ -80,8 +123,10 @@ export function AnimatedModal({ open, onClose, variant = 'bottom', blurIntensity
                 {children}
               </View>
             </Animated.View>
-          </View>
+          </Animated.View>
         ) : (
+          // The keyboard-follow offset is folded into contentStyle's own
+          // transform above — this stays pinned to the true bottom edge.
           <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0 }, contentStyle]}>
             {children}
           </Animated.View>

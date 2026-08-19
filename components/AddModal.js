@@ -1,5 +1,5 @@
 import { memo, useCallback, useState, useEffect, useRef } from 'react';
-import { Modal, View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
+import { Modal, View, Text, TextInput, Pressable, KeyboardAvoidingView, Keyboard, Platform, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
@@ -26,22 +26,50 @@ function CalIcon() {
   );
 }
 
-function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
+function AddModal({ open, onClose, onClosed, onAdd, onEdit, onDelete, editData }) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
+
+  // Tracked so sheetMaxHeight below can shrink to fit above the keyboard.
+  // Without this, the card kept its full static height while
+  // KeyboardAvoidingView's own bottom padding pushed it up — the padding and
+  // the stale, too-large maxHeight fought each other, squeezing the footer
+  // button down toward (or under) the keyboard instead of sitting cleanly
+  // above it.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, e => setKeyboardHeight(e.endCoordinates.height));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+
   // A concrete pixel cap, not a percentage string — percentage heights are
   // ambiguous in RN's layout engine once nested inside flex + ScrollView
   // (resolves fine in the web preview's browser-based layout, but silently
   // collapses content on real native devices). This was the root cause of
   // the Description field/submit button rendering squished on-device.
-  const sheetMaxHeight = Math.round(windowHeight * 0.85);
+  const sheetMaxHeight = Math.round(
+    keyboardHeight > 0
+      ? windowHeight - keyboardHeight - insets.top - 16
+      : windowHeight * 0.85
+  );
+  // Room reserved below the ScrollView for the fixed footer (button(s) +
+  // its own top padding) plus the GlassView's bottom safe-area padding —
+  // too tight a reserve here let the footer get squeezed toward/under the
+  // keyboard on the shortest (keyboard-open) sheet sizes.
+  const footerReserve = 150 + insets.bottom;
   const isEdit = !!editData;
   const [type, setType] = useState('expense');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(today());
   const [description, setDescription] = useState('');
   const [calOpen, setCalOpen] = useState(false);
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const amountRef = useRef(null);
+  const scrollRef = useRef(null);
   // Stable reference — CalendarPicker is memo()-wrapped, and AddModal
   // re-renders on every keystroke in the amount/description fields, so an
   // inline arrow here would defeat that memo the whole time the calendar
@@ -64,12 +92,26 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
       setVisible(true);
       backdropOpacity.value = withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) });
       sheetTranslateY.value = withTiming(0, { duration: 320, easing: Easing.out(Easing.cubic) });
+      // Delayed to land after the sheet's slide-up animation actually
+      // finishes — focusing (and thus opening the keyboard) mid-slide reads
+      // as janky, and on Android the keyboard can outright fail to show if
+      // requested before the TextInput has settled into its final position.
+      const focusTimer = setTimeout(() => amountRef.current?.focus(), 340);
+      return () => clearTimeout(focusTimer);
     } else {
       backdropOpacity.value = withTiming(0, { duration: 240, easing: Easing.in(Easing.cubic) });
       sheetTranslateY.value = withTiming(
         sheetMaxHeight,
         { duration: 240, easing: Easing.in(Easing.cubic) },
-        finished => { if (finished) runOnJS(setVisible)(false); },
+        finished => {
+          if (!finished) return;
+          runOnJS(setVisible)(false);
+          // Lets callers know the native <Modal> is actually gone before
+          // presenting a different one (e.g. an auto-popup right after
+          // adding a transaction) — two native Modals mounted at once is
+          // broken on Android.
+          if (onClosed) runOnJS(onClosed)();
+        },
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -89,21 +131,24 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
         setDescription('');
       }
       setCalOpen(false);
+      setError('');
     }
   }, [open, editData]);
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const val = parseFloat(amount);
     if (!val || val <= 0) return;
-    if (isEdit) {
-      onEdit(editData.id, { type, amount: val, date, description: toTitleCase(description) });
-    } else {
-      onAdd({ type, amount: val, date, description: toTitleCase(description) });
-    }
+    setSubmitting(true);
+    setError('');
+    const result = isEdit
+      ? await onEdit(editData.id, { type, amount: val, date, description: toTitleCase(description) })
+      : await onAdd({ type, amount: val, date, description: toTitleCase(description) });
+    setSubmitting(false);
+    if (result?.success === false) { setError(result.error || 'Something went wrong. Please try again.'); return; }
     onClose();
   }
 
-  const canSubmit = !!amount && parseFloat(amount) > 0;
+  const canSubmit = !!amount && parseFloat(amount) > 0 && !submitting;
 
   const backdropStyle = useAnimatedStyle(() => ({ opacity: backdropOpacity.value }));
   const sheetStyle = useAnimatedStyle(() => ({ transform: [{ translateY: sheetTranslateY.value }] }));
@@ -128,9 +173,25 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
           </Animated.View>
         </Pressable>
 
+        {/* No maxHeight cap here (unlike the GlassView below, deliberately) —
+            capping this outer wrapper too fought against the bottom padding
+            `behavior="padding"` adds when the keyboard opens, squeezing the
+            card's content into less space than it needed instead of letting
+            the whole thing shift upward. The GlassView's own (keyboard-aware)
+            maxHeight is what actually bounds the visible card size.
+
+            KeyboardAvoidingView's `behavior` is a no-op on Android
+            (`undefined`) — shrinking the GlassView's maxHeight alone isn't
+            enough there, since this whole column is still bottom-anchored to
+            the full screen height (windowSoftInputMode is "adjustNothing",
+            so the OS never shrinks the window for the keyboard either). The
+            sheet's shorter box just sat with its bottom edge glued to the
+            true screen bottom — behind the keyboard — instead of right above
+            it. marginBottom shifts the whole sheet up by the keyboard's
+            height to actually clear it. */}
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={{ maxHeight: sheetMaxHeight }}
+          style={Platform.OS === 'android' && keyboardHeight > 0 ? { marginBottom: keyboardHeight + 56 } : undefined}
         >
           <Animated.View style={sheetStyle}>
             <GlassView
@@ -141,7 +202,8 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
               style={{ maxHeight: sheetMaxHeight, paddingBottom: insets.bottom }}
             >
             <ScrollView
-              style={{ flexGrow: 0, flexShrink: 1, maxHeight: sheetMaxHeight - 100 }}
+              ref={scrollRef}
+              style={{ flexGrow: 0, flexShrink: 1, maxHeight: sheetMaxHeight - footerReserve }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={{ paddingBottom: 8 }}
@@ -173,11 +235,19 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
                     placeholder="0"
                     placeholderTextColor="#333333"
                     keyboardType="decimal-pad"
-                    className="font-semibold text-center text-white"
+                    className="font-semibold text-left text-white"
                     // text-5xl's default lineHeight (1x font-size) is too tight for
                     // iOS to render tall digit glyphs in a TextInput without
                     // clipping their tops — set both explicitly with headroom.
-                    style={{ minWidth: 120, fontSize: 48, lineHeight: 56 }}
+                    //
+                    // Left-aligned rather than centered: on Android, an empty
+                    // TextInput with textAlign:'center' places the blinking
+                    // caret at a different horizontal position than the
+                    // (also centered) placeholder text, reading as a large,
+                    // unexplained gap between "0" and the cursor. Left-align
+                    // anchors both the placeholder and caret right after the
+                    // ₹ symbol, which sidesteps the mismatch entirely.
+                    style={{ minWidth: 24, fontSize: 48, lineHeight: 56 }}
                   />
                 </View>
               </View>
@@ -199,6 +269,7 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
                 <TextInput
                   value={description}
                   onChangeText={setDescription}
+                  onFocus={() => scrollRef.current?.scrollToEnd({ animated: true })}
                   placeholder="What was this for?"
                   placeholderTextColor="#333333"
                   className="w-full rounded-xl px-4 py-3 text-white text-base"
@@ -213,6 +284,7 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
                 Bottom safe-area padding lives on the GlassView itself so it's part
                 of the visible card, not a gap exposing the backdrop behind it. */}
             <View style={{ paddingTop: 12 }}>
+              {!!error && <Text className="text-red-400 text-base text-center mb-3">{error}</Text>}
               {isEdit ? (
                 <View className="flex-row gap-3">
                   <GlassPressable
@@ -222,7 +294,7 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
                     onPress={handleSubmit}
                     className="flex-1 py-[14px] items-center"
                   >
-                    <Text className="text-white text-base font-semibold">Update</Text>
+                    <Text className="text-white text-base font-semibold">{submitting ? 'Updating…' : 'Update'}</Text>
                   </GlassPressable>
                   <Pressable
                     onPress={() => { onDelete(editData.id); onClose(); }}
@@ -240,7 +312,7 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
                   onPress={handleSubmit}
                   className="w-full py-[14px] items-center"
                 >
-                  <Text className="text-white text-base font-semibold">Add {type.charAt(0).toUpperCase() + type.slice(1)}</Text>
+                  <Text className="text-white text-base font-semibold">{submitting ? 'Adding…' : `Add ${type.charAt(0).toUpperCase() + type.slice(1)}`}</Text>
                 </GlassPressable>
               )}
             </View>
@@ -249,10 +321,14 @@ function AddModal({ open, onClose, onAdd, onEdit, onDelete, editData }) {
         </KeyboardAvoidingView>
       </View>
 
-      {/* Calendar overlay — lives inside this same Modal (avoids nested-Modal quirks on iOS) */}
+      {/* Calendar overlay — lives inside this same Modal (avoids nested-Modal quirks on iOS).
+          Anchored near the top rather than centered — centered would sit right
+          where the keyboard is if a text field was focused when Date was
+          tapped, and dismissing the keyboard just to open this was more
+          disruptive than useful (user has to re-tap the field afterwards). */}
       {calOpen && (
         <Pressable
-          style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }]}
+          style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'flex-start', paddingHorizontal: 24, paddingTop: insets.top + 70 }]}
           onPress={closeCalendar}
         >
           <View style={{ width: '100%', maxWidth: 360 }}>

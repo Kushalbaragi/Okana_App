@@ -4,7 +4,7 @@ import { GlassView, GlassPressable } from './Glass';
 import { MONTH_NAMES as MONTHS } from '../utils/monthlyRecap';
 import { toDateStr as toStr } from '../utils/format';
 
-const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+const DAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 
 function parseLocal(str) {
   const [y, m, d] = str.split('-').map(Number);
@@ -17,7 +17,10 @@ function CalendarPicker({ value, onChange, onClose }) {
 
   const year = view.getFullYear();
   const month = view.getMonth();
-  const firstDay = new Date(year, month, 1).getDay();
+  // getDay() is Sunday-indexed (0-6) — remap so Monday is column 0, matching
+  // the Monday-first DAYS header above.
+  const rawFirstDay = new Date(year, month, 1).getDay();
+  const firstDay = rawFirstDay === 0 ? 6 : rawFirstDay - 1;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
   const todayStr = toStr(new Date());

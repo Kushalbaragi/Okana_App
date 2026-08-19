@@ -30,16 +30,22 @@ export function useBudget(user, transactions) {
   useEffect(() => { refresh() }, [refresh])
 
   const setBudget = useCallback(async (amountNumber) => {
-    if (!user) return
-    const { data, error } = await supabase
-      .from('monthly_budgets')
-      .upsert(
-        { user_id: user.id, month_start: monthStart, budget_amount: amountNumber },
-        { onConflict: 'user_id,month_start' },
-      )
-      .select()
-      .single()
-    if (!error && data) setBudgetRow(data)
+    if (!user) return { success: false, error: 'Not signed in' }
+    try {
+      const { data, error } = await supabase
+        .from('monthly_budgets')
+        .upsert(
+          { user_id: user.id, month_start: monthStart, budget_amount: amountNumber },
+          { onConflict: 'user_id,month_start' },
+        )
+        .select()
+        .single()
+      if (error) return { success: false, error: error.message }
+      setBudgetRow(data)
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: err.message || 'Network error. Please try again.' }
+    }
   }, [user, monthStart])
 
   const spentThisMonth = useMemo(

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, Link } from 'expo-router';
-import { View, Text } from 'react-native';
+import { View, Text, Platform, Keyboard } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
 import { GlassTextInput, GlassPressable } from '../../components/Glass';
 import { Spinner } from '../../components/icons';
@@ -16,6 +17,31 @@ export default function LoginScreen() {
     setForm(f => ({ ...f, [key]: value }));
     setError('');
   }
+
+  // Tracked manually rather than via KeyboardAvoidingView — see AnimatedModal.js
+  // for why: its own internal animation was re-triggering (visibly) every
+  // time focus moved between fields, even though the keyboard's actual
+  // height never changed. React state naturally no-ops on an identical value.
+  // The raw state value only drives an animated shared value (smoothly
+  // interpolated via withTiming) rather than being used directly in a style —
+  // used directly, a genuine height change (open/close) would still snap
+  // instead of transitioning.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const keyboardOffset = useSharedValue(0);
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, e => setKeyboardHeight(e.endCoordinates.height));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+  useEffect(() => {
+    keyboardOffset.value = withTiming(keyboardHeight, { duration: 250, easing: Easing.out(Easing.cubic) });
+  }, [keyboardHeight, keyboardOffset]);
+  // Stays centered always — paddingBottom growing smoothly as the keyboard
+  // rises naturally shifts the centered midpoint upward, without needing a
+  // discrete (and therefore non-animatable) justifyContent switch.
+  const containerStyle = useAnimatedStyle(() => ({ paddingBottom: keyboardOffset.value }));
 
   async function handleSubmit() {
     if (!form.email || !form.password) { setError('Please fill in all fields'); return; }
@@ -33,7 +59,7 @@ export default function LoginScreen() {
   }
 
   return (
-    <View className="flex-1 bg-bg justify-center px-6">
+    <Animated.View className="flex-1 bg-bg justify-center px-6" style={containerStyle}>
       <View className="w-full max-w-[400px] self-center">
         <View className="items-center mb-10">
           <Text className="text-white text-xl font-semibold mb-1">Okana</Text>
@@ -94,6 +120,6 @@ export default function LoginScreen() {
           </Link>
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 }

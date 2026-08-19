@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useRouter, Link } from 'expo-router';
-import { View, Text } from 'react-native';
+import { View, Text, KeyboardAvoidingView, Platform } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { GlassTextInput, GlassPressable } from '../../components/Glass';
 import { Spinner } from '../../components/icons';
@@ -42,7 +42,10 @@ export default function SignupScreen() {
   }
 
   return (
-    <View className="flex-1 bg-bg justify-center px-6">
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      className="flex-1 bg-bg justify-center px-6"
+    >
       <View className="w-full max-w-[400px] self-center">
         <View className="items-center mb-10">
           <Text className="text-white text-xl font-semibold mb-1">Okana</Text>
@@ -117,6 +120,6 @@ export default function SignupScreen() {
           </Link>
         </View>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }

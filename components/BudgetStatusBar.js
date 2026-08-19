@@ -1,5 +1,6 @@
-import { memo } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { formatCurrency, budgetStatusColor } from '../utils/format';
 
 // flex:1 segments auto-size to whatever width the calendar card ends up at
@@ -13,8 +14,31 @@ const WRAPPER_STYLE = {
   borderBottomWidth: 1,
   borderBottomColor: 'rgba(255,255,255,0.08)',
 };
+// Same shape as SpendCalendarModal's card-settle animation: reaches near
+// the target fast, then eases off gradually instead of cubic's milder,
+// more even taper — keeps the initial burst but gives the last stretch a
+// longer, more visible slowdown.
+const GROW_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 
 function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }) {
+  // BudgetStatusBar fully unmounts when SpendCalendarModal closes (it
+  // returns null rather than just hiding), so this component genuinely
+  // remounts on every open — a mount-time animation is all that's needed
+  // to make the bar grow in fresh each time, no "open" prop plumbing.
+  const [barWidth, setBarWidth] = useState(0);
+  const progress = useSharedValue(0);
+  const cappedPercent = hasBudget ? Math.min(percent, 100) : 0;
+
+  useEffect(() => {
+    if (!hasBudget || !barWidth) return;
+    progress.value = 0;
+    progress.value = withTiming(1, { duration: 1750, easing: GROW_EASING });
+  }, [hasBudget, barWidth, cappedPercent]);
+
+  const fillStyle = useAnimatedStyle(() => ({
+    width: barWidth * (cappedPercent / 100) * progress.value,
+  }));
+
   if (loading) return null;
 
   if (!hasBudget) {
@@ -26,10 +50,6 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
     );
   }
 
-  // Fill from the CAPPED percent, never the raw one — this is what keeps
-  // the bar from ever exceeding its container even at 150%+.
-  const cappedPercent = Math.min(percent, 100);
-  const filledCount = Math.round((cappedPercent / 100) * SEGMENT_COUNT);
   const { fill } = budgetStatusColor(percent);
   const remaining = amount - spent;
   const remainingLabel = remaining < 0
@@ -43,18 +63,30 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
         <Text className="text-white/50 text-sm">{formatCurrency(spent)} / {formatCurrency(amount)}</Text>
       </View>
 
-      <View className="flex-row" style={{ gap: 1 }}>
-        {Array.from({ length: SEGMENT_COUNT }).map((_, i) => (
-          <View
-            key={i}
-            style={{
-              flex: 1,
-              height: 18,
-              borderRadius: 3,
-              backgroundColor: i < filledCount ? fill : 'rgba(255,255,255,0.08)',
-            }}
-          />
-        ))}
+      <View style={{ height: 18 }}>
+        <View
+          className="flex-row"
+          style={{ gap: 1, height: 18 }}
+          onLayout={e => setBarWidth(e.nativeEvent.layout.width)}
+        >
+          {Array.from({ length: SEGMENT_COUNT }).map((_, i) => (
+            <View key={i} style={{ flex: 1, height: 18, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.08)' }} />
+          ))}
+        </View>
+
+        {/* Grows via an animated clip width rather than flipping segment
+            colors — a single UI-thread width animation stays smooth at 60fps
+            without re-rendering all 84 segments every frame. */}
+        <Animated.View
+          pointerEvents="none"
+          style={[{ position: 'absolute', top: 0, left: 0, height: 18, overflow: 'hidden' }, fillStyle]}
+        >
+          <View className="flex-row" style={{ gap: 1, height: 18, width: barWidth }}>
+            {Array.from({ length: SEGMENT_COUNT }).map((_, i) => (
+              <View key={i} style={{ flex: 1, height: 18, borderRadius: 3, backgroundColor: fill }} />
+            ))}
+          </View>
+        </Animated.View>
       </View>
 
       <Text className="text-white/40 text-sm text-right mt-1.5">{remainingLabel}</Text>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
-import { View, Text } from 'react-native';
+import { View, Text, Platform, Keyboard } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { supabase } from '../../lib/supabase';
 import { GlassTextInput, GlassPressable } from '../../components/Glass';
 import { Spinner, CheckIcon } from '../../components/icons';
@@ -67,6 +68,24 @@ export default function ResetPasswordScreen() {
     }
   }
 
+  // Tracked manually rather than via KeyboardAvoidingView — see login.js /
+  // AnimatedModal.js for why. The raw state only drives an animated shared
+  // value (interpolated via withTiming) so a genuine height change still
+  // transitions smoothly instead of snapping.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const keyboardOffset = useSharedValue(0);
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, e => setKeyboardHeight(e.endCoordinates.height));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+  useEffect(() => {
+    keyboardOffset.value = withTiming(keyboardHeight, { duration: 250, easing: Easing.out(Easing.cubic) });
+  }, [keyboardHeight, keyboardOffset]);
+  const containerStyle = useAnimatedStyle(() => ({ paddingBottom: keyboardOffset.value }));
+
   if (done) return <SuccessScreen />;
 
   if (!ready) {
@@ -79,7 +98,7 @@ export default function ResetPasswordScreen() {
   }
 
   return (
-    <View className="flex-1 bg-bg justify-center px-6">
+    <Animated.View className="flex-1 bg-bg justify-center px-6" style={containerStyle}>
       <View className="w-full max-w-[400px] self-center">
         <View className="items-center mb-10">
           <Text className="text-white/30 text-base">Choose a strong password.</Text>
@@ -128,6 +147,6 @@ export default function ResetPasswordScreen() {
           </GlassPressable>
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 }
