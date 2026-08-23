@@ -253,16 +253,16 @@ export default function SettingsPage() {
               numberOfLines={4}
               textAlignVertical="top"
               className="text-white text-base px-4 py-3 mb-4"
-              style={{ minHeight: 100, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.07)' }}
+              style={{ minHeight: 100, borderRadius: 12, backgroundColor: '#161616' }}
             />
             {!!feedbackError && <Text className="text-red-400 text-base mb-4">{feedbackError}</Text>}
             <Pressable
               onPress={sendFeedback}
               disabled={!feedbackText.trim() || feedbackSending}
               className="w-full py-[14px] rounded-2xl items-center"
-              style={{ backgroundColor: 'rgba(255,255,255,0.14)', opacity: !feedbackText.trim() || feedbackSending ? 0.3 : 1 }}
+              style={{ backgroundColor: '#ffffff', opacity: !feedbackText.trim() || feedbackSending ? 0.3 : 1 }}
             >
-              <Text className="text-white text-base font-semibold">{feedbackSending ? 'Sending…' : 'Send'}</Text>
+              <Text className="text-black text-base font-semibold">{feedbackSending ? 'Sending…' : 'Send'}</Text>
             </Pressable>
           </>
         )}

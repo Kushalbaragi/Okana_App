@@ -25,7 +25,7 @@ const FEATURES = [
 
 function WelcomeModal({ name, onContinue }) {
   return (
-    <AnimatedModal open onClose={onContinue} variant="center" blurIntensity={20} dim={0.7}>
+    <AnimatedModal open onClose={onContinue} variant="center" dim={0.7}>
       <View
         className="w-full rounded-3xl px-6 py-8 items-center"
         style={{ maxWidth: 320, backgroundColor: '#1c1c1f', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
@@ -38,9 +38,9 @@ function WelcomeModal({ name, onContinue }) {
         <Pressable
           onPress={onContinue}
           className="w-full py-[13px] rounded-2xl items-center"
-          style={{ backgroundColor: 'rgba(255,255,255,0.14)' }}
+          style={{ backgroundColor: '#ffffff' }}
         >
-          <Text className="text-white text-base font-semibold">Start Tracking</Text>
+          <Text className="text-black text-base font-semibold">Start Tracking</Text>
         </Pressable>
       </View>
     </AnimatedModal>
@@ -81,9 +81,9 @@ export default function WelcomeScreen() {
         <Pressable
           onPress={finish}
           className="w-full py-[14px] rounded-2xl items-center"
-          style={{ backgroundColor: 'rgba(255,255,255,0.14)' }}
+          style={{ backgroundColor: '#ffffff' }}
         >
-          <Text className="text-white text-base font-semibold">Start Tracking</Text>
+          <Text className="text-black text-base font-semibold">Start Tracking</Text>
         </Pressable>
       </View>
     </View>

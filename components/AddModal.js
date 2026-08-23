@@ -1,6 +1,5 @@
 import { memo, useCallback, useState, useEffect, useRef } from 'react';
 import { Modal, View, Text, TextInput, Pressable, KeyboardAvoidingView, Keyboard, Platform, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
 import Svg, { Rect, Line } from 'react-native-svg';
@@ -8,7 +7,6 @@ import { today, toTitleCase } from '../utils/format';
 import CalendarPicker from './CalendarPicker';
 import { GlassView, GlassPressable } from './Glass';
 
-const BLUR_METHOD = Platform.OS === 'android' ? 'dimezisBlurView' : undefined;
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatDisplay(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -26,7 +24,7 @@ function CalIcon() {
   );
 }
 
-function AddModal({ open, onClose, onClosed, onAdd, onEdit, onDelete, editData }) {
+function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
 
@@ -92,12 +90,17 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, onDelete, editData }
       setVisible(true);
       backdropOpacity.value = withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) });
       sheetTranslateY.value = withTiming(0, { duration: 320, easing: Easing.out(Easing.cubic) });
-      // Delayed to land after the sheet's slide-up animation actually
-      // finishes — focusing (and thus opening the keyboard) mid-slide reads
-      // as janky, and on Android the keyboard can outright fail to show if
-      // requested before the TextInput has settled into its final position.
-      const focusTimer = setTimeout(() => amountRef.current?.focus(), 340);
-      return () => clearTimeout(focusTimer);
+      // Auto-focus is only for adding a new transaction — editing an
+      // existing one opens straight to the filled-in form without grabbing
+      // the keyboard. Delayed to land after the sheet's slide-up animation
+      // actually finishes — focusing (and thus opening the keyboard)
+      // mid-slide reads as janky, and on Android the keyboard can outright
+      // fail to show if requested before the TextInput has settled into its
+      // final position.
+      if (!isEdit) {
+        const focusTimer = setTimeout(() => amountRef.current?.focus(), 340);
+        return () => clearTimeout(focusTimer);
+      }
     } else {
       backdropOpacity.value = withTiming(0, { duration: 240, easing: Easing.in(Easing.cubic) });
       sheetTranslateY.value = withTiming(
@@ -143,8 +146,15 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, onDelete, editData }
     const result = isEdit
       ? await onEdit(editData.id, { type, amount: val, date, description: toTitleCase(description) })
       : await onAdd({ type, amount: val, date, description: toTitleCase(description) });
-    setSubmitting(false);
-    if (result?.success === false) { setError(result.error || 'Something went wrong. Please try again.'); return; }
+    // On success, `submitting` deliberately stays true instead of flipping
+    // back to false — resetting it here shows "Update"/"Add" again for the
+    // render(s) before the close animation actually finishes, a visible
+    // flicker back to the pre-submit label right before the modal vanishes.
+    if (result?.success === false) {
+      setSubmitting(false);
+      setError(result.error || 'Something went wrong. Please try again.');
+      return;
+    }
     onClose();
   }
 
@@ -168,7 +178,6 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, onDelete, editData }
       <View style={{ flex: 1 }}>
         <Pressable style={{ flex: 1 }} onPress={onClose}>
           <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
-            <BlurView intensity={35} tint="dark" experimentalBlurMethod={BLUR_METHOD} style={StyleSheet.absoluteFill} />
             <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.55)' }]} />
           </Animated.View>
         </Pressable>
@@ -210,15 +219,15 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, onDelete, editData }
             >
               <View className="w-8 h-1 rounded-full mx-auto mb-5" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }} />
 
-              <View className="flex-row rounded-full p-[3px] mb-5" style={{ backgroundColor: 'rgba(255,255,255,0.07)' }}>
+              <View className="flex-row rounded-full p-[3px] mb-5" style={{ backgroundColor: '#161616' }}>
                 {['expense', 'income'].map(t => (
                   <Pressable
                     key={t}
                     onPress={() => setType(t)}
                     className="flex-1 py-[6px] rounded-full items-center"
-                    style={type === t ? { backgroundColor: 'rgba(255,255,255,0.14)' } : null}
+                    style={type === t ? { backgroundColor: '#ffffff' } : null}
                   >
-                    <Text className={type === t ? 'text-white text-base font-medium' : 'text-white/35 text-base font-medium'}>
+                    <Text className={type === t ? 'text-black text-base font-medium' : 'text-white/35 text-base font-medium'}>
                       {t.charAt(0).toUpperCase() + t.slice(1)}
                     </Text>
                   </Pressable>
@@ -273,7 +282,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, onDelete, editData }
                   placeholder="What was this for?"
                   placeholderTextColor="#333333"
                   className="w-full rounded-xl px-4 py-3 text-white text-base"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.07)' }}
+                  style={{ backgroundColor: '#161616' }}
                 />
               </View>
 
@@ -285,36 +294,21 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, onDelete, editData }
                 of the visible card, not a gap exposing the backdrop behind it. */}
             <View style={{ paddingTop: 12 }}>
               {!!error && <Text className="text-red-400 text-base text-center mb-3">{error}</Text>}
-              {isEdit ? (
-                <View className="flex-row gap-3">
-                  <GlassPressable
-                    variant="active"
-                    radius={16}
-                    disabled={!canSubmit}
-                    onPress={handleSubmit}
-                    className="flex-1 py-[14px] items-center"
-                  >
-                    <Text className="text-white text-base font-semibold">{submitting ? 'Updating…' : 'Update'}</Text>
-                  </GlassPressable>
-                  <Pressable
-                    onPress={() => { onDelete(editData.id); onClose(); }}
-                    className="flex-1 py-[14px] rounded-2xl items-center"
-                    style={{ backgroundColor: 'rgba(248,113,113,0.12)' }}
-                  >
-                    <Text className="text-base font-semibold" style={{ color: 'rgba(248,113,113,0.85)' }}>Delete</Text>
-                  </Pressable>
-                </View>
-              ) : (
-                <GlassPressable
-                  variant="active"
-                  radius={16}
-                  disabled={!canSubmit}
-                  onPress={handleSubmit}
-                  className="w-full py-[14px] items-center"
-                >
-                  <Text className="text-white text-base font-semibold">{submitting ? 'Adding…' : `Add ${type.charAt(0).toUpperCase() + type.slice(1)}`}</Text>
-                </GlassPressable>
-              )}
+              {/* Delete now lives on the transaction list's swipe action, not here —
+                  this is just Update/Add either way. */}
+              <GlassPressable
+                variant="active"
+                radius={16}
+                disabled={!canSubmit}
+                onPress={handleSubmit}
+                className="w-full py-[14px] items-center"
+              >
+                <Text className="text-black text-base font-semibold">
+                  {isEdit
+                    ? (submitting ? 'Updating' : 'Update')
+                    : (submitting ? 'Adding' : `Add ${type.charAt(0).toUpperCase() + type.slice(1)}`)}
+                </Text>
+              </GlassPressable>
             </View>
             </GlassView>
           </Animated.View>

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, Link } from 'expo-router';
-import { View, Text, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, Platform, Keyboard, Pressable } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
 import { GlassTextInput, GlassPressable } from '../../components/Glass';
 import { Spinner } from '../../components/icons';
@@ -17,8 +18,28 @@ export default function SignupScreen() {
     setError('');
   }
 
+  // Same manual-tracking pattern as login.js — KeyboardAvoidingView's
+  // `behavior` is a no-op on Android (undefined), and windowSoftInputMode is
+  // "adjustNothing" app-wide now, so nothing else would move this content
+  // above the keyboard without it.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const keyboardOffset = useSharedValue(0);
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, e => setKeyboardHeight(e.endCoordinates.height));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+  useEffect(() => {
+    keyboardOffset.value = withTiming(keyboardHeight, { duration: 250, easing: Easing.out(Easing.cubic) });
+  }, [keyboardHeight, keyboardOffset]);
+  const containerStyle = useAnimatedStyle(() => ({ paddingBottom: keyboardOffset.value }));
+
   async function handleSubmit() {
-    if (!form.name || !form.email || !form.password || !form.confirmPassword) {
+    const name = form.name.trim();
+    const email = form.email.trim();
+    if (!name || !email || !form.password || !form.confirmPassword) {
       setError('Please fill in all fields');
       return;
     }
@@ -28,7 +49,7 @@ export default function SignupScreen() {
     }
     setLoading(true);
     try {
-      await signup({ name: form.name, email: form.email, password: form.password });
+      await signup({ name, email, password: form.password });
       router.replace('/(auth)/welcome');
     } catch (err) {
       const msg = err.message || '';
@@ -42,10 +63,8 @@ export default function SignupScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      className="flex-1 bg-bg justify-center px-6"
-    >
+    <Pressable onPress={Keyboard.dismiss} style={{ flex: 1 }}>
+    <Animated.View className="flex-1 bg-bg justify-center px-6" style={containerStyle}>
       <View className="w-full max-w-[400px] self-center">
         <View className="items-center mb-10">
           <Text className="text-white text-xl font-semibold mb-1">Okana</Text>
@@ -59,6 +78,8 @@ export default function SignupScreen() {
               value={form.name}
               onChangeText={t => setField('name', t)}
               placeholder="Full Name"
+              autoComplete="name"
+              textContentType="name"
             />
           </View>
 
@@ -70,6 +91,8 @@ export default function SignupScreen() {
               placeholder="you@example.com"
               autoCapitalize="none"
               keyboardType="email-address"
+              autoComplete="email"
+              textContentType="emailAddress"
             />
           </View>
 
@@ -79,6 +102,8 @@ export default function SignupScreen() {
               value={form.password}
               onChangeText={t => setField('password', t)}
               placeholder="••••••••"
+              autoComplete="password-new"
+              textContentType="newPassword"
               secureTextEntry
             />
           </View>
@@ -89,6 +114,8 @@ export default function SignupScreen() {
               value={form.confirmPassword}
               onChangeText={t => setField('confirmPassword', t)}
               placeholder="••••••••"
+              autoComplete="password-new"
+              textContentType="newPassword"
               secureTextEntry
             />
           </View>
@@ -104,11 +131,11 @@ export default function SignupScreen() {
           >
             {loading ? (
               <>
-                <Spinner />
-                <Text className="text-white text-base font-semibold">Creating account…</Text>
+                <Spinner color="#000000" trackColor="rgba(0,0,0,0.25)" />
+                <Text className="text-black text-base font-semibold">Creating account…</Text>
               </>
             ) : (
-              <Text className="text-white text-base font-semibold">Create Account</Text>
+              <Text className="text-black text-base font-semibold">Create Account</Text>
             )}
           </GlassPressable>
         </View>
@@ -120,6 +147,7 @@ export default function SignupScreen() {
           </Link>
         </View>
       </View>
-    </KeyboardAvoidingView>
+    </Animated.View>
+    </Pressable>
   );
 }

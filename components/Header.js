@@ -18,11 +18,11 @@ function ChartTabToggle({ value, onChange }) {
   return (
     <View
       className="flex-row rounded-full"
-      style={{ width: BTN_W * 3 + PAD * 2, padding: PAD, backgroundColor: 'rgba(255,255,255,0.07)' }}
+      style={{ width: BTN_W * 3 + PAD * 2, padding: PAD, backgroundColor: '#161616' }}
     >
       <Animated.View
         style={[
-          { position: 'absolute', top: PAD, bottom: PAD, width: BTN_W, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.14)' },
+          { position: 'absolute', top: PAD, bottom: PAD, width: BTN_W, borderRadius: 999, backgroundColor: '#ffffff' },
           pillStyle,
         ]}
       />
@@ -33,7 +33,7 @@ function ChartTabToggle({ value, onChange }) {
           style={{ width: BTN_W }}
           className="py-[5px] items-center"
         >
-          <Text className={value === tab ? 'text-white text-base font-medium' : 'text-white/35 text-base font-medium'}>
+          <Text className={value === tab ? 'text-black text-base font-medium' : 'text-white/35 text-base font-medium'}>
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
           </Text>
         </Pressable>

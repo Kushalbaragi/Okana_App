@@ -1,31 +1,18 @@
-import { BlurView } from 'expo-blur';
-import { View, Pressable, TextInput, StyleSheet, Platform } from 'react-native';
+import { View, Pressable, TextInput, StyleSheet } from 'react-native';
 
-// Android's default real-time blur is notably heavier than iOS's native
-// UIVisualEffectView-backed one; expo-blur's `dimezisBlurView` method is
-// the standard fix (a purpose-built fast Android blur implementation).
-// No effect on iOS/web.
-const BLUR_METHOD = Platform.OS === 'android' ? 'dimezisBlurView' : undefined;
-
-// Mirrors the web app's .glass / .glass-active / .glass-modal CSS classes —
-// backdrop-filter has no RN equivalent, so these layer a BlurView behind a
-// semi-transparent tint to approximate the same glassmorphism look.
-const TINT = {
-  glass: 'rgba(255,255,255,0.07)',
-  active: 'rgba(255,255,255,0.14)',
-  modal: 'rgba(14,14,14,0.80)',
+// Flat, solid surfaces — no BlurView/backdrop-filter. Replaces the previous
+// glassmorphism look (translucent tint over a real-time blur), which read as
+// muddy/inconsistent on Android's software-rendered blur path.
+const BG = {
+  glass: '#161616',  // regular cards, secondary buttons/pills, inputs
+  modal: '#161616',  // bottom sheets / modal surfaces — same solid surface color throughout, deliberately
+  active: '#ffffff', // primary CTAs and "this one's selected" state — one consistent treatment app-wide
 };
-const INTENSITY = { glass: 24, active: 28, modal: 40 };
 
 // Tailwind's rounded-* scale, so call sites can pass the same vocabulary
 // they'd use in a className elsewhere in the app.
 export const RADIUS = { none: 0, sm: 6, md: 8, lg: 10, xl: 12, '2xl': 16, '3xl': 24, full: 9999 };
 
-// expo-blur's BlurView doesn't reliably clip to an ancestor's
-// `overflow: hidden` on iOS (a UIVisualEffectView quirk) — rounding only the
-// wrapper leaves the blur itself sharp-cornered. The fix is to set the same
-// borderRadius directly on the BlurView (and the tint overlay) too, not just
-// the outer container.
 function radiusStyle(radius, corners) {
   if (!radius) return null;
   if (!corners) return { borderRadius: radius };
@@ -38,9 +25,7 @@ function radiusStyle(radius, corners) {
 export function GlassView({ variant = 'glass', radius = 0, corners, style, className, children, ...props }) {
   const r = radiusStyle(radius, corners);
   return (
-    <View style={[{ overflow: 'hidden' }, r, style]} className={className} {...props}>
-      <BlurView intensity={INTENSITY[variant]} tint="dark" experimentalBlurMethod={BLUR_METHOD} style={[StyleSheet.absoluteFill, r]} />
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: TINT[variant] }, r]} />
+    <View style={[{ backgroundColor: BG[variant] }, r, style]} className={className} {...props}>
       {children}
     </View>
   );
@@ -59,8 +44,12 @@ export function GlassPressable({ variant = 'active', radius = RADIUS.xl, corners
       className={className}
       {...props}
     >
-      <BlurView intensity={INTENSITY[variant]} tint="dark" experimentalBlurMethod={BLUR_METHOD} style={[StyleSheet.absoluteFill, r]} />
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: TINT[variant] }, r]} />
+      {/* A separate absolutely-positioned background layer, not a
+          backgroundColor on the Pressable's own (function-based) style —
+          NativeWind's className handling doesn't reliably compose with a
+          dynamic style function, and silently drops the color when both are
+          present on the same element. */}
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: BG[variant] }, r]} />
       {children}
     </Pressable>
   );
@@ -69,9 +58,7 @@ export function GlassPressable({ variant = 'active', radius = RADIUS.xl, corners
 export function GlassTextInput({ radius = RADIUS.xl, style, className, inputClassName, ...props }) {
   const r = radiusStyle(radius);
   return (
-    <View style={[{ overflow: 'hidden' }, r, style]} className={className}>
-      <BlurView intensity={INTENSITY.glass} tint="dark" experimentalBlurMethod={BLUR_METHOD} style={[StyleSheet.absoluteFill, r]} />
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: TINT.glass }, r]} />
+    <View style={[{ backgroundColor: BG.glass }, r, style]} className={className}>
       <TextInput
         placeholderTextColor="#333333"
         className={inputClassName || 'text-white text-base px-4 py-3'}

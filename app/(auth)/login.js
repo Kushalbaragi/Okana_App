@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter, Link } from 'expo-router';
-import { View, Text, Platform, Keyboard } from 'react-native';
+import { View, Text, Platform, Keyboard, Pressable } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
 import { GlassTextInput, GlassPressable } from '../../components/Glass';
@@ -44,10 +44,11 @@ export default function LoginScreen() {
   const containerStyle = useAnimatedStyle(() => ({ paddingBottom: keyboardOffset.value }));
 
   async function handleSubmit() {
-    if (!form.email || !form.password) { setError('Please fill in all fields'); return; }
+    const email = form.email.trim();
+    if (!email || !form.password) { setError('Please fill in all fields'); return; }
     setLoading(true);
     try {
-      await login({ email: form.email, password: form.password });
+      await login({ email, password: form.password });
       router.replace('/(app)');
     } catch {
       // Deliberately generic — distinguishing "wrong password" from "no such
@@ -59,6 +60,7 @@ export default function LoginScreen() {
   }
 
   return (
+    <Pressable onPress={Keyboard.dismiss} style={{ flex: 1 }}>
     <Animated.View className="flex-1 bg-bg justify-center px-6" style={containerStyle}>
       <View className="w-full max-w-[400px] self-center">
         <View className="items-center mb-10">
@@ -75,6 +77,8 @@ export default function LoginScreen() {
               placeholder="you@example.com"
               autoCapitalize="none"
               keyboardType="email-address"
+              autoComplete="email"
+              textContentType="emailAddress"
             />
           </View>
 
@@ -89,6 +93,8 @@ export default function LoginScreen() {
               value={form.password}
               onChangeText={t => setField('password', t)}
               placeholder="••••••••"
+              autoComplete="password"
+              textContentType="password"
               secureTextEntry
             />
           </View>
@@ -104,11 +110,11 @@ export default function LoginScreen() {
           >
             {loading ? (
               <>
-                <Spinner />
-                <Text className="text-white text-base font-semibold">Logging in…</Text>
+                <Spinner color="#000000" trackColor="rgba(0,0,0,0.25)" />
+                <Text className="text-black text-base font-semibold">Logging in…</Text>
               </>
             ) : (
-              <Text className="text-white text-base font-semibold">Log In</Text>
+              <Text className="text-black text-base font-semibold">Log In</Text>
             )}
           </GlassPressable>
         </View>
@@ -121,5 +127,6 @@ export default function LoginScreen() {
         </View>
       </View>
     </Animated.View>
+    </Pressable>
   );
 }

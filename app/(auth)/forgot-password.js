@@ -103,11 +103,11 @@ export default function ForgotPasswordScreen() {
           >
             {loading ? (
               <>
-                <Spinner />
-                <Text className="text-white text-base font-semibold">Sending…</Text>
+                <Spinner color="#000000" trackColor="rgba(0,0,0,0.25)" />
+                <Text className="text-black text-base font-semibold">Sending…</Text>
               </>
             ) : (
-              <Text className="text-white text-base font-semibold">Send Reset Link</Text>
+              <Text className="text-black text-base font-semibold">Send Reset Link</Text>
             )}
           </GlassPressable>
         </View>

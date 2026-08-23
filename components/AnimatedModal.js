@@ -1,9 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Modal, View, Pressable, StyleSheet, useWindowDimensions, Platform, Keyboard } from 'react-native';
-import { BlurView } from 'expo-blur';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
-
-const BLUR_METHOD = Platform.OS === 'android' ? 'dimezisBlurView' : undefined;
 
 // Shared fade-backdrop + slide/scale-content shell, extracted from AddModal's
 // pattern. RN's built-in Modal animationType only animates the whole modal
@@ -11,7 +8,7 @@ const BLUR_METHOD = Platform.OS === 'android' ? 'dimezisBlurView' : undefined;
 // a backdrop) — this drives backdrop opacity and content transform
 // independently with Reanimated instead, and keeps the Modal mounted
 // through the close animation so it can actually play.
-export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', blurIntensity = 30, dim = 0.5, children }) {
+export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', dim = 0.5, children }) {
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const [visible, setVisible] = useState(open);
   const backdropOpacity = useSharedValue(0);
@@ -96,7 +93,6 @@ export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', blu
       <View style={{ flex: 1 }}>
         <Pressable style={{ flex: 1 }} onPress={onClose}>
           <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
-            <BlurView intensity={blurIntensity} tint="dark" experimentalBlurMethod={BLUR_METHOD} style={StyleSheet.absoluteFill} />
             <View style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(0,0,0,${dim})` }]} />
           </Animated.View>
         </Pressable>

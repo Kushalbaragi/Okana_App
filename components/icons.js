@@ -1,10 +1,10 @@
 import Svg, { Circle, Path, Line, Rect } from 'react-native-svg';
 
-export function Spinner({ size = 16 }) {
+export function Spinner({ size = 16, color = '#ffffff', trackColor = 'rgba(255,255,255,0.25)' }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-      <Circle cx="8" cy="8" r="6" stroke="rgba(255,255,255,0.25)" strokeWidth="2" />
-      <Path d="M8 2a6 6 0 0 1 6 6" stroke="white" strokeWidth="2" strokeLinecap="round" />
+      <Circle cx="8" cy="8" r="6" stroke={trackColor} strokeWidth="2" />
+      <Path d="M8 2a6 6 0 0 1 6 6" stroke={color} strokeWidth="2" strokeLinecap="round" />
     </Svg>
   );
 }
@@ -28,10 +28,21 @@ export function BackIcon({ size = 20, color = '#ffffff' }) {
   );
 }
 
-export function EditIcon({ size = 15 }) {
+export function EditIcon({ size = 15, color = 'rgba(255,255,255,0.4)' }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-      <Path d="M11.5 2.5a1.414 1.414 0 012 2L5 13H3v-2L11.5 2.5z" stroke="rgba(255,255,255,0.4)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M11.5 2.5a1.414 1.414 0 012 2L5 13H3v-2L11.5 2.5z" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function TrashIcon({ size = 18, color = '#ffffff' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <Path d="M2.5 4.5h11" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
+      <Path d="M6 2.5h4a1 1 0 011 1v1H5v-1a1 1 0 011-1z" stroke={color} strokeWidth="1.3" strokeLinejoin="round" />
+      <Path d="M3.5 4.5l.6 8.1a1 1 0 001 .9h5.8a1 1 0 001-.9l.6-8.1" stroke={color} strokeWidth="1.3" strokeLinejoin="round" />
+      <Path d="M6.5 7v4M9.5 7v4" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
     </Svg>
   );
 }

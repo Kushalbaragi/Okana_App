@@ -1,11 +1,20 @@
+import { useEffect, useState } from 'react';
 import { Redirect } from 'expo-router';
 import { View, ActivityIndicator } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../context/AuthContext';
+import { ONBOARDING_SEEN_KEY } from './onboarding';
 
 export default function Index() {
   const { user, loading } = useAuth();
+  // null = still checking AsyncStorage, not yet known either way.
+  const [onboardingSeen, setOnboardingSeen] = useState(null);
 
-  if (loading) {
+  useEffect(() => {
+    AsyncStorage.getItem(ONBOARDING_SEEN_KEY).then(v => setOnboardingSeen(v === '1'));
+  }, []);
+
+  if (loading || onboardingSeen === null) {
     return (
       <View className="flex-1 bg-bg items-center justify-center">
         <ActivityIndicator color="#ffffff" />
@@ -13,5 +22,7 @@ export default function Index() {
     );
   }
 
-  return <Redirect href={user ? '/(app)' : '/(auth)/login'} />;
+  if (user) return <Redirect href="/(app)" />;
+  if (!onboardingSeen) return <Redirect href="/onboarding" />;
+  return <Redirect href="/(auth)/login" />;
 }

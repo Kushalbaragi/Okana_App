@@ -94,7 +94,7 @@ function RangeSelector({ value, onChange, currentYear, currentMonth }) {
             onPress={() => onChange(opt.id)}
             className="px-3 py-1"
           >
-            <Text className="text-white text-base font-medium">{opt.label}</Text>
+            <Text className="text-black text-base font-medium">{opt.label}</Text>
           </GlassPressable>
         ) : (
           <Pressable

@@ -1,6 +1,5 @@
 import { memo, useEffect, useMemo, useState } from 'react';
-import { Modal, View, Text, Pressable, ScrollView, StyleSheet, useWindowDimensions, Platform } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { Modal, View, Text, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
 import {
@@ -16,7 +15,6 @@ import {
 import { MONTH_NAMES as MONTHS } from '../utils/monthlyRecap';
 import BudgetStatusBar from './BudgetStatusBar';
 
-const BLUR_METHOD = Platform.OS === 'android' ? 'dimezisBlurView' : undefined;
 const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // Monday-first
@@ -129,7 +127,6 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
       <View style={{ flex: 1 }}>
         <Pressable style={{ flex: 1 }} onPress={onClose}>
           <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
-            <BlurView intensity={30} tint="dark" experimentalBlurMethod={BLUR_METHOD} style={StyleSheet.absoluteFill} />
             <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)' }]} />
           </Animated.View>
         </Pressable>

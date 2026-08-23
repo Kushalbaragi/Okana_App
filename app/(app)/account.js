@@ -8,6 +8,7 @@ import { useSubscription } from '../../hooks/useSubscription';
 import { supabase } from '../../lib/supabase';
 import { BackIcon, EditIcon, EyeIcon, ChevronRight, CheckIcon } from '../../components/icons';
 import { GlassView, GlassTextInput, GlassPressable } from '../../components/Glass';
+import { ONBOARDING_SEEN_KEY } from '../onboarding';
 import { AnimatedModal } from '../../components/AnimatedModal';
 
 function Divider() {
@@ -72,7 +73,7 @@ function ChangePasswordModal({ open, onClose }) {
               onPress={handleSave}
               className="w-full py-[14px] items-center"
             >
-              <Text className="text-white text-base font-semibold">{saving ? 'Saving…' : 'Update Password'}</Text>
+              <Text className="text-black text-base font-semibold">{saving ? 'Saving…' : 'Update Password'}</Text>
             </GlassPressable>
           </>
         )}
@@ -137,7 +138,7 @@ function SuccessOverlay({ open, title, redirectTo, onDone }) {
   const checkStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   return (
-    <AnimatedModal open={open} onClose={() => {}} variant="center" dim={0.85} blurIntensity={10}>
+    <AnimatedModal open={open} onClose={() => {}} variant="center" dim={0.85}>
       <View className="items-center">
         <Animated.View
           className="w-16 h-16 rounded-full items-center justify-center mb-5"
@@ -251,8 +252,14 @@ export default function AccountPage() {
 
   const handleDeleteDone = useCallback(async () => {
     setDeleteSuccess(false);
+    // Deleting the account is one of the three conditions (fresh install,
+    // reinstall, account deletion) that brings the first-run onboarding
+    // animation back — clearing the flag and routing through `/` (rather
+    // than straight to login) lets that same routing decision live in one
+    // place instead of being duplicated here.
+    await AsyncStorage.removeItem(ONBOARDING_SEEN_KEY);
     await logout();
-    router.replace('/(auth)/login');
+    router.replace('/');
   }, [router, logout]);
 
   const initials = (profile?.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();

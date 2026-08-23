@@ -138,11 +138,11 @@ export default function ResetPasswordScreen() {
           >
             {loading ? (
               <>
-                <Spinner />
-                <Text className="text-white text-base font-semibold">Updating…</Text>
+                <Spinner color="#000000" trackColor="rgba(0,0,0,0.25)" />
+                <Text className="text-black text-base font-semibold">Updating…</Text>
               </>
             ) : (
-              <Text className="text-white text-base font-semibold">Update Password</Text>
+              <Text className="text-black text-base font-semibold">Update Password</Text>
             )}
           </GlassPressable>
         </View>

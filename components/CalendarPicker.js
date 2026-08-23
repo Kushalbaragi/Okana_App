@@ -78,7 +78,7 @@ function CalendarPicker({ value, onChange, onClose }) {
                     onPress={() => pick(d)}
                     className="w-8 h-8 items-center justify-center"
                   >
-                    <Text className="text-white text-base font-semibold">{d}</Text>
+                    <Text className="text-black text-base font-semibold">{d}</Text>
                   </GlassPressable>
                 ) : (
                   <Pressable

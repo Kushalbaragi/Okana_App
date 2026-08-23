@@ -1,5 +1,5 @@
-import { memo, useMemo } from 'react';
-import { View, Text, SectionList } from 'react-native';
+import { forwardRef, memo, useCallback, useImperativeHandle, useMemo, useRef } from 'react';
+import { View, Text, SectionList, Pressable } from 'react-native';
 import TransactionItem from './TransactionItem';
 import { monthLabel } from '../utils/format';
 
@@ -19,9 +19,45 @@ function TransactionList({
   selectedYear,
   selectedDay,
   onEdit,
-}) {
+  onDelete,
+}, ref) {
   const isOverview = chartTab === 'overview';
   const isIncome   = activeTab === 'income';
+
+  // Coordinates "only one swiped-open row at a time" across the whole list —
+  // refs rather than state, since none of this should ever trigger a
+  // SectionList re-render of its own.
+  const swipeRefs = useRef(new Map());
+  const openIdRef = useRef(null);
+
+  const registerSwipeable = useCallback((id, ref) => {
+    if (ref) swipeRefs.current.set(id, ref);
+    else swipeRefs.current.delete(id);
+  }, []);
+
+  const closeOpenRow = useCallback(() => {
+    const id = openIdRef.current;
+    if (id) swipeRefs.current.get(id)?.close();
+    openIdRef.current = null;
+  }, []);
+
+  const onSwipeOpen = useCallback(id => {
+    const prevId = openIdRef.current;
+    if (prevId && prevId !== id) swipeRefs.current.get(prevId)?.close();
+    openIdRef.current = id;
+  }, []);
+
+  // Tapping any card — including the currently-open row's own — closes an
+  // open swipe, same as tapping blank list space.
+  const onCardPress = useCallback(() => {
+    if (openIdRef.current) closeOpenRow();
+  }, [closeOpenRow]);
+
+  // Exposed so the screen this list lives on can close an open swipe when
+  // the user taps something entirely outside this component — the chart's
+  // Expense/Income/Overview tabs, the month/year/All Time pills, the header
+  // — none of which are descendants of TransactionList.
+  useImperativeHandle(ref, () => ({ closeOpenRow }), [closeOpenRow]);
 
   const shouldGroup = isOverview || timeRange === '5y';
 
@@ -92,47 +128,54 @@ function TransactionList({
   // reproduced per-row via section-relative index instead of a shared
   // non-virtualized wrapper.
   return (
-    <SectionList
-      sections={sections}
-      keyExtractor={tx => tx.id}
-      renderItem={({ item, index, section }) => (
-        <View
-          className="bg-surface px-3"
-          style={{
-            overflow: 'hidden',
-            borderTopLeftRadius: index === 0 ? 12 : 0,
-            borderTopRightRadius: index === 0 ? 12 : 0,
-            borderBottomLeftRadius: index === section.data.length - 1 ? 12 : 0,
-            borderBottomRightRadius: index === section.data.length - 1 ? 12 : 0,
-          }}
-        >
-          <TransactionItem
-            tx={item}
-            isIncome={isOverview ? item.type === 'income' : isIncome}
-            onEdit={onEdit}
-          />
-        </View>
-      )}
-      renderSectionHeader={({ section }) =>
-        section.title ? (
-          <View className={`flex-row items-center justify-between mb-2 bg-bg ${section.key === sections[0]?.key ? 'mt-0' : 'mt-6'}`}>
-            <Text className="text-white/35 text-sm font-medium uppercase tracking-wider">
-              {section.title}
-            </Text>
+    <Pressable onPress={closeOpenRow} style={{ flex: 1 }}>
+      <SectionList
+        sections={sections}
+        keyExtractor={tx => tx.id}
+        onScrollBeginDrag={closeOpenRow}
+        renderItem={({ item, index, section }) => (
+          <View
+            className="bg-surface"
+            style={{
+              overflow: 'hidden',
+              borderTopLeftRadius: index === 0 ? 12 : 0,
+              borderTopRightRadius: index === 0 ? 12 : 0,
+              borderBottomLeftRadius: index === section.data.length - 1 ? 12 : 0,
+              borderBottomRightRadius: index === section.data.length - 1 ? 12 : 0,
+            }}
+          >
+            <TransactionItem
+              tx={item}
+              isIncome={isOverview ? item.type === 'income' : isIncome}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              registerSwipeable={registerSwipeable}
+              onSwipeOpen={onSwipeOpen}
+              onCardPress={onCardPress}
+            />
           </View>
-        ) : null
-      }
-      ListHeaderComponent={ListHeader}
-      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 112 }}
-      showsVerticalScrollIndicator={false}
-      style={{ flex: 1 }}
-      stickySectionHeadersEnabled={false}
-      initialNumToRender={12}
-      maxToRenderPerBatch={10}
-      windowSize={7}
-      removeClippedSubviews
-    />
+        )}
+        renderSectionHeader={({ section }) =>
+          section.title ? (
+            <View className={`flex-row items-center justify-between mb-2 bg-bg ${section.key === sections[0]?.key ? 'mt-0' : 'mt-6'}`}>
+              <Text className="text-white/35 text-sm font-medium uppercase tracking-wider">
+                {section.title}
+              </Text>
+            </View>
+          ) : null
+        }
+        ListHeaderComponent={ListHeader}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 112 }}
+        showsVerticalScrollIndicator={false}
+        style={{ flex: 1 }}
+        stickySectionHeadersEnabled={false}
+        initialNumToRender={12}
+        maxToRenderPerBatch={10}
+        windowSize={7}
+        removeClippedSubviews
+      />
+    </Pressable>
   );
 }
 
-export default memo(TransactionList);
+export default memo(forwardRef(TransactionList));

@@ -64,6 +64,7 @@ export default function Dashboard() {
   const budget = useBudget(user, transactions);
   const { subscription, loading: subLoading } = useSubscription(user);
   const trialInfo = useMemo(() => getSubscriptionDisplayStatus(subscription, today()), [subscription]);
+  const transactionListRef = useRef(null);
 
   // Erase Data / other changes made from Account (a separate stacked screen)
   // update Supabase directly without touching this screen's own useTransactions/
@@ -368,7 +369,17 @@ export default function Dashboard() {
   const closeDailyInsight = useCallback(() => setDailyInsight(null), []);
 
   return (
-    <View className="flex-1 bg-bg">
+    <View
+      className="flex-1 bg-bg"
+      // Passively observes every touch-down anywhere on the screen (header
+      // tabs, the month/year/All Time pills, empty space) to close an open
+      // transaction swipe — always returns false so it never actually claims
+      // the touch, leaving every button's own press handling untouched.
+      onStartShouldSetResponderCapture={() => {
+        transactionListRef.current?.closeOpenRow();
+        return false;
+      }}
+    >
       <Header
         onMenuOpen={openDrawer}
         chartTab={chartTab}
@@ -391,6 +402,7 @@ export default function Dashboard() {
       />
 
       <TransactionList
+        ref={transactionListRef}
         transactions={transactions}
         activeTab={chartTab}
         chartTab={chartTab}
@@ -400,6 +412,7 @@ export default function Dashboard() {
         selectedYear={selectedYear}
         selectedDay={selectedDay}
         onEdit={openEdit}
+        onDelete={deleteTransaction}
       />
 
       <Pressable
@@ -416,7 +429,6 @@ export default function Dashboard() {
         onClosed={handleAddModalClosed}
         onAdd={addTransaction}
         onEdit={editTransaction}
-        onDelete={deleteTransaction}
         editData={editData}
       />
 
