@@ -121,8 +121,8 @@ function SummaryCard({
   selectedMonth,
   year,
   onMonthChange,
-  selectedYear,
-  onYearChange,
+  selectedPeriod,
+  onPeriodChange,
   selectedDay,
   onDayChange,
 }) {
@@ -149,13 +149,22 @@ function SummaryCard({
     return { income, expense, labels: MONTH_LABELS_SHORT };
   }, [transactions, timeRange, year, currYear, currMonth, lifetimeGranularity]);
 
-  // Year-based drill-down (selecting a bar to filter the transaction list by
-  // that year) only makes sense when "All Time" bars are actually yearly —
-  // a monthly bar's value isn't a year total, so selecting one the same way
-  // would show the wrong amount.
-  const yearsList = useMemo(() =>
-    timeRange === '5y' && lifetimeGranularity === 'year' ? (chartData.years ?? chartData.labels.map(Number)) : []
-  , [timeRange, lifetimeGranularity, chartData]);
+  // What each "All Time" bar actually represents, as real calendar periods —
+  // {year, month: null} per bar in yearly mode, {year, month} per bar in
+  // monthly mode — so a tap can filter/select by real date either way
+  // instead of needing two divergent code paths.
+  const periodsList = useMemo(() => {
+    if (timeRange !== '5y') return [];
+    if (lifetimeGranularity === 'year') {
+      return (chartData.years ?? chartData.labels.map(Number)).map(y => ({ year: y, month: null }));
+    }
+    return chartData.months ?? [];
+  }, [timeRange, lifetimeGranularity, chartData]);
+
+  const selectedPeriodIndex = useMemo(() => {
+    if (!selectedPeriod) return -1;
+    return periodsList.findIndex(p => p.year === selectedPeriod.year && p.month === selectedPeriod.month);
+  }, [periodsList, selectedPeriod]);
 
   const barValues = chartTab === 'income' ? chartData.income : chartData.expense;
 
@@ -175,13 +184,12 @@ function SummaryCard({
       return inc - exp;
     }
     if (timeRange === 'year') return getMonthTotal(transactions, chartTab, selectedMonth, year);
-    if (timeRange === '5y' && lifetimeGranularity === 'year' && selectedYear != null) {
-      const idx = yearsList.indexOf(selectedYear);
-      return idx >= 0 ? (inc_ ? chartData.income[idx] : chartData.expense[idx]) : 0;
+    if (timeRange === '5y' && selectedPeriodIndex >= 0) {
+      return inc_ ? chartData.income[selectedPeriodIndex] : chartData.expense[selectedPeriodIndex];
     }
     const arr = inc_ ? chartData.income : chartData.expense;
     return arr.reduce((a, b) => a + b, 0);
-  }, [chartTab, chartData, timeRange, transactions, selectedMonth, year, selectedYear, yearsList, lifetimeGranularity]);
+  }, [chartTab, chartData, timeRange, transactions, selectedMonth, year, selectedPeriodIndex]);
 
   const delta = useMemo(() => {
     if (chartTab === 'overview' || timeRange !== 'year') return null;
@@ -202,11 +210,13 @@ function SummaryCard({
     if (timeRange === 'month') return MONTH_NAMES[currMonth];
     if (timeRange === 'year')  return MONTH_NAMES[selectedMonth];
     if (timeRange === '5y') {
-      if (lifetimeGranularity === 'year' && selectedYear != null) return String(selectedYear);
+      if (selectedPeriod != null) {
+        return selectedPeriod.month != null ? `${MONTH_NAMES[selectedPeriod.month]} ${selectedPeriod.year}` : String(selectedPeriod.year);
+      }
       return earliestYear === currYear ? String(currYear) : `${earliestYear} – ${currYear}`;
     }
     return String(currYear);
-  }, [timeRange, selectedMonth, currYear, currMonth, selectedYear, lifetimeGranularity, earliestYear]);
+  }, [timeRange, selectedMonth, currYear, currMonth, selectedPeriod, earliestYear]);
 
   const lineChartData = useMemo(() => {
     if (timeRange !== 'year' || year < currYear) return chartData;
@@ -255,13 +265,13 @@ function SummaryCard({
           activeIndex={
             timeRange === 'month' && selectedDay != null ? selectedDay - 1 :
             timeRange === 'year' ? selectedMonth :
-            timeRange === '5y' && lifetimeGranularity === 'year' && selectedYear != null ? yearsList.indexOf(selectedYear) :
+            timeRange === '5y' ? selectedPeriodIndex :
             -1
           }
           onBarClick={
             timeRange === 'month' ? (i) => onDayChange(i + 1) :
             timeRange === 'year' ? onMonthChange :
-            timeRange === '5y' && lifetimeGranularity === 'year' ? (i) => onYearChange(yearsList[i]) :
+            timeRange === '5y' ? (i) => onPeriodChange(periodsList[i]) :
             null
           }
           onDeselect={timeRange === 'month' ? () => onDayChange(null) : null}

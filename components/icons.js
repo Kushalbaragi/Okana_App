@@ -89,6 +89,15 @@ export function PlusIcon({ size = 26, color = '#ffffff' }) {
   );
 }
 
+export function CameraIcon({ size = 22, color = 'rgba(255,255,255,0.5)' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 22 22" fill="none">
+      <Path d="M8 5.5l1-2h4l1 2h3a1.5 1.5 0 011.5 1.5v9A1.5 1.5 0 0117 17.5H5A1.5 1.5 0 013.5 16V7A1.5 1.5 0 015 5.5h3z" stroke={color} strokeWidth="1.4" strokeLinejoin="round" />
+      <Circle cx="11" cy="11.5" r="3.25" stroke={color} strokeWidth="1.4" />
+    </Svg>
+  );
+}
+
 export function CalendarIcon({ size = 18 }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 18 18" fill="none">

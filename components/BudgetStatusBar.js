@@ -5,8 +5,10 @@ import { formatCurrency } from '../utils/format';
 
 // Always green — the bar previously shifted to yellow/red as spend
 // approached or passed the budget, but that's no longer wanted; one
-// consistent color throughout.
-const FILL_COLOR = 'rgba(74,222,128,0.6)';
+// consistent color throughout. A more saturated green at higher opacity
+// than the app's usual soft accent — this bar needs to actually catch the
+// eye against the dark track, not blend into it.
+const FILL_COLOR = 'rgba(34,197,94,0.9)';
 
 // flex:1 segments auto-size to whatever width the calendar card ends up at
 // (capped at maxWidth:340 in SpendCalendarModal, narrower on small screens)

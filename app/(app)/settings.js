@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, Pressable, ScrollView, TextInput, Linking, useWindowDimensions } from 'react-native';
+import { View, Text, Pressable, ScrollView, TextInput, Linking, Image, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -30,10 +30,11 @@ function InstagramIcon() {
   );
 }
 
-function TwitterIcon() {
+function YouTubeIcon() {
   return (
-    <Svg width={14} height={14} viewBox="0 0 24 24" fill="rgba(255,255,255,0.5)">
-      <Path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.253 5.622 5.911-5.622Zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    <Svg width={16} height={14} viewBox="0 0 24 17" fill="none">
+      <Rect x="0.5" y="0.5" width="23" height="16" rx="4" stroke="rgba(255,255,255,0.5)" strokeWidth="1.3" />
+      <Path d="M10 5.5l6 3-6 3v-6z" fill="rgba(255,255,255,0.5)" />
     </Svg>
   );
 }
@@ -229,16 +230,24 @@ export default function SettingsPage() {
       </InfoModal>
 
       <InfoModal open={modal === 'developer'} title="Developer" onClose={() => setModal(null)}>
-        <View className="items-center py-4" style={{ gap: 12 }}>
-          <View
-            className="w-16 h-16 rounded-2xl items-center justify-center"
-            style={{ backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}
-          >
-            <Text className="text-white font-bold" style={{ fontSize: 24 }}>K</Text>
-          </View>
-          <Text className="text-white font-semibold text-base">Kushal Baragi</Text>
-          <Text className="text-white/40 text-base text-center">Built this app to make personal finance simple, beautiful, and private.</Text>
-          <View className="flex-row justify-center" style={{ gap: 12 }}>
+        <View style={{ paddingVertical: 4 }}>
+          <Image
+            source={require('../../assets/developer-photo.jpg')}
+            style={{ width: 84, height: 84, borderRadius: 16, marginBottom: 16 }}
+            resizeMode="cover"
+          />
+          <Text className="text-white font-semibold text-lg mb-3">Hi, I'm Kushal</Text>
+          <Text className="text-white/50 text-base mb-3" style={{ lineHeight: 22 }}>
+            I'm a software developer and creator from Karnataka. I build digital products, work mainly on the frontend, and enjoy turning simple ideas into useful things.
+          </Text>
+          <Text className="text-white/50 text-base mb-3" style={{ lineHeight: 22 }}>
+            I also make YouTube videos about personal finance, technology, productivity, and minimal living. I like learning by building, sharing what I learn, and documenting the journey along the way.
+          </Text>
+          <Text className="text-white/50 text-base mb-5" style={{ lineHeight: 22 }}>
+            I'm interested in technology, money, and creating a simpler life — and I'm always working on something new.
+          </Text>
+
+          <View className="flex-row" style={{ gap: 12 }}>
             <Pressable
               onPress={() => Linking.openURL('https://instagram.com/kushalbaragi')}
               className="flex-row items-center px-4 py-2 rounded-xl"
@@ -248,15 +257,16 @@ export default function SettingsPage() {
               <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>Instagram</Text>
             </Pressable>
             <Pressable
-              onPress={() => Linking.openURL('https://twitter.com/kushalbaragi')}
+              onPress={() => Linking.openURL('https://www.youtube.com/@kushalbaragi')}
               className="flex-row items-center px-4 py-2 rounded-xl"
               style={{ gap: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
             >
-              <TwitterIcon />
-              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>Twitter</Text>
+              <YouTubeIcon />
+              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>YouTube</Text>
             </Pressable>
           </View>
-          <Text className="text-white/20" style={{ fontSize: 12 }}>Okana v{APP_VERSION} · Made with ♥ in India</Text>
+
+          <Text className="text-white/20 mt-5" style={{ fontSize: 12 }}>Okana v{APP_VERSION} · Made with ♥ in India</Text>
         </View>
       </InfoModal>
     </View>

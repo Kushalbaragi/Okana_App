@@ -1,9 +1,9 @@
 import { memo, useCallback, useState, useEffect, useRef } from 'react';
-import { Modal, View, Text, TextInput, Pressable, Platform, ScrollView, StyleSheet } from 'react-native';
+import { Modal, View, Text, TextInput, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS, LinearTransition } from 'react-native-reanimated';
 import Svg, { Rect, Line } from 'react-native-svg';
 import { today, toTitleCase } from '../utils/format';
 import CalendarPicker from './CalendarPicker';
@@ -17,6 +17,10 @@ const DISMISS_VELOCITY = 800;
 // for the dismiss-drag's finishing slide, without needing to measure the
 // actual window height just for this.
 const OFF_SCREEN_Y = 1200;
+
+// Same ease-out-expo "settle" feel used for reveals throughout the app
+// (welcome flow, account.js, onboarding).
+const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatDisplay(dateStr) {
@@ -35,17 +39,129 @@ function CalIcon() {
   );
 }
 
-// A fixed amount of space reserved at the bottom of the page for the
-// keyboard — sized to comfortably fit either the decimal-pad (Amount) or
-// the full text keyboard (Description). Because this is a static reserve,
-// not something recomputed from keyboardWillShow/Hide events, the layout
-// above it never has to shift or resize when focus moves between fields or
-// the keyboard opens/closes — whichever keyboard is showing just occupies
-// (part of) this already-reserved space.
-const KEYBOARD_RESERVE = Platform.select({ ios: 336, android: 300 });
+// A plain button grid standing in for the OS decimal-pad keyboard on the
+// Amount field — Amount is the field that auto-focused on open, so it was
+// the one actually causing the "keyboard pops in after the sheet" mismatch.
+// A custom keypad has no native show/hide lifecycle to sync with at all: it
+// just renders as a permanent, fixed-height part of this screen's layout
+// from the moment it mounts. (Description stays a normal TextInput — see
+// the discussion this was born from: a full custom text keyboard trades
+// away autocorrect/dictation/accessibility for a field that isn't the one
+// causing the problem in the first place.)
+const KEYPAD_ROWS = [
+  ['1', '2', '3'],
+  ['4', '5', '6'],
+  ['7', '8', '9'],
+  ['.', '0', 'backspace'],
+];
+
+// Flat, no per-key box — just the digit sitting on the page background,
+// matching the reference. Feedback on tap comes from a Reanimated scale+dim
+// on the label itself (driven via onPressIn/onPressOut, not the Pressable's
+// own style prop — a function-style prop on Pressable doesn't reliably
+// apply in this NativeWind setup, same issue GlassPressable works around).
+function KeypadKey({ label, onPress }) {
+  const pressProgress = useSharedValue(0);
+
+  function handlePressIn() {
+    pressProgress.value = withTiming(1, { duration: 90, easing: Easing.out(Easing.cubic) });
+  }
+  function handlePressOut() {
+    pressProgress.value = withTiming(0, { duration: 160, easing: Easing.out(Easing.cubic) });
+  }
+
+  const labelStyle = useAnimatedStyle(() => ({
+    opacity: 1 - pressProgress.value * 0.5,
+    transform: [{ scale: 1 - pressProgress.value * 0.15 }],
+  }));
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      style={{ flex: 1, height: 64, alignItems: 'center', justifyContent: 'center' }}
+    >
+      <Animated.Text style={[{ color: '#ffffff', fontSize: label === 'backspace' ? 24 : 30, fontWeight: '400' }, labelStyle]}>
+        {label === 'backspace' ? '⌫' : label}
+      </Animated.Text>
+    </Pressable>
+  );
+}
+
+// Shared by every element in the amount row (₹ symbol included) — the row
+// is center-justified, so adding a digit grows its total width and shifts
+// *everything* in it left to stay centered, not just the new digit. Giving
+// them all the same layout transition is what makes that read as one
+// element sliding together instead of the symbol/older digits snapping
+// while only the new digit animates.
+const AMOUNT_LAYOUT_TRANSITION = LinearTransition.duration(420).easing(SETTLE_EASING);
+
+// Each newly-typed digit blurs into focus rather than just appearing flat —
+// starts slightly enlarged, near-transparent, and genuinely blurred (RN's
+// textShadowRadius is a real Gaussian blur on the glyph itself, not a fake),
+// then resolves to sharp/full-size/full-opacity. Only the character that
+// just appeared plays this — existing digits are stable-keyed by index so
+// they never remount/replay it, and it's skipped entirely when the field is
+// populated programmatically (opening in edit mode) rather than typed.
+function AmountDigit({ char, animateIn }) {
+  // Split from the fade so blur resolves quickly (it's a hint the digit is
+  // "arriving", not the main event) while opacity — the actual materialize
+  // — takes noticeably longer, reading as a fade-in with a light touch of
+  // blur rather than a blur-dominated reveal.
+  const fadeProgress = useSharedValue(animateIn ? 0 : 1);
+  const blurProgress = useSharedValue(animateIn ? 0 : 1);
+
+  useEffect(() => {
+    if (animateIn) {
+      fadeProgress.value = withTiming(1, { duration: 640, easing: SETTLE_EASING });
+      blurProgress.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: fadeProgress.value,
+    transform: [
+      { scale: 0.82 + fadeProgress.value * 0.18 },
+      { translateY: (1 - fadeProgress.value) * 16 },
+    ],
+    textShadowRadius: (1 - blurProgress.value) * 6,
+  }));
+
+  return (
+    <Animated.Text
+      layout={AMOUNT_LAYOUT_TRANSITION}
+      style={[
+        {
+          fontSize: 48, lineHeight: 56, fontWeight: '600', color: '#ffffff',
+          textShadowColor: '#ffffff', textShadowOffset: { width: 0, height: 0 },
+        },
+        style,
+      ]}
+    >
+      {char}
+    </Animated.Text>
+  );
+}
+
+function AmountKeypad({ onKeyPress, insetBottom }) {
+  return (
+    <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insetBottom + 10 }}>
+      {KEYPAD_ROWS.map((row, ri) => (
+        <View key={ri} className="flex-row" style={{ marginBottom: ri === KEYPAD_ROWS.length - 1 ? 0 : 6 }}>
+          {row.map(key => (
+            <KeypadKey key={key} label={key} onPress={() => onKeyPress(key)} />
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
 
 function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
 
   const isEdit = !!editData;
   const [type, setType] = useState('expense');
@@ -55,44 +171,59 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
   const [calOpen, setCalOpen] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const amountRef = useRef(null);
   // Stable reference — CalendarPicker is memo()-wrapped, and AddModal
   // re-renders on every keystroke in the amount/description fields, so an
   // inline arrow here would defeat that memo the whole time the calendar
   // overlay is open.
   const closeCalendar = useCallback(() => setCalOpen(false), []);
 
+  // Tracks the Amount string's length as of the previous render, so a
+  // freshly-typed trailing digit can be told apart from ones that were
+  // already there — read during render (still holds the prior value at that
+  // point), written after every render for the next one to see.
+  const prevAmountLengthRef = useRef(0);
+  const prevAmountLength = prevAmountLengthRef.current;
+  useEffect(() => {
+    prevAmountLengthRef.current = amount.length;
+  });
+  // Suppressed when the field is populated programmatically (opening in
+  // edit mode, or resetting on close) rather than actually typed — those
+  // digits should just appear, not play the per-keystroke blur-in.
+  const skipDigitAnimRef = useRef(true);
+
+  function handleKeypadPress(key) {
+    Haptics.selectionAsync();
+    skipDigitAnimRef.current = false;
+    setAmount(prev => {
+      if (key === 'backspace') return prev.slice(0, -1);
+      if (key === '.') {
+        if (prev.includes('.')) return prev;
+        return prev === '' ? '0.' : `${prev}.`;
+      }
+      if (prev === '0') return key;
+      const decimals = prev.split('.')[1];
+      if (decimals != null && decimals.length >= 2) return prev; // max 2 decimal places
+      if (prev.replace('.', '').length >= 9) return prev; // sane upper bound
+      return prev + key;
+    });
+  }
+
   // RN's built-in Modal animationType only animates the WHOLE modal content
   // as one transform — managed independently here instead so `visible`
   // stays mounted through the close animation and it can actually play.
-  //
-  // Opacity-only, not a translateY slide — a position transform mid-flight
-  // is exactly what previously forced a delay before calling .focus() (a
-  // native TextInput doesn't reliably accept focus, and Android's keyboard
-  // can outright fail to appear, while its on-screen position is still
-  // animating). Fading in at its final, settled position instead means
-  // focus() can fire immediately, so the keyboard rises together with the
-  // page instead of visibly afterward.
   const [visible, setVisible] = useState(open);
-  const pageOpacity = useSharedValue(0);
+  const pageTranslateY = useSharedValue(windowHeight);
   const dragY = useSharedValue(0);
 
   useEffect(() => {
     if (open) {
       setVisible(true);
       dragY.value = 0;
-      pageOpacity.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) });
-      // Auto-focus is only for adding a new transaction — editing an
-      // existing one opens straight to the filled-in form without grabbing
-      // the keyboard.
-      if (!isEdit) {
-        const focusTimer = setTimeout(() => amountRef.current?.focus(), 30);
-        return () => clearTimeout(focusTimer);
-      }
+      pageTranslateY.value = withTiming(0, { duration: 950, easing: SETTLE_EASING });
     } else {
-      pageOpacity.value = withTiming(
-        0,
-        { duration: 200, easing: Easing.in(Easing.cubic) },
+      pageTranslateY.value = withTiming(
+        windowHeight,
+        { duration: 680, easing: SETTLE_EASING },
         finished => {
           if (!finished) return;
           runOnJS(setVisible)(false);
@@ -109,6 +240,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
 
   useEffect(() => {
     if (open) {
+      skipDigitAnimRef.current = true;
       if (editData) {
         setType(editData.type);
         setAmount(String(editData.amount));
@@ -153,27 +285,44 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
 
   const canSubmit = !!amount && parseFloat(amount) > 0 && !submitting;
 
-  // Drag-to-dismiss on the handle only (not the whole page) — scoping it
-  // avoids fighting the ScrollView's own vertical pan and the TextInputs
-  // underneath. Past the threshold, the handle finishes sliding off-screen
-  // itself while onClose() (called via runOnJS, since this runs on the UI
-  // thread) triggers the same fade-out the button/backdrop-tap paths use.
+  // Drag-to-dismiss from anywhere on the card, not just the handle.
+  // activeOffsetY/failOffsetY are what make this safe to wrap around the
+  // ScrollView and every button/key without stealing normal taps or
+  // upward scrolling: the gesture only actually activates once a touch has
+  // clearly moved down (12px) — a tap's near-zero movement never crosses
+  // that, so it falls through to the Pressable underneath untouched — and
+  // it explicitly fails itself if the touch moves up first, leaving that
+  // to the ScrollView.
+  //
+  // That threshold alone isn't enough for touches that *start* inside the
+  // ScrollView, though — its native scroll responder claims those before
+  // this (a JS-thread RNGH gesture) gets a chance to see them, which is
+  // exactly why dragging worked from the keypad (a sibling, outside the
+  // ScrollView) but not from Amount/Date/Description above it. `nativeScroll`
+  // is the ScrollView's own gesture made explicit, and
+  // `simultaneousWithExternalGesture` tells RNGH the two are allowed to
+  // both recognize the same touch — so a touch inside the ScrollView can
+  // still reach this Pan and cross its activation threshold instead of
+  // being swallowed.
+  const nativeScroll = Gesture.Native();
   const pan = Gesture.Pan()
+    .activeOffsetY(12)
+    .failOffsetY(-12)
+    .simultaneousWithExternalGesture(nativeScroll)
     .onUpdate(e => {
       if (e.translationY > 0) dragY.value = e.translationY;
     })
     .onEnd(e => {
       if (e.translationY > DISMISS_DISTANCE || e.velocityY > DISMISS_VELOCITY) {
-        dragY.value = withTiming(OFF_SCREEN_Y, { duration: 220, easing: Easing.in(Easing.cubic) });
+        dragY.value = withTiming(OFF_SCREEN_Y, { duration: 420, easing: SETTLE_EASING });
         runOnJS(onClose)();
       } else {
-        dragY.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.cubic) });
+        dragY.value = withTiming(0, { duration: 380, easing: SETTLE_EASING });
       }
     });
 
   const pageStyle = useAnimatedStyle(() => ({
-    opacity: pageOpacity.value,
-    transform: [{ translateY: dragY.value }],
+    transform: [{ translateY: pageTranslateY.value + dragY.value }],
   }));
 
   // Unmount the whole tree while closed instead of just hiding it behind
@@ -184,17 +333,19 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <Animated.View className="flex-1 bg-bg" style={pageStyle}>
-        <GestureDetector gesture={pan}>
-          <View style={{ paddingTop: insets.top + 10, paddingBottom: 18, alignItems: 'center' }}>
-            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.2)' }} />
-            <Text className="text-white text-base font-semibold" style={{ marginTop: 14 }}>
-              {isEdit ? 'Edit Transaction' : 'Add Transaction'}
-            </Text>
-          </View>
-        </GestureDetector>
+      <GestureDetector gesture={pan}>
+      <View style={{ flex: 1 }}>
+        <View style={{ paddingTop: insets.top + 10, paddingBottom: 24, alignItems: 'center' }}>
+          <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.2)' }} />
+        </View>
 
+        {/* No flex:1 here deliberately — this content (toggle/amount/date/
+            description) is short and fixed, so stretching the ScrollView's
+            viewport to fill the space up to the footer just left a big dead
+            gap between Description and the button. Sizing to content means
+            the button and keypad sit right after it instead. */}
+        <GestureDetector gesture={nativeScroll}>
         <ScrollView
-          style={{ flex: 1 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingHorizontal: 20 }}
@@ -215,29 +366,25 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
           </View>
 
           <View className="mb-8 items-center">
-            <View className="flex-row items-center justify-center gap-1">
-              <Text className="text-4xl font-light text-white/35" style={{ lineHeight: 56 }}>₹</Text>
-              <TextInput
-                ref={amountRef}
-                value={amount}
-                onChangeText={setAmount}
-                placeholder="0"
-                placeholderTextColor="#333333"
-                keyboardType="decimal-pad"
-                className="font-semibold text-left text-white"
-                // text-5xl's default lineHeight (1x font-size) is too tight for
-                // iOS to render tall digit glyphs in a TextInput without
-                // clipping their tops — set both explicitly with headroom.
-                //
-                // Left-aligned rather than centered: on Android, an empty
-                // TextInput with textAlign:'center' places the blinking
-                // caret at a different horizontal position than the
-                // (also centered) placeholder text, reading as a large,
-                // unexplained gap between "0" and the cursor. Left-align
-                // anchors both the placeholder and caret right after the
-                // ₹ symbol, which sidesteps the mismatch entirely.
-                style={{ minWidth: 24, fontSize: 48, lineHeight: 56 }}
-              />
+            {/* No gap on this row — a gap-* class puts equal space between
+                every child, which meant every single digit, not just the ₹
+                symbol before the first one. The ₹ carries its own marginRight
+                instead, and digits sit directly adjacent like a real number. */}
+            <View className="flex-row items-center justify-center">
+              <Animated.Text
+                layout={AMOUNT_LAYOUT_TRANSITION}
+                className="font-light text-white/35"
+                style={{ fontSize: 44, lineHeight: 56, marginRight: 4 }}
+              >
+                ₹
+              </Animated.Text>
+              {amount ? (
+                [...amount].map((char, i) => (
+                  <AmountDigit key={i} char={char} animateIn={i >= prevAmountLength && !skipDigitAnimRef.current} />
+                ))
+              ) : (
+                <Text className="font-semibold" style={{ fontSize: 48, lineHeight: 56, color: '#333333' }}>0</Text>
+              )}
             </View>
           </View>
 
@@ -266,12 +413,10 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
             />
           </View>
         </ScrollView>
+        </GestureDetector>
 
-        {/* Footer sits right above the fixed keyboard reserve, not the real
-            keyboard edge — its position never changes when the keyboard
-            opens/closes or switches type. */}
-        <View style={{ paddingHorizontal: 20, paddingBottom: KEYBOARD_RESERVE + 16 }}>
-          {!!error && <Text className="text-red-400 text-base text-center mb-3">{error}</Text>}
+        {!!error && <Text className="text-red-400 text-base text-center mx-5 mb-3">{error}</Text>}
+        <View style={{ paddingHorizontal: 20, paddingBottom: 20 }}>
           <GlassPressable
             variant="active"
             radius={16}
@@ -286,12 +431,17 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
             </Text>
           </GlassPressable>
         </View>
+
+        {/* Fixed, always-present keypad for Amount — same permanent-layout
+            idea as the reference recording this was modeled on: no keyboard
+            lifecycle to sync with because there's no real keyboard involved. */}
+        <AmountKeypad onKeyPress={handleKeypadPress} insetBottom={insets.bottom} />
+      </View>
+      </GestureDetector>
       </Animated.View>
 
       {/* Calendar overlay — lives inside this same Modal (avoids nested-Modal
-          quirks on iOS). Anchored near the top rather than centered —
-          centered would sit right where the keyboard is if a text field was
-          focused when Date was tapped. */}
+          quirks on iOS). Anchored near the top rather than centered. */}
       {calOpen && (
         <Pressable
           style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'flex-start', paddingHorizontal: 24, paddingTop: insets.top + 70 }]}

@@ -18,7 +18,8 @@ import { CheckIcon } from '../../components/icons';
 // a pile of one-off effects.
 const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 
-const ITEM_STAGGER_MS = 2000;
+const ITEM_STAGGER_MS = 1000;
+const LINE_STAGGER_MS = 400;
 const ITEM_DURATION_MS = 650;
 const HOLD_MS = 6000; // dwell time on a popup/reveal page before auto-advancing
 
@@ -99,11 +100,12 @@ function ChecklistPage({ title, items, buttonLabel, buttonColor, buttonTextColor
 
 // Green tick "pop" + short message, held on screen for HOLD_MS before
 // auto-advancing — used for both the "account created" and "trial started"
-// confirmations, which only differ in copy.
+// confirmations, which only differ in copy. Each line gets its own FadeIn
+// (same bottom-to-center settle used for the checklist items) staggered by
+// LINE_STAGGER_MS, rather than the whole block fading in as one unit.
 function TickPopup({ lines, onDone }) {
   const circleOpacity = useSharedValue(0);
   const circleScale = useSharedValue(0.6);
-  const textProgress = useSharedValue(0);
 
   useEffect(() => {
     circleOpacity.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) });
@@ -111,7 +113,6 @@ function TickPopup({ lines, onDone }) {
       withTiming(1.15, { duration: 420, easing: Easing.out(Easing.back(1.4)) }),
       withTiming(1, { duration: 240, easing: Easing.out(Easing.cubic) }),
     ));
-    textProgress.value = withDelay(500, withTiming(1, { duration: 500, easing: SETTLE_EASING }));
 
     const t = setTimeout(onDone, HOLD_MS);
     return () => clearTimeout(t);
@@ -121,10 +122,6 @@ function TickPopup({ lines, onDone }) {
   const circleStyle = useAnimatedStyle(() => ({
     opacity: circleOpacity.value,
     transform: [{ scale: circleScale.value }],
-  }));
-  const textStyle = useAnimatedStyle(() => ({
-    opacity: textProgress.value,
-    transform: [{ translateY: (1 - textProgress.value) * 10 }],
   }));
 
   return (
@@ -137,11 +134,13 @@ function TickPopup({ lines, onDone }) {
       >
         <CheckIcon size={20} />
       </Animated.View>
-      <Animated.View style={[{ alignItems: 'center' }, textStyle]}>
+      <View style={{ alignItems: 'center' }}>
         {lines.map((line, i) => (
-          <Text key={i} style={[{ textAlign: 'center' }, line.style]}>{line.text}</Text>
+          <FadeIn key={i} delay={500 + i * LINE_STAGGER_MS} distance={20}>
+            <Text style={[{ textAlign: 'center' }, line.style]}>{line.text}</Text>
+          </FadeIn>
         ))}
-      </Animated.View>
+      </View>
     </View>
   );
 }

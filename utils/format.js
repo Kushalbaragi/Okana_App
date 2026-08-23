@@ -182,6 +182,7 @@ export function getLifetimeMonthly(transactions) {
     return {
       income: [0, 0], expense: [0, 0],
       labels: [`${MONTHS[prevMonth]} ${String(prevYear).slice(2)}`, `${MONTHS[currMonth]} ${String(currYear).slice(2)}`],
+      months: [{ year: prevYear, month: prevMonth }, { year: currYear, month: currMonth }],
     }
   }
   const earliest = transactions.reduce((min, tx) => {
@@ -192,11 +193,13 @@ export function getLifetimeMonthly(transactions) {
   const totalMonths = (currYear - startYear) * 12 + (currMonth - startMonth) + 1
   const income  = new Array(totalMonths).fill(0)
   const expense = new Array(totalMonths).fill(0)
-  const labels  = Array.from({ length: totalMonths }, (_, i) => {
-    const y = startYear + Math.floor((startMonth + i) / 12)
-    const m = (startMonth + i) % 12
-    return `${MONTHS[m]} ${String(y).slice(2)}`
-  })
+  // Parallel to labels — the actual {year, month} each bar represents, so
+  // callers can filter/select by real calendar date instead of array index.
+  const months  = Array.from({ length: totalMonths }, (_, i) => ({
+    year: startYear + Math.floor((startMonth + i) / 12),
+    month: (startMonth + i) % 12,
+  }))
+  const labels  = months.map(({ year, month }) => `${MONTHS[month]} ${String(year).slice(2)}`)
   transactions.forEach(tx => {
     const d = new Date(tx.date)
     const idx = (d.getFullYear() - startYear) * 12 + (d.getMonth() - startMonth)
@@ -205,7 +208,7 @@ export function getLifetimeMonthly(transactions) {
       else expense[idx] += tx.amount
     }
   })
-  return { income, expense, labels }
+  return { income, expense, labels, months }
 }
 
 export function getDelta(transactions, type, month, year) {

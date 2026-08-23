@@ -29,7 +29,13 @@
       "expo-router",
       "expo-font",
       "expo-notifications",
-      "./plugins/withAndroidSoftInputMode"
+      "./plugins/withAndroidSoftInputMode",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Okana uses your photo library so you can set a profile picture."
+        }
+      ]
     ]
   }
 }

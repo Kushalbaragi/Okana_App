@@ -16,7 +16,7 @@ function TransactionList({
   selectedMonth,
   year,
   timeRange  = 'year',
-  selectedYear,
+  selectedPeriod,
   selectedDay,
   onEdit,
   onDelete,
@@ -75,7 +75,10 @@ function TransactionList({
         if (!isOverview && tx.type !== activeTab) return false;
 
         if (timeRange === '5y') {
-          if (selectedYear != null) return d.getFullYear() === selectedYear;
+          if (selectedPeriod != null) {
+            if (selectedPeriod.month != null) return d.getFullYear() === selectedPeriod.year && d.getMonth() === selectedPeriod.month;
+            return d.getFullYear() === selectedPeriod.year;
+          }
           return true;
         }
         return d.getMonth() === selectedMonth && d.getFullYear() === year;
@@ -85,7 +88,7 @@ function TransactionList({
           new Date(b.date) - new Date(a.date) ||
           new Date(b.createdAt) - new Date(a.createdAt),
       );
-  }, [transactions, activeTab, isOverview, selectedMonth, year, timeRange, selectedYear, selectedDay]);
+  }, [transactions, activeTab, isOverview, selectedMonth, year, timeRange, selectedPeriod, selectedDay]);
 
   // Single source of truth for both render paths — SectionList just gets
   // one untitled section when the view isn't grouped, so there's only one

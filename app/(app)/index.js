@@ -83,7 +83,9 @@ export default function Dashboard() {
   const [timeRange, setTimeRange] = useState('month');
   const [year, setYear] = useState(currYear);
   const [selectedMonth, setSelectedMonth] = useState(currMonth);
-  const [selectedYear, setSelectedYear] = useState(null);
+  // { year, month } | null — month is null when the selection is a whole
+  // year (5y-yearly mode) and 0-11 when it's a specific month (5y-monthly).
+  const [selectedPeriod, setSelectedPeriod] = useState(null);
   const [selectedDay, setSelectedDay] = useState(null);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -394,8 +396,8 @@ export default function Dashboard() {
         selectedMonth={selectedMonth}
         year={year}
         onMonthChange={setSelectedMonth}
-        selectedYear={selectedYear}
-        onYearChange={setSelectedYear}
+        selectedPeriod={selectedPeriod}
+        onPeriodChange={setSelectedPeriod}
         selectedDay={selectedDay}
         onDayChange={setSelectedDay}
       />
@@ -408,7 +410,7 @@ export default function Dashboard() {
         selectedMonth={timeRange === 'month' ? currMonth : selectedMonth}
         year={timeRange === '5y' ? currYear : year}
         timeRange={timeRange}
-        selectedYear={selectedYear}
+        selectedPeriod={selectedPeriod}
         selectedDay={selectedDay}
         onEdit={openEdit}
         onDelete={deleteTransaction}
