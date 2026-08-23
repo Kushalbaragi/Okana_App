@@ -8,8 +8,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
 import { useSubscription } from '../../hooks/useSubscription';
 import { supabase } from '../../lib/supabase';
-import { BackIcon, EditIcon, EyeIcon, ChevronRight, CheckIcon, CameraIcon } from '../../components/icons';
-import { GlassView, GlassTextInput, GlassPressable } from '../../components/Glass';
+import { BackIcon, EditIcon, ChevronRight, CheckIcon, CameraIcon } from '../../components/icons';
+import { GlassPressable } from '../../components/Glass';
 import { ONBOARDING_SEEN_KEY } from '../onboarding';
 import { AnimatedModal } from '../../components/AnimatedModal';
 
@@ -181,73 +181,6 @@ function AvatarPhoto({ uri, phase, onPress }) {
   );
 }
 
-function ChangePasswordModal({ open, onClose }) {
-  const [newPw, setNewPw] = useState('');
-  const [confirmPw, setConfirmPw] = useState('');
-  const [showNew, setShowNew] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [done, setDone] = useState(false);
-
-  async function handleSave() {
-    setError('');
-    if (newPw.length < 6) { setError('Password must be at least 6 characters'); return; }
-    if (newPw !== confirmPw) { setError('Passwords do not match'); return; }
-    setSaving(true);
-    const { error: err } = await supabase.auth.updateUser({ password: newPw });
-    setSaving(false);
-    if (err) { setError(err.message); return; }
-    setDone(true);
-    setTimeout(() => { setDone(false); setNewPw(''); setConfirmPw(''); onClose(); }, 1200);
-  }
-
-  function handleClose() {
-    setNewPw(''); setConfirmPw(''); setError(''); setDone(false); onClose();
-  }
-
-  return (
-    <AnimatedModal open={open} onClose={handleClose} variant="bottom">
-      <GlassView variant="modal" radius={24} corners="t" className="px-6 pt-5 pb-10">
-        <View className="w-8 h-1 rounded-full mx-auto mb-5" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }} />
-        <Text className="text-white font-semibold text-base mb-5">{done ? '✓ Password updated' : 'Change Password'}</Text>
-
-        {!done && (
-          <>
-            <View className="mb-4" style={{ position: 'relative' }}>
-              <Text className="text-white text-[15px] font-medium mb-2">New Password</Text>
-              <GlassTextInput value={newPw} onChangeText={setNewPw} placeholder="••••••••" secureTextEntry={!showNew} />
-              <Pressable onPress={() => setShowNew(v => !v)} style={{ position: 'absolute', right: 12, top: 30, bottom: 0, justifyContent: 'center' }}>
-                <EyeIcon open={showNew} />
-              </Pressable>
-            </View>
-
-            <View className="mb-5" style={{ position: 'relative' }}>
-              <Text className="text-white text-[15px] font-medium mb-2">Confirm Password</Text>
-              <GlassTextInput value={confirmPw} onChangeText={setConfirmPw} placeholder="••••••••" secureTextEntry={!showConfirm} />
-              <Pressable onPress={() => setShowConfirm(v => !v)} style={{ position: 'absolute', right: 12, top: 30, bottom: 0, justifyContent: 'center' }}>
-                <EyeIcon open={showConfirm} />
-              </Pressable>
-            </View>
-
-            {!!error && <Text className="text-red-400 text-base mb-4">{error}</Text>}
-
-            <GlassPressable
-              variant="active"
-              radius={16}
-              disabled={saving || !newPw || !confirmPw}
-              onPress={handleSave}
-              className="w-full py-[14px] items-center"
-            >
-              <Text className="text-black text-base font-semibold">{saving ? 'Saving…' : 'Update Password'}</Text>
-            </GlassPressable>
-          </>
-        )}
-      </GlassView>
-    </AnimatedModal>
-  );
-}
-
 function ConfirmModal({ open, title, message, confirmLabel, onConfirm, onCancel, onClosed }) {
   return (
     <AnimatedModal open={open} onClose={onCancel} onClosed={onClosed} variant="center">
@@ -360,7 +293,6 @@ export default function AccountPage() {
   const [savingName, setSavingName] = useState(false);
   const [avatarPhase, setAvatarPhase] = useState('idle'); // 'idle' | 'uploading' | 'success'
 
-  const [showPwModal, setShowPwModal] = useState(false);
   const [showEraseConfirm, setShowEraseConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   // { type: 'erase' | 'delete', phase: 'working' | 'success' } | null — one
@@ -580,18 +512,6 @@ export default function AccountPage() {
             <Text className="text-white/40 text-xs font-medium mb-1">Email</Text>
             <Text className="text-white/60 text-base">{profile?.email || '—'}</Text>
           </View>
-
-          <Divider />
-
-          <View className="px-4 py-4">
-            <Text className="text-white/40 text-xs font-medium mb-1">Password</Text>
-            <View className="flex-row items-center justify-between">
-              <Text className="text-white text-base" style={{ letterSpacing: 2 }}>••••••••</Text>
-              <Pressable onPress={() => setShowPwModal(true)} className="w-7 h-7 items-center justify-center rounded-lg">
-                <EditIcon />
-              </Pressable>
-            </View>
-          </View>
         </View>
 
         <View className="mx-4 mt-4 rounded-2xl overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' }}>
@@ -611,8 +531,6 @@ export default function AccountPage() {
         )}
         {!actionError && <View className="mb-8" />}
       </ScrollView>
-
-      <ChangePasswordModal open={showPwModal} onClose={() => setShowPwModal(false)} />
 
       <ConfirmModal
         open={showEraseConfirm}

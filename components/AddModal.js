@@ -8,6 +8,7 @@ import Svg, { Rect, Line } from 'react-native-svg';
 import { today, toTitleCase } from '../utils/format';
 import CalendarPicker from './CalendarPicker';
 import { GlassPressable } from './Glass';
+import { NumericKeypad } from './NumericKeypad';
 
 // How far (px) or how fast (px/s) a downward drag on the handle needs to go
 // before it counts as "dismiss" rather than snapping back.
@@ -36,56 +37,6 @@ function CalIcon() {
       <Line x1="4.5" y1="1" x2="4.5" y2="4" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" strokeLinecap="round" />
       <Line x1="9.5" y1="1" x2="9.5" y2="4" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" strokeLinecap="round" />
     </Svg>
-  );
-}
-
-// A plain button grid standing in for the OS decimal-pad keyboard on the
-// Amount field — Amount is the field that auto-focused on open, so it was
-// the one actually causing the "keyboard pops in after the sheet" mismatch.
-// A custom keypad has no native show/hide lifecycle to sync with at all: it
-// just renders as a permanent, fixed-height part of this screen's layout
-// from the moment it mounts. (Description stays a normal TextInput — see
-// the discussion this was born from: a full custom text keyboard trades
-// away autocorrect/dictation/accessibility for a field that isn't the one
-// causing the problem in the first place.)
-const KEYPAD_ROWS = [
-  ['1', '2', '3'],
-  ['4', '5', '6'],
-  ['7', '8', '9'],
-  ['.', '0', 'backspace'],
-];
-
-// Flat, no per-key box — just the digit sitting on the page background,
-// matching the reference. Feedback on tap comes from a Reanimated scale+dim
-// on the label itself (driven via onPressIn/onPressOut, not the Pressable's
-// own style prop — a function-style prop on Pressable doesn't reliably
-// apply in this NativeWind setup, same issue GlassPressable works around).
-function KeypadKey({ label, onPress }) {
-  const pressProgress = useSharedValue(0);
-
-  function handlePressIn() {
-    pressProgress.value = withTiming(1, { duration: 90, easing: Easing.out(Easing.cubic) });
-  }
-  function handlePressOut() {
-    pressProgress.value = withTiming(0, { duration: 160, easing: Easing.out(Easing.cubic) });
-  }
-
-  const labelStyle = useAnimatedStyle(() => ({
-    opacity: 1 - pressProgress.value * 0.5,
-    transform: [{ scale: 1 - pressProgress.value * 0.15 }],
-  }));
-
-  return (
-    <Pressable
-      onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={{ flex: 1, height: 64, alignItems: 'center', justifyContent: 'center' }}
-    >
-      <Animated.Text style={[{ color: '#ffffff', fontSize: label === 'backspace' ? 24 : 30, fontWeight: '400' }, labelStyle]}>
-        {label === 'backspace' ? '⌫' : label}
-      </Animated.Text>
-    </Pressable>
   );
 }
 
@@ -142,20 +93,6 @@ function AmountDigit({ char, animateIn }) {
     >
       {char}
     </Animated.Text>
-  );
-}
-
-function AmountKeypad({ onKeyPress, insetBottom }) {
-  return (
-    <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insetBottom + 10 }}>
-      {KEYPAD_ROWS.map((row, ri) => (
-        <View key={ri} className="flex-row" style={{ marginBottom: ri === KEYPAD_ROWS.length - 1 ? 0 : 6 }}>
-          {row.map(key => (
-            <KeypadKey key={key} label={key} onPress={() => onKeyPress(key)} />
-          ))}
-        </View>
-      ))}
-    </View>
   );
 }
 
@@ -435,7 +372,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
         {/* Fixed, always-present keypad for Amount — same permanent-layout
             idea as the reference recording this was modeled on: no keyboard
             lifecycle to sync with because there's no real keyboard involved. */}
-        <AmountKeypad onKeyPress={handleKeypadPress} insetBottom={insets.bottom} />
+        <NumericKeypad onKeyPress={handleKeypadPress} insetBottom={insets.bottom} />
       </View>
       </GestureDetector>
       </Animated.View>

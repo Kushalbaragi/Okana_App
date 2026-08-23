@@ -1,22 +1,28 @@
 import { useState, useEffect } from 'react';
-import { useRouter, Link } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { View, Text, Platform, Keyboard, Pressable } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { useAuth } from '../../context/AuthContext';
 import { GlassTextInput, GlassPressable } from '../../components/Glass';
-import { Spinner } from '../../components/icons';
+import { Spinner, GoogleIcon } from '../../components/icons';
 
+// One screen for both new and returning users — email + OTP makes the
+// old "sign up" vs "log in" distinction moot, sendOtp() creates the
+// account on first use if it doesn't exist yet.
 export default function LoginScreen() {
-  const { login } = useAuth();
+  const { sendOtp, signInWithApple, signInWithGoogle } = useAuth();
   const router = useRouter();
-  const [form, setForm] = useState({ email: '', password: '' });
+  const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState(null); // null | 'apple' | 'google'
+  const [appleAvailable, setAppleAvailable] = useState(false);
 
-  function setField(key, value) {
-    setForm(f => ({ ...f, [key]: value }));
-    setError('');
-  }
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    AppleAuthentication.isAvailableAsync().then(setAppleAvailable);
+  }, []);
 
   // Tracked manually rather than via KeyboardAvoidingView — see AnimatedModal.js
   // for why: its own internal animation was re-triggering (visibly) every
@@ -44,18 +50,50 @@ export default function LoginScreen() {
   const containerStyle = useAnimatedStyle(() => ({ paddingBottom: keyboardOffset.value }));
 
   async function handleSubmit() {
-    const email = form.email.trim();
-    if (!email || !form.password) { setError('Please fill in all fields'); return; }
+    const trimmed = email.trim();
+    if (!trimmed) { setError('Please enter your email'); return; }
     setLoading(true);
+    setError('');
     try {
-      await login({ email, password: form.password });
-      router.replace('/(app)');
-    } catch {
-      // Deliberately generic — distinguishing "wrong password" from "no such
-      // account" lets an attacker enumerate registered emails.
-      setError('Incorrect email or password. Please try again.');
+      await sendOtp({ email: trimmed });
+      router.push({ pathname: '/(auth)/otp', params: { email: trimmed } });
+    } catch (err) {
+      setError(err.message || 'Failed to send code. Please try again.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  function routeAfterSignIn(isNewUser) {
+    router.replace(isNewUser ? '/(auth)/name' : '/(app)');
+  }
+
+  async function handleAppleSignIn() {
+    setError('');
+    setOauthLoading('apple');
+    try {
+      const { isNewUser } = await signInWithApple();
+      routeAfterSignIn(isNewUser);
+    } catch (err) {
+      // User dismissing the Apple sheet isn't an error worth surfacing.
+      if (err.code !== 'ERR_REQUEST_CANCELED') {
+        setError(err.message || 'Apple sign-in failed. Please try again.');
+      }
+    } finally {
+      setOauthLoading(null);
+    }
+  }
+
+  async function handleGoogleSignIn() {
+    setError('');
+    setOauthLoading('google');
+    try {
+      const { isNewUser } = await signInWithGoogle();
+      routeAfterSignIn(isNewUser);
+    } catch (err) {
+      setError(err.message || 'Google sign-in failed. Please try again.');
+    } finally {
+      setOauthLoading(null);
     }
   }
 
@@ -72,58 +110,78 @@ export default function LoginScreen() {
           <View>
             <Text className="text-white text-[15px] font-medium mb-2">Email</Text>
             <GlassTextInput
-              value={form.email}
-              onChangeText={t => setField('email', t)}
+              value={email}
+              onChangeText={t => { setEmail(t); setError(''); }}
               placeholder="you@example.com"
               autoCapitalize="none"
               keyboardType="email-address"
               autoComplete="email"
               textContentType="emailAddress"
+              onSubmitEditing={handleSubmit}
             />
           </View>
 
-          <View>
-            <View className="flex-row items-center justify-between mb-2">
-              <Text className="text-white text-[15px] font-medium">Password</Text>
-              <Link href="/(auth)/forgot-password">
-                <Text className="text-white/35 text-base">Forgot password?</Text>
-              </Link>
-            </View>
-            <GlassTextInput
-              value={form.password}
-              onChangeText={t => setField('password', t)}
-              placeholder="••••••••"
-              autoComplete="password"
-              textContentType="password"
-              secureTextEntry
-            />
-          </View>
-
-          {!!error && <Text className="text-red-400 text-base text-center">{error}</Text>}
+          <Text className="text-red-400 text-sm text-center" style={{ minHeight: 18 }} numberOfLines={1}>
+            {error}
+          </Text>
 
           <GlassPressable
             variant="active"
             radius={16}
             onPress={handleSubmit}
-            disabled={loading}
-            className="w-full py-[14px] mt-2 flex-row items-center justify-center gap-2"
+            disabled={loading || !!oauthLoading}
+            className="w-full py-4 flex-row items-center justify-center gap-2"
           >
             {loading ? (
               <>
                 <Spinner color="#000000" trackColor="rgba(0,0,0,0.25)" />
-                <Text className="text-black text-base font-semibold">Logging in…</Text>
+                <Text className="text-black text-base font-semibold">Sending code…</Text>
               </>
             ) : (
-              <Text className="text-black text-base font-semibold">Log In</Text>
+              <Text className="text-black text-base font-semibold">Continue</Text>
             )}
           </GlassPressable>
         </View>
 
-        <View className="flex-row justify-center mt-6">
-          <Text className="text-white/35 text-base">Don't have an account? </Text>
-          <Link href="/(auth)/signup">
-            <Text className="text-white font-medium text-base">Sign Up</Text>
-          </Link>
+        <Text className="text-white/25 text-sm text-center mt-4">
+          We'll email you a code — no password needed.
+        </Text>
+
+        <View className="flex-row items-center my-6">
+          <View className="flex-1 h-[1px] bg-white/10" />
+          <Text className="text-white/25 text-sm mx-3">or</Text>
+          <View className="flex-1 h-[1px] bg-white/10" />
+        </View>
+
+        <View className="gap-3">
+          {appleAvailable && (
+            <View style={{ opacity: oauthLoading && oauthLoading !== 'apple' ? 0.5 : 1 }} pointerEvents={oauthLoading ? 'none' : 'auto'}>
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                cornerRadius={16}
+                style={{ width: '100%', height: 52 }}
+                onPress={handleAppleSignIn}
+              />
+            </View>
+          )}
+
+          <GlassPressable
+            variant="glass"
+            radius={16}
+            onPress={handleGoogleSignIn}
+            disabled={!!oauthLoading}
+            className="w-full py-4 flex-row items-center justify-center gap-2"
+          >
+            {oauthLoading === 'google' ? (
+              <Spinner />
+            ) : (
+              <>
+                <GoogleIcon size={19} />
+                <Text className="text-white font-semibold" style={{ fontSize: 17 }}>Continue with Google</Text>
+              </>
+            )}
+          </GlassPressable>
         </View>
       </View>
     </Animated.View>

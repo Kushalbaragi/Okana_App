@@ -27,7 +27,6 @@ const HOLD_MS = 2900;
 const FADE_OUT_MS = 550;
 const PAGE_DURATION_MS = FADE_IN_MS + HOLD_MS + FADE_OUT_MS;
 
-const BUTTON_STAGGER_MS = 200;
 const BUTTON_DURATION_MS = 480;
 
 function CoinPage({ active }) {
@@ -77,16 +76,14 @@ function QuotePage({ active }) {
   );
 }
 
-function WelcomePage({ active, onCreateAccount, onLogin }) {
+function WelcomePage({ active, onContinue }) {
   const titleProgress = useSharedValue(0);
-  const createProgress = useSharedValue(0);
-  const loginProgress = useSharedValue(0);
+  const buttonProgress = useSharedValue(0);
 
   useEffect(() => {
     if (!active) return;
     titleProgress.value = withTiming(1, { duration: 550, easing: Easing.out(Easing.cubic) });
-    createProgress.value = withDelay(250, withTiming(1, { duration: BUTTON_DURATION_MS, easing: SETTLE_EASING }));
-    loginProgress.value = withDelay(250 + BUTTON_STAGGER_MS, withTiming(1, { duration: BUTTON_DURATION_MS, easing: SETTLE_EASING }));
+    buttonProgress.value = withDelay(250, withTiming(1, { duration: BUTTON_DURATION_MS, easing: SETTLE_EASING }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
@@ -94,13 +91,9 @@ function WelcomePage({ active, onCreateAccount, onLogin }) {
     opacity: titleProgress.value,
     transform: [{ translateY: (1 - titleProgress.value) * 12 }],
   }));
-  const createStyle = useAnimatedStyle(() => ({
-    opacity: createProgress.value,
-    transform: [{ translateY: (1 - createProgress.value) * 16 }],
-  }));
-  const loginStyle = useAnimatedStyle(() => ({
-    opacity: loginProgress.value,
-    transform: [{ translateY: (1 - loginProgress.value) * 16 }],
+  const buttonStyle = useAnimatedStyle(() => ({
+    opacity: buttonProgress.value,
+    transform: [{ translateY: (1 - buttonProgress.value) * 16 }],
   }));
 
   return (
@@ -109,25 +102,14 @@ function WelcomePage({ active, onCreateAccount, onLogin }) {
         Welcome to Okana
       </Animated.Text>
 
-      <View style={{ width: 300, gap: 12 }}>
-        <Animated.View style={[{ alignSelf: 'stretch' }, createStyle]}>
-          <Pressable
-            onPress={onCreateAccount}
-            style={{ width: '100%', paddingVertical: 15, borderRadius: 16, alignItems: 'center', backgroundColor: '#ffffff' }}
-          >
-            <Text style={{ color: '#000000', fontSize: 16, fontWeight: '600' }}>Create Account</Text>
-          </Pressable>
-        </Animated.View>
-
-        <Animated.View style={[{ alignSelf: 'stretch' }, loginStyle]}>
-          <Pressable
-            onPress={onLogin}
-            style={{ width: '100%', paddingVertical: 15, borderRadius: 16, alignItems: 'center', backgroundColor: '#242424' }}
-          >
-            <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '600' }}>Login</Text>
-          </Pressable>
-        </Animated.View>
-      </View>
+      <Animated.View style={[{ width: 300 }, buttonStyle]}>
+        <Pressable
+          onPress={onContinue}
+          style={{ width: '100%', paddingVertical: 15, borderRadius: 16, alignItems: 'center', backgroundColor: '#ffffff' }}
+        >
+          <Text style={{ color: '#000000', fontSize: 16, fontWeight: '600' }}>Get Started</Text>
+        </Pressable>
+      </Animated.View>
     </View>
   );
 }
@@ -159,8 +141,7 @@ export default function OnboardingScreen() {
       {page === 2 && (
         <WelcomePage
           active={page === 2}
-          onCreateAccount={() => router.push('/(auth)/signup')}
-          onLogin={() => router.push('/(auth)/login')}
+          onContinue={() => router.push('/(auth)/login')}
         />
       )}
 
