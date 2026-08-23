@@ -73,7 +73,7 @@ export default function SignupScreen() {
 
         <View className="gap-4">
           <View>
-            <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Name</Text>
+            <Text className="text-white text-[15px] font-medium mb-2">Name</Text>
             <GlassTextInput
               value={form.name}
               onChangeText={t => setField('name', t)}
@@ -84,7 +84,7 @@ export default function SignupScreen() {
           </View>
 
           <View>
-            <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Email</Text>
+            <Text className="text-white text-[15px] font-medium mb-2">Email</Text>
             <GlassTextInput
               value={form.email}
               onChangeText={t => setField('email', t)}
@@ -97,7 +97,7 @@ export default function SignupScreen() {
           </View>
 
           <View>
-            <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Password</Text>
+            <Text className="text-white text-[15px] font-medium mb-2">Password</Text>
             <GlassTextInput
               value={form.password}
               onChangeText={t => setField('password', t)}
@@ -109,7 +109,7 @@ export default function SignupScreen() {
           </View>
 
           <View>
-            <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Confirm Password</Text>
+            <Text className="text-white text-[15px] font-medium mb-2">Confirm Password</Text>
             <GlassTextInput
               value={form.confirmPassword}
               onChangeText={t => setField('confirmPassword', t)}

@@ -82,7 +82,7 @@ export default function ForgotPasswordScreen() {
 
         <View className="gap-4">
           <View>
-            <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Email</Text>
+            <Text className="text-white text-[15px] font-medium mb-2">Email</Text>
             <GlassTextInput
               value={email}
               onChangeText={t => { setEmail(t); setError(''); }}

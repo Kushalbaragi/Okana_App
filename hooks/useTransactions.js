@@ -36,9 +36,9 @@ export function useTransactions() {
 
   // Wrapped in useCallback (with functional setState updaters below, so
   // none of these need `transactions` in their own closure) so consumers
-  // like AddModal — a heavy, always-in-the-tree component full of
-  // BlurViews — get referentially stable props and can actually skip
-  // re-rendering via memo() when unrelated Dashboard state changes.
+  // like AddModal — a heavy, always-in-the-tree component — get
+  // referentially stable props and can actually skip re-rendering via
+  // memo() when unrelated Dashboard state changes.
   const refresh = useCallback(async () => {
     if (!user) { setTransactions([]); return }
     setLoading(true)

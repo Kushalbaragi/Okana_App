@@ -127,7 +127,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
       <View style={{ flex: 1 }}>
         <Pressable style={{ flex: 1 }} onPress={onClose}>
           <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)' }]} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000000' }]} />
           </Animated.View>
         </Pressable>
 

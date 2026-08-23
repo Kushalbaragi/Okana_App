@@ -1,7 +1,12 @@
 import { memo, useEffect, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
-import { formatCurrency, budgetStatusColor } from '../utils/format';
+import { formatCurrency } from '../utils/format';
+
+// Always green — the bar previously shifted to yellow/red as spend
+// approached or passed the budget, but that's no longer wanted; one
+// consistent color throughout.
+const FILL_COLOR = 'rgba(74,222,128,0.6)';
 
 // flex:1 segments auto-size to whatever width the calendar card ends up at
 // (capped at maxWidth:340 in SpendCalendarModal, narrower on small screens)
@@ -50,7 +55,6 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
     );
   }
 
-  const { fill } = budgetStatusColor(percent);
   const remaining = amount - spent;
   const remainingLabel = remaining < 0
     ? `${formatCurrency(Math.abs(remaining))} over`
@@ -83,7 +87,7 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
         >
           <View className="flex-row" style={{ gap: 1, height: 18, width: barWidth }}>
             {Array.from({ length: SEGMENT_COUNT }).map((_, i) => (
-              <View key={i} style={{ flex: 1, height: 18, borderRadius: 3, backgroundColor: fill }} />
+              <View key={i} style={{ flex: 1, height: 18, borderRadius: 3, backgroundColor: FILL_COLOR }} />
             ))}
           </View>
         </Animated.View>

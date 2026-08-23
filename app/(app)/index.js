@@ -358,8 +358,7 @@ export default function Dashboard() {
   // memo() on Header/AddModal/SpendCalendarModal/Drawer/DailyInsightModal:
   // any unrelated Dashboard state change (e.g. switching chart tabs) handed
   // them a "new" onClose/onMenuOpen prop and forced a full re-render of
-  // each of those subtrees, AddModal's ~10-BlurView tree being the worst
-  // of it.
+  // each of those subtrees, AddModal being the heaviest of them.
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   const openCalendar = useCallback(() => setCalendarOpen(true), []);
@@ -418,9 +417,9 @@ export default function Dashboard() {
       <Pressable
         onPress={openAdd}
         className="absolute bottom-20 self-center w-20 h-20 rounded-full items-center justify-center"
-        style={{ backgroundColor: '#4a4a4a', left: '50%', marginLeft: -40, zIndex: 50, elevation: 50 }}
+        style={{ backgroundColor: '#ffffff', left: '50%', marginLeft: -40, zIndex: 50, elevation: 50 }}
       >
-        <PlusIcon size={30} />
+        <PlusIcon size={30} color="#000000" />
       </Pressable>
 
       <AddModal

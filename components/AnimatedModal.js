@@ -8,7 +8,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS
 // a backdrop) — this drives backdrop opacity and content transform
 // independently with Reanimated instead, and keeps the Modal mounted
 // through the close animation so it can actually play.
-export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', dim = 0.5, children }) {
+export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', dim = 1, children }) {
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const [visible, setVisible] = useState(open);
   const backdropOpacity = useSharedValue(0);

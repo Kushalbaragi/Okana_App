@@ -70,7 +70,7 @@ export default function LoginScreen() {
 
         <View className="gap-4">
           <View>
-            <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Email</Text>
+            <Text className="text-white text-[15px] font-medium mb-2">Email</Text>
             <GlassTextInput
               value={form.email}
               onChangeText={t => setField('email', t)}
@@ -84,7 +84,7 @@ export default function LoginScreen() {
 
           <View>
             <View className="flex-row items-center justify-between mb-2">
-              <Text className="text-white/35 text-sm font-medium uppercase tracking-wider">Password</Text>
+              <Text className="text-white text-[15px] font-medium">Password</Text>
               <Link href="/(auth)/forgot-password">
                 <Text className="text-white/35 text-base">Forgot password?</Text>
               </Link>

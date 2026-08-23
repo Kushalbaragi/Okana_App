@@ -108,7 +108,7 @@ export default function ResetPasswordScreen() {
 
         <View className="gap-4">
           <View>
-            <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">New Password</Text>
+            <Text className="text-white text-[15px] font-medium mb-2">New Password</Text>
             <GlassTextInput
               value={password}
               onChangeText={t => { setPassword(t); setError(''); }}
@@ -118,7 +118,7 @@ export default function ResetPasswordScreen() {
           </View>
 
           <View>
-            <Text className="text-white/35 text-sm font-medium mb-2 uppercase tracking-wider">Confirm Password</Text>
+            <Text className="text-white text-[15px] font-medium mb-2">Confirm Password</Text>
             <GlassTextInput
               value={confirm}
               onChangeText={t => { setConfirm(t); setError(''); }}

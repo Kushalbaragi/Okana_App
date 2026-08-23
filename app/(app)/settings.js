@@ -85,15 +85,6 @@ function InfoModal({ open, title, onClose, children }) {
   );
 }
 
-function P({ children, bold }) {
-  return (
-    <Text className="text-white/45 text-base mb-3" style={{ lineHeight: 22 }}>
-      {bold ? <Text style={{ color: 'rgba(255,255,255,0.7)', fontWeight: '600' }}>{bold} </Text> : null}
-      {children}
-    </Text>
-  );
-}
-
 export default function SettingsPage() {
   const router = useRouter();
   const { transactions } = useTransactions();
@@ -155,11 +146,11 @@ export default function SettingsPage() {
           <View>
             <SectionLabel>Legal</SectionLabel>
             <Card>
-              <Row label="Privacy Policy" onPress={() => setModal('privacy')} />
+              <Row label="Privacy Policy" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Privacy-Policy-3c58f887c3c9806180c1ed51844d872e?source=copy_link')} />
               <Divider />
-              <Row label="Terms & Conditions" onPress={() => setModal('terms')} />
+              <Row label="Terms & Conditions" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Terms-and-Condition-3c58f887c3c9806d86eae7473775949c?source=copy_link')} />
               <Divider />
-              <Row label="Refund & Cancellation Policy" onPress={() => setModal('refund')} />
+              <Row label="Refund & Cancellation Policy" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Refund-Cancellation-Policy-3c58f887c3c980c48cb6ded1520897ed?source=copy_link')} />
             </Card>
           </View>
 
@@ -194,37 +185,6 @@ export default function SettingsPage() {
         </View>
       </ScrollView>
 
-      <InfoModal open={modal === 'privacy'} title="Privacy Policy" onClose={() => setModal(null)}>
-        <P>Okana is designed with your privacy as the top priority.</P>
-        <P bold="Data storage:">All your financial data is stored securely in Supabase with row-level security. Only you can access your own data.</P>
-        <P bold="No selling:">We do not sell, share, or monetise your personal data in any way.</P>
-        <P bold="Authentication:">Login is handled by Supabase Auth with industry-standard encryption.</P>
-        <P bold="Payments:">Okana Plus subscription payments are processed by Razorpay, a PCI-DSS compliant payment gateway. Okana never sees or stores your card number, CVV, or full payment details — Razorpay handles that directly, and we only keep a masked reference (e.g. card network and last 4 digits) so we can show your saved payment method.</P>
-        <P bold="Analytics:">No third-party analytics or tracking libraries are used in this app.</P>
-        <P bold="Deletion:">You can erase all your data or delete your account at any time from the Account page. Deleting your account also cancels any active Okana Plus subscription.</P>
-        <Text className="text-white/25" style={{ fontSize: 12 }}>Last updated: August 2026</Text>
-      </InfoModal>
-
-      <InfoModal open={modal === 'terms'} title="Terms & Conditions" onClose={() => setModal(null)}>
-        <P>By using Okana you agree to the following terms.</P>
-        <P bold="Personal use:">This app is provided for personal, non-commercial use only.</P>
-        <P bold="Accuracy:">The app is a tracking tool and does not constitute financial advice. Always verify important financial decisions with a qualified professional.</P>
-        <P bold="Subscription & billing:">Okana Plus costs ₹499/year after a 30-day free trial. A payment method is collected via Razorpay when your trial starts and is charged automatically when the trial ends, unless you cancel first. Subscriptions renew automatically every year until cancelled. See our Refund & Cancellation Policy for details.</P>
-        <P bold="Availability:">The app is provided "as is". We make no guarantees regarding uptime or data availability.</P>
-        <P bold="Changes:">We may update these terms at any time. Continued use of the app constitutes acceptance.</P>
-        <P bold="Contact:">For any queries, reach out to the developer directly.</P>
-        <Text className="text-white/25" style={{ fontSize: 12 }}>Last updated: August 2026</Text>
-      </InfoModal>
-
-      <InfoModal open={modal === 'refund'} title="Refund & Cancellation Policy" onClose={() => setModal(null)}>
-        <P bold="Free trial:">Cancel anytime during your 30-day trial from the Subscription page — you won't be charged anything.</P>
-        <P bold="Cancelling a paid subscription:">Cancel anytime from the Subscription page. Your plan won't renew, but you keep full access to Okana Plus until the end of the period you've already paid for.</P>
-        <P bold="Refunds:">Okana Plus is a digital subscription that gives you immediate access to features. Payments already processed for the current billing period are non-refundable, including for early or partial cancellation.</P>
-        <P bold="Charged in error:">If you believe you were charged incorrectly — a duplicate charge, or a charge after you cancelled — contact us within 7 days at kushalbaragi@gmail.com and we'll investigate and refund if warranted.</P>
-        <P bold="Failed payments:">If a renewal payment fails, we'll prompt you to update your payment method. Access to adding new transactions is paused until it's resolved; your existing data always stays visible.</P>
-        <Text className="text-white/25" style={{ fontSize: 12 }}>Last updated: August 2026</Text>
-      </InfoModal>
-
       <InfoModal open={modal === 'contact'} title="Contact" onClose={() => setModal(null)}>
         <Text className="text-white/45 text-base mb-3">Have a question or need help? Reach out directly.</Text>
         <Pressable
@@ -248,12 +208,12 @@ export default function SettingsPage() {
               value={feedbackText}
               onChangeText={setFeedbackText}
               placeholder="Your feedback…"
-              placeholderTextColor="#333333"
+              placeholderTextColor="#4d4d4d"
               multiline
               numberOfLines={4}
               textAlignVertical="top"
               className="text-white text-base px-4 py-3 mb-4"
-              style={{ minHeight: 100, borderRadius: 12, backgroundColor: '#161616' }}
+              style={{ minHeight: 100, borderRadius: 12, backgroundColor: 'transparent', borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)' }}
             />
             {!!feedbackError && <Text className="text-red-400 text-base mb-4">{feedbackError}</Text>}
             <Pressable

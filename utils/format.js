@@ -168,10 +168,44 @@ export function getLifetimeYearly(transactions) {
   return { income, expense, labels: years.map(String), years }
 }
 
-export function budgetStatusColor(percent) {
-  if (percent >= 100) return { fill: 'rgba(248,113,113,0.7)', text: '#f87171' }
-  if (percent >= 90)  return { fill: 'rgba(234,179,8,0.7)',   text: '#eab308' }
-  return { fill: 'rgba(74,222,128,0.6)', text: '#4ade80' }
+// Monthly data from first transaction month to now — used for "All Time"
+// when the user's history spans fewer than 5 years, since yearly bars would
+// be too coarse to be useful that early on. getLifetimeYearly takes over
+// once there are 5+ years of history.
+export function getLifetimeMonthly(transactions) {
+  const now = new Date()
+  const currYear = now.getFullYear()
+  const currMonth = now.getMonth()
+  if (!transactions.length) {
+    const prevMonth = currMonth === 0 ? 11 : currMonth - 1
+    const prevYear = currMonth === 0 ? currYear - 1 : currYear
+    return {
+      income: [0, 0], expense: [0, 0],
+      labels: [`${MONTHS[prevMonth]} ${String(prevYear).slice(2)}`, `${MONTHS[currMonth]} ${String(currYear).slice(2)}`],
+    }
+  }
+  const earliest = transactions.reduce((min, tx) => {
+    const d = new Date(tx.date); return d < min ? d : min
+  }, now)
+  const startYear  = earliest.getFullYear()
+  const startMonth = earliest.getMonth()
+  const totalMonths = (currYear - startYear) * 12 + (currMonth - startMonth) + 1
+  const income  = new Array(totalMonths).fill(0)
+  const expense = new Array(totalMonths).fill(0)
+  const labels  = Array.from({ length: totalMonths }, (_, i) => {
+    const y = startYear + Math.floor((startMonth + i) / 12)
+    const m = (startMonth + i) % 12
+    return `${MONTHS[m]} ${String(y).slice(2)}`
+  })
+  transactions.forEach(tx => {
+    const d = new Date(tx.date)
+    const idx = (d.getFullYear() - startYear) * 12 + (d.getMonth() - startMonth)
+    if (idx >= 0 && idx < totalMonths) {
+      if (tx.type === 'income') income[idx] += tx.amount
+      else expense[idx] += tx.amount
+    }
+  })
+  return { income, expense, labels }
 }
 
 export function getDelta(transactions, type, month, year) {

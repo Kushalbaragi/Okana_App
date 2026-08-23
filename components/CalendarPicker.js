@@ -72,21 +72,31 @@ function CalendarPicker({ value, onChange, onClose }) {
             return (
               <View key={i} className="flex-1 aspect-square items-center justify-center">
                 {isSelected ? (
-                  <GlassPressable
-                    variant="active"
-                    radius={9999}
-                    onPress={() => pick(d)}
-                    className="w-8 h-8 items-center justify-center"
-                  >
-                    <Text className="text-black text-base font-semibold">{d}</Text>
-                  </GlassPressable>
+                  isToday ? (
+                    <Pressable
+                      onPress={() => pick(d)}
+                      className="w-8 h-8 rounded-full items-center justify-center"
+                      style={{ backgroundColor: '#4ade80' }}
+                    >
+                      <Text className="text-black text-base font-semibold">{d}</Text>
+                    </Pressable>
+                  ) : (
+                    <GlassPressable
+                      variant="active"
+                      radius={9999}
+                      onPress={() => pick(d)}
+                      className="w-8 h-8 items-center justify-center"
+                    >
+                      <Text className="text-black text-base font-semibold">{d}</Text>
+                    </GlassPressable>
+                  )
                 ) : (
                   <Pressable
                     onPress={() => pick(d)}
                     className="w-8 h-8 rounded-full items-center justify-center"
-                    style={isToday ? { borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' } : null}
+                    style={isToday ? { borderWidth: 1, borderColor: '#4ade80' } : null}
                   >
-                    <Text className={isToday ? 'text-white text-base font-medium' : 'text-white/60 text-base'}>{d}</Text>
+                    <Text className={isToday ? 'text-base font-medium' : 'text-white/60 text-base'} style={isToday ? { color: '#4ade80' } : null}>{d}</Text>
                   </Pressable>
                 )}
               </View>

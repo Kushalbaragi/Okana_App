@@ -1,12 +1,13 @@
-import { View, Pressable, TextInput, StyleSheet } from 'react-native';
+import { View, Text, Pressable, TextInput, StyleSheet } from 'react-native';
 
 // Flat, solid surfaces — no BlurView/backdrop-filter. Replaces the previous
 // glassmorphism look (translucent tint over a real-time blur), which read as
 // muddy/inconsistent on Android's software-rendered blur path.
 const BG = {
-  glass: '#161616',  // regular cards, secondary buttons/pills, inputs
+  glass: '#161616',  // regular cards, secondary buttons/pills
   modal: '#161616',  // bottom sheets / modal surfaces — same solid surface color throughout, deliberately
   active: '#ffffff', // primary CTAs and "this one's selected" state — one consistent treatment app-wide
+  field: 'transparent', // bordered form-field surfaces (inputs, date pickers) — outline only, no fill
 };
 
 // Tailwind's rounded-* scale, so call sites can pass the same vocabulary
@@ -58,12 +59,26 @@ export function GlassPressable({ variant = 'active', radius = RADIUS.xl, corners
 export function GlassTextInput({ radius = RADIUS.xl, style, className, inputClassName, ...props }) {
   const r = radiusStyle(radius);
   return (
-    <View style={[{ backgroundColor: BG.glass }, r, style]} className={className}>
+    <View
+      style={[{ backgroundColor: 'transparent', borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)' }, r, style]}
+      className={className}
+    >
       <TextInput
-        placeholderTextColor="#333333"
+        placeholderTextColor="#4d4d4d"
         className={inputClassName || 'text-white text-base px-4 py-3'}
         {...props}
       />
     </View>
+  );
+}
+
+// Shared label styling for every field label in the app — sentence case,
+// bright/white, sitting directly above its input. Replaces the previous
+// faded/uppercase/tracked-out treatment app-wide.
+export function FieldLabel({ children, style, className }) {
+  return (
+    <Text className={className || 'text-white text-[15px] font-medium mb-2'} style={style}>
+      {children}
+    </Text>
   );
 }

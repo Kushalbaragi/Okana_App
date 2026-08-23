@@ -1,6 +1,7 @@
 import { memo, useCallback, useRef } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
+import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { formatCurrencyFull, dateBoxParts } from '../utils/format';
 import { EditIcon, TrashIcon } from './icons';
@@ -61,6 +62,7 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
 
   const handleDelete = useCallback(() => {
     swipeableRef.current?.close();
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onDelete(tx.id);
   }, [tx.id, onDelete]);
 

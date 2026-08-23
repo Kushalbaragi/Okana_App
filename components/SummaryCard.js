@@ -11,8 +11,11 @@ import {
   getMonthlyTotals,
   getDailyTotals,
   getLifetimeYearly,
+  getLifetimeMonthly,
   currentMonthYear,
 } from '../utils/format';
+
+const LIFETIME_YEARLY_THRESHOLD = 5; // years of history before "All Time" switches from monthly to yearly bars
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 
 const MONTH_LABELS_SHORT = ['J','F','M','A','M','J','J','A','S','O','N','D'];
@@ -125,16 +128,34 @@ function SummaryCard({
 }) {
   const { month: currMonth, year: currYear } = currentMonthYear();
 
+  // Earliest transaction year decides "All Time" granularity — under 5
+  // years of history, yearly bars would only show a handful of candles, so
+  // months are shown instead; getLifetimeYearly takes over once there's
+  // enough history for yearly bars to actually be useful.
+  const earliestYear = useMemo(() => {
+    if (!transactions.length) return currYear;
+    return transactions.reduce((min, tx) => {
+      const y = new Date(tx.date).getFullYear(); return y < min ? y : min;
+    }, currYear);
+  }, [transactions, currYear]);
+  const lifetimeGranularity = (currYear - earliestYear + 1) < LIFETIME_YEARLY_THRESHOLD ? 'month' : 'year';
+
   const chartData = useMemo(() => {
     if (timeRange === 'month') return getDailyTotals(transactions, currMonth, currYear);
-    if (timeRange === '5y')    return getLifetimeYearly(transactions);
+    if (timeRange === '5y') {
+      return lifetimeGranularity === 'year' ? getLifetimeYearly(transactions) : getLifetimeMonthly(transactions);
+    }
     const { income, expense } = getMonthlyTotals(transactions, year);
     return { income, expense, labels: MONTH_LABELS_SHORT };
-  }, [transactions, timeRange, year, currYear, currMonth]);
+  }, [transactions, timeRange, year, currYear, currMonth, lifetimeGranularity]);
 
+  // Year-based drill-down (selecting a bar to filter the transaction list by
+  // that year) only makes sense when "All Time" bars are actually yearly —
+  // a monthly bar's value isn't a year total, so selecting one the same way
+  // would show the wrong amount.
   const yearsList = useMemo(() =>
-    timeRange === '5y' ? (chartData.years ?? chartData.labels.map(Number)) : []
-  , [timeRange, chartData]);
+    timeRange === '5y' && lifetimeGranularity === 'year' ? (chartData.years ?? chartData.labels.map(Number)) : []
+  , [timeRange, lifetimeGranularity, chartData]);
 
   const barValues = chartTab === 'income' ? chartData.income : chartData.expense;
 
@@ -154,13 +175,13 @@ function SummaryCard({
       return inc - exp;
     }
     if (timeRange === 'year') return getMonthTotal(transactions, chartTab, selectedMonth, year);
-    if (timeRange === '5y' && selectedYear != null) {
+    if (timeRange === '5y' && lifetimeGranularity === 'year' && selectedYear != null) {
       const idx = yearsList.indexOf(selectedYear);
       return idx >= 0 ? (inc_ ? chartData.income[idx] : chartData.expense[idx]) : 0;
     }
     const arr = inc_ ? chartData.income : chartData.expense;
     return arr.reduce((a, b) => a + b, 0);
-  }, [chartTab, chartData, timeRange, transactions, selectedMonth, year, selectedYear, yearsList]);
+  }, [chartTab, chartData, timeRange, transactions, selectedMonth, year, selectedYear, yearsList, lifetimeGranularity]);
 
   const delta = useMemo(() => {
     if (chartTab === 'overview' || timeRange !== 'year') return null;
@@ -180,10 +201,12 @@ function SummaryCard({
   const periodLabel = useMemo(() => {
     if (timeRange === 'month') return MONTH_NAMES[currMonth];
     if (timeRange === 'year')  return MONTH_NAMES[selectedMonth];
-    if (selectedYear != null)  return String(selectedYear);
-    if (yearsList.length)      return `${yearsList[0]} – ${currYear}`;
+    if (timeRange === '5y') {
+      if (lifetimeGranularity === 'year' && selectedYear != null) return String(selectedYear);
+      return earliestYear === currYear ? String(currYear) : `${earliestYear} – ${currYear}`;
+    }
     return String(currYear);
-  }, [timeRange, selectedMonth, currYear, currMonth, selectedYear, yearsList]);
+  }, [timeRange, selectedMonth, currYear, currMonth, selectedYear, lifetimeGranularity, earliestYear]);
 
   const lineChartData = useMemo(() => {
     if (timeRange !== 'year' || year < currYear) return chartData;
@@ -196,7 +219,7 @@ function SummaryCard({
   }, [chartData, timeRange, year, currYear]);
 
   const animKey   = `${chartTab}-${timeRange}-${year}`;
-  const labelStep = timeRange === 'month' ? 4 : 1;
+  const labelStep = timeRange === 'month' ? 4 : (timeRange === '5y' && lifetimeGranularity === 'month' ? 6 : 1);
 
   return (
     <View className="mx-4 mb-2 p-5">
@@ -232,13 +255,13 @@ function SummaryCard({
           activeIndex={
             timeRange === 'month' && selectedDay != null ? selectedDay - 1 :
             timeRange === 'year' ? selectedMonth :
-            timeRange === '5y' && selectedYear != null ? yearsList.indexOf(selectedYear) :
+            timeRange === '5y' && lifetimeGranularity === 'year' && selectedYear != null ? yearsList.indexOf(selectedYear) :
             -1
           }
           onBarClick={
             timeRange === 'month' ? (i) => onDayChange(i + 1) :
             timeRange === 'year' ? onMonthChange :
-            timeRange === '5y' ? (i) => onYearChange(yearsList[i]) :
+            timeRange === '5y' && lifetimeGranularity === 'year' ? (i) => onYearChange(yearsList[i]) :
             null
           }
           onDeselect={timeRange === 'month' ? () => onDayChange(null) : null}

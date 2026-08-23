@@ -49,7 +49,7 @@ function ChangePasswordModal({ open, onClose }) {
         {!done && (
           <>
             <View className="mb-4" style={{ position: 'relative' }}>
-              <Text className="text-white/35 text-sm font-medium uppercase tracking-wider mb-2">New Password</Text>
+              <Text className="text-white text-[15px] font-medium mb-2">New Password</Text>
               <GlassTextInput value={newPw} onChangeText={setNewPw} placeholder="••••••••" secureTextEntry={!showNew} />
               <Pressable onPress={() => setShowNew(v => !v)} style={{ position: 'absolute', right: 12, top: 30, bottom: 0, justifyContent: 'center' }}>
                 <EyeIcon open={showNew} />
@@ -57,7 +57,7 @@ function ChangePasswordModal({ open, onClose }) {
             </View>
 
             <View className="mb-5" style={{ position: 'relative' }}>
-              <Text className="text-white/35 text-sm font-medium uppercase tracking-wider mb-2">Confirm Password</Text>
+              <Text className="text-white text-[15px] font-medium mb-2">Confirm Password</Text>
               <GlassTextInput value={confirmPw} onChangeText={setConfirmPw} placeholder="••••••••" secureTextEntry={!showConfirm} />
               <Pressable onPress={() => setShowConfirm(v => !v)} style={{ position: 'absolute', right: 12, top: 30, bottom: 0, justifyContent: 'center' }}>
                 <EyeIcon open={showConfirm} />
@@ -138,7 +138,7 @@ function SuccessOverlay({ open, title, redirectTo, onDone }) {
   const checkStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   return (
-    <AnimatedModal open={open} onClose={() => {}} variant="center" dim={0.85}>
+    <AnimatedModal open={open} onClose={() => {}} variant="center">
       <View className="items-center">
         <Animated.View
           className="w-16 h-16 rounded-full items-center justify-center mb-5"
@@ -254,12 +254,16 @@ export default function AccountPage() {
     setDeleteSuccess(false);
     // Deleting the account is one of the three conditions (fresh install,
     // reinstall, account deletion) that brings the first-run onboarding
-    // animation back — clearing the flag and routing through `/` (rather
-    // than straight to login) lets that same routing decision live in one
-    // place instead of being duplicated here.
+    // animation back — clearing the flag first, then routing there.
     await AsyncStorage.removeItem(ONBOARDING_SEEN_KEY);
+    // Navigate away from the (app) stack BEFORE signing out — app/(app)/_layout.js
+    // has its own `if (!user) redirect to /login` guard, and it's still mounted
+    // here. Calling logout() first flips `user` to null while that guard is
+    // still active, so its redirect to /login fires and wins the race against
+    // this one, dropping the onboarding navigation entirely. Leaving the stack
+    // first means the guard is unmounted by the time logout() takes effect.
+    router.replace('/onboarding');
     await logout();
-    router.replace('/');
   }, [router, logout]);
 
   const initials = (profile?.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
@@ -294,7 +298,7 @@ export default function AccountPage() {
 
         <View className="mx-4 rounded-2xl overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' }}>
           <View className="px-4 py-4">
-            <Text className="text-white/35 text-sm font-medium uppercase tracking-wider mb-1">Name</Text>
+            <Text className="text-white/40 text-xs font-medium mb-1">Name</Text>
             {editingName ? (
               <View className="flex-row items-center" style={{ gap: 8 }}>
                 <TextInput
@@ -322,14 +326,14 @@ export default function AccountPage() {
           <Divider />
 
           <View className="px-4 py-4">
-            <Text className="text-white/35 text-sm font-medium uppercase tracking-wider mb-1">Email</Text>
+            <Text className="text-white/40 text-xs font-medium mb-1">Email</Text>
             <Text className="text-white/60 text-base">{profile?.email || '—'}</Text>
           </View>
 
           <Divider />
 
           <View className="px-4 py-4">
-            <Text className="text-white/35 text-sm font-medium uppercase tracking-wider mb-1">Password</Text>
+            <Text className="text-white/40 text-xs font-medium mb-1">Password</Text>
             <View className="flex-row items-center justify-between">
               <Text className="text-white text-base" style={{ letterSpacing: 2 }}>••••••••</Text>
               <Pressable onPress={() => setShowPwModal(true)} className="w-7 h-7 items-center justify-center rounded-lg">
