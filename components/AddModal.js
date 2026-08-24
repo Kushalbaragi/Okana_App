@@ -3,12 +3,13 @@ import { Modal, View, Text, TextInput, Pressable, ScrollView, StyleSheet, useWin
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS, LinearTransition } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
 import Svg, { Rect, Line } from 'react-native-svg';
 import { today, toTitleCase } from '../utils/format';
 import CalendarPicker from './CalendarPicker';
 import { GlassPressable } from './Glass';
 import { NumericKeypad } from './NumericKeypad';
+import { AmountRow } from './AmountField';
 
 // How far (px) or how fast (px/s) a downward drag on the handle needs to go
 // before it counts as "dismiss" rather than snapping back.
@@ -40,68 +41,23 @@ function CalIcon() {
   );
 }
 
-// Shared by every element in the amount row (₹ symbol included) — the row
-// is center-justified, so adding a digit grows its total width and shifts
-// *everything* in it left to stay centered, not just the new digit. Giving
-// them all the same layout transition is what makes that read as one
-// element sliding together instead of the symbol/older digits snapping
-// while only the new digit animates.
-const AMOUNT_LAYOUT_TRANSITION = LinearTransition.duration(420).easing(SETTLE_EASING);
-
-// Each newly-typed digit blurs into focus rather than just appearing flat —
-// starts slightly enlarged, near-transparent, and genuinely blurred (RN's
-// textShadowRadius is a real Gaussian blur on the glyph itself, not a fake),
-// then resolves to sharp/full-size/full-opacity. Only the character that
-// just appeared plays this — existing digits are stable-keyed by index so
-// they never remount/replay it, and it's skipped entirely when the field is
-// populated programmatically (opening in edit mode) rather than typed.
-function AmountDigit({ char, animateIn }) {
-  // Split from the fade so blur resolves quickly (it's a hint the digit is
-  // "arriving", not the main event) while opacity — the actual materialize
-  // — takes noticeably longer, reading as a fade-in with a light touch of
-  // blur rather than a blur-dominated reveal.
-  const fadeProgress = useSharedValue(animateIn ? 0 : 1);
-  const blurProgress = useSharedValue(animateIn ? 0 : 1);
-
-  useEffect(() => {
-    if (animateIn) {
-      fadeProgress.value = withTiming(1, { duration: 640, easing: SETTLE_EASING });
-      blurProgress.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const style = useAnimatedStyle(() => ({
-    opacity: fadeProgress.value,
-    transform: [
-      { scale: 0.82 + fadeProgress.value * 0.18 },
-      { translateY: (1 - fadeProgress.value) * 16 },
-    ],
-    textShadowRadius: (1 - blurProgress.value) * 6,
-  }));
-
-  return (
-    <Animated.Text
-      layout={AMOUNT_LAYOUT_TRANSITION}
-      style={[
-        {
-          fontSize: 48, lineHeight: 56, fontWeight: '600', color: '#ffffff',
-          textShadowColor: '#ffffff', textShadowOffset: { width: 0, height: 0 },
-        },
-        style,
-      ]}
-    >
-      {char}
-    </Animated.Text>
-  );
-}
-
 function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
 
   const isEdit = !!editData;
   const [type, setType] = useState('expense');
+  // Container width is measured (not a fixed constant like Header's tab
+  // toggle) since this modal is full device width and needs to work across
+  // screen sizes — the sliding pill's target position derives from it.
+  const [typeToggleWidth, setTypeToggleWidth] = useState(0);
+  const typePillX = useSharedValue(0);
+  const typePillStyle = useAnimatedStyle(() => ({ transform: [{ translateX: typePillX.value }] }));
+  useEffect(() => {
+    if (!typeToggleWidth) return;
+    const pillWidth = (typeToggleWidth - 6) / 2; // p-[3px] container padding on both sides
+    typePillX.value = withTiming((type === 'income' ? 1 : 0) * pillWidth, { duration: 260, easing: SETTLE_EASING });
+  }, [type, typeToggleWidth]);
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(today());
   const [description, setDescription] = useState('');
@@ -160,7 +116,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
     } else {
       pageTranslateY.value = withTiming(
         windowHeight,
-        { duration: 680, easing: SETTLE_EASING },
+        { duration: 420, easing: SETTLE_EASING },
         finished => {
           if (!finished) return;
           runOnJS(setVisible)(false);
@@ -269,7 +225,14 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-      <Animated.View className="flex-1 bg-bg" style={pageStyle}>
+      {/* RN's <Modal> stays fully touch-active for its whole lifetime —
+          `visible` only flips to false once the close animation below has
+          actually finished, so without this the FAB underneath (and
+          anything else on Dashboard) is unreachable for the ~600ms the
+          content is sliding off-screen, even though it's already invisible.
+          `open` (not `visible`) flips to false the instant a close starts,
+          so touches fall through immediately instead of at the end. */}
+      <Animated.View className="flex-1 bg-bg" style={pageStyle} pointerEvents={open ? 'auto' : 'none'}>
       <GestureDetector gesture={pan}>
       <View style={{ flex: 1 }}>
         <View style={{ paddingTop: insets.top + 10, paddingBottom: 24, alignItems: 'center' }}>
@@ -287,15 +250,27 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingHorizontal: 20 }}
         >
-          <View className="flex-row rounded-full p-[3px] mb-8" style={{ backgroundColor: '#161616' }}>
+          <View
+            className="flex-row rounded-full p-[3px] mb-8"
+            style={{ backgroundColor: '#161616' }}
+            onLayout={e => setTypeToggleWidth(e.nativeEvent.layout.width)}
+          >
+            {typeToggleWidth > 0 && (
+              <Animated.View
+                style={[
+                  { position: 'absolute', top: 3, bottom: 3, left: 3, width: (typeToggleWidth - 6) / 2, borderRadius: 999, backgroundColor: '#d4d4d4' },
+                  typePillStyle,
+                ]}
+              />
+            )}
             {['expense', 'income'].map(t => (
               <Pressable
                 key={t}
                 onPress={() => setType(t)}
                 className="flex-1 py-[6px] rounded-full items-center"
-                style={type === t ? { backgroundColor: '#ffffff' } : null}
               >
-                <Text className={type === t ? 'text-black text-base font-medium' : 'text-white/35 text-base font-medium'}>
+                <Text
+                  className={type === t ? 'text-black text-base font-medium' : 'text-white/35 text-base font-medium'}>
                   {t.charAt(0).toUpperCase() + t.slice(1)}
                 </Text>
               </Pressable>
@@ -303,26 +278,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
           </View>
 
           <View className="mb-8 items-center">
-            {/* No gap on this row — a gap-* class puts equal space between
-                every child, which meant every single digit, not just the ₹
-                symbol before the first one. The ₹ carries its own marginRight
-                instead, and digits sit directly adjacent like a real number. */}
-            <View className="flex-row items-center justify-center">
-              <Animated.Text
-                layout={AMOUNT_LAYOUT_TRANSITION}
-                className="font-light text-white/35"
-                style={{ fontSize: 44, lineHeight: 56, marginRight: 4 }}
-              >
-                ₹
-              </Animated.Text>
-              {amount ? (
-                [...amount].map((char, i) => (
-                  <AmountDigit key={i} char={char} animateIn={i >= prevAmountLength && !skipDigitAnimRef.current} />
-                ))
-              ) : (
-                <Text className="font-semibold" style={{ fontSize: 48, lineHeight: 56, color: '#333333' }}>0</Text>
-              )}
-            </View>
+            <AmountRow amount={amount} prevAmountLength={prevAmountLength} skipDigitAnim={skipDigitAnimRef.current} />
           </View>
 
           <View className="mb-6">
@@ -338,7 +294,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
             </GlassPressable>
           </View>
 
-          <View>
+          <View className="mb-6">
             <Text className="text-white text-[15px] font-medium mb-2">Description</Text>
             <TextInput
               value={description}

@@ -3,11 +3,18 @@ import { View, Text, Pressable, ScrollView, TextInput, Linking, Image, useWindow
 import { useRouter } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import Svg, { Rect, Path, Circle } from 'react-native-svg';
 import { useTransactions } from '../../hooks/useTransactions';
 import { supabase } from '../../lib/supabase';
+import { buildTransactionsWorkbook, parseTransactionsWorkbook } from '../../utils/exportImport';
 import { BackIcon, ChevronRight } from '../../components/icons';
 import { AnimatedModal } from '../../components/AnimatedModal';
+
+const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
+
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 const APP_VERSION = '1.0.0';
 
@@ -44,7 +51,10 @@ function Divider() {
 }
 
 function SectionLabel({ children }) {
-  return <Text className="text-white/30 text-[11px] font-medium uppercase tracking-widest px-1 pt-2 mb-2">{children}</Text>;
+  return (
+    <Text
+      className="text-white/30 text-[11px] font-medium uppercase tracking-widest px-1 pt-2 mb-2">{children}</Text>
+  );
 }
 
 function Card({ children }) {
@@ -88,13 +98,23 @@ function InfoModal({ open, title, onClose, children }) {
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { transactions } = useTransactions();
+  const { transactions, importTransactions } = useTransactions();
 
   const [modal, setModal] = useState(null);
   const [feedbackText, setFeedbackText] = useState('');
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [feedbackSending, setFeedbackSending] = useState(false);
   const [feedbackError, setFeedbackError] = useState('');
+
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+
+  // idle | reading | importing | done | error
+  const [importStage, setImportStage] = useState('idle');
+  const [importMessage, setImportMessage] = useState('');
+  const [importErrorMsg, setImportErrorMsg] = useState('');
+  const importProgress = useSharedValue(0);
+  const progressBarStyle = useAnimatedStyle(() => ({ width: `${importProgress.value * 100}%` }));
 
   async function sendFeedback() {
     if (!feedbackText.trim()) return;
@@ -121,15 +141,98 @@ export default function SettingsPage() {
   }
 
   async function exportData() {
-    if (!transactions.length) return;
-    const sorted = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
-    const csv = ['Date,Type,Amount,Description',
-      ...sorted.map(t => `${t.date},${t.type},${t.amount},"${t.description}"`),
-    ].join('\n');
-    const fileUri = `${FileSystem.cacheDirectory}okana-${new Date().toISOString().slice(0, 10)}.csv`;
-    await FileSystem.writeAsStringAsync(fileUri, csv, { encoding: FileSystem.EncodingType.UTF8 });
-    if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export transactions' });
+    if (!transactions.length || exporting) return;
+    setExporting(true);
+    setExportError('');
+    try {
+      const base64 = buildTransactionsWorkbook(transactions);
+      const fileUri = `${FileSystem.cacheDirectory}okana-transactions-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: FileSystem.EncodingType.Base64 });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, { mimeType: XLSX_MIME, dialogTitle: 'Export transactions' });
+      } else {
+        setExportError('Sharing is not available on this device.');
+      }
+    } catch (err) {
+      setExportError(err.message || 'Failed to export. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  // One continuous flow, no intermediate confirm step: pick a file, read
+  // it, import it, then drop the user onto Home where they can see the
+  // result for themselves — with a full-screen green progress bar the
+  // whole way through instead of leaving Settings looking unresponsive.
+  async function pickImportFile() {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [XLSX_MIME, 'application/vnd.ms-excel'],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+
+      setImportErrorMsg('');
+      setImportStage('reading');
+      // A small kick so the bar visibly moves even during the read/parse
+      // step, which has no real sub-progress to report.
+      importProgress.value = withTiming(0.08, { duration: 400, easing: SETTLE_EASING });
+      // Yields so "Reading file…" actually paints before the synchronous,
+      // CPU-heavy XLSX parse below blocks the JS thread — RN has no worker
+      // thread to offload it to, so without this the UI would look frozen
+      // with zero feedback for however long the parse takes.
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      const base64 = await FileSystem.readAsStringAsync(result.assets[0].uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const { parsed, skipped } = parseTransactionsWorkbook(base64);
+      if (!parsed.length) {
+        setImportErrorMsg(skipped.length
+          ? "Couldn't read any valid rows — check the Date, Type, and Amount columns."
+          : 'That file has no transaction rows.');
+        setImportStage('error');
+        return;
+      }
+
+      setImportStage('importing');
+      importProgress.value = withTiming(0.15, { duration: 600, easing: SETTLE_EASING });
+
+      const importStartedAt = Date.now();
+      const res = await importTransactions(parsed, (done, total) => {
+        importProgress.value = withTiming(done / total, { duration: 500, easing: SETTLE_EASING });
+      });
+
+      if (!res.success) {
+        setImportErrorMsg(res.error || 'Import failed. Please try again.');
+        setImportStage('error');
+        return;
+      }
+
+      // A fast, small import (the common case — one chunk, one quick
+      // network round-trip) could otherwise jump from a sliver of progress
+      // straight to done in well under a second, reading as rushed rather
+      // than a real, deliberate progress bar.
+      const MIN_IMPORTING_MS = 1000;
+      const elapsed = Date.now() - importStartedAt;
+      if (elapsed < MIN_IMPORTING_MS) {
+        await new Promise(resolve => setTimeout(resolve, MIN_IMPORTING_MS - elapsed));
+      }
+
+      importProgress.value = withTiming(1, { duration: 400, easing: SETTLE_EASING });
+      setImportMessage(
+        `Imported ${res.imported} transaction${res.imported === 1 ? '' : 's'}`
+        + (skipped.length ? ` — ${skipped.length} row${skipped.length === 1 ? '' : 's'} skipped` : '')
+      );
+      setImportStage('done');
+
+      setTimeout(() => {
+        setImportStage('idle');
+        router.replace('/(app)');
+      }, 1700);
+    } catch (err) {
+      setImportErrorMsg(err.message || 'Something went wrong. Please try again.');
+      setImportStage('error');
     }
   }
 
@@ -160,8 +263,23 @@ export default function SettingsPage() {
             <Card>
               <Row label="Backup" value="Coming soon" />
               <Divider />
-              <Row label="Export / Import" onPress={exportData} right={<Text className="text-white/35 text-xs">CSV</Text>} />
+              <Row
+                label="Export Data"
+                onPress={exportData}
+                right={exporting
+                  ? <Text className="text-white/35 text-xs">Exporting…</Text>
+                  : <Text className="text-white/35 text-xs">XLSX</Text>}
+              />
+              <Divider />
+              <Row
+                label="Import Data"
+                onPress={pickImportFile}
+                right={<Text className="text-white/35 text-xs">XLSX</Text>}
+              />
             </Card>
+            {!!exportError && (
+              <Text className="text-red-400 text-sm mt-2 px-1">{exportError}</Text>
+            )}
           </View>
 
           <View>
@@ -269,6 +387,47 @@ export default function SettingsPage() {
           <Text className="text-white/20 mt-5" style={{ fontSize: 12 }}>Okana v{APP_VERSION} · Made with ♥ in India</Text>
         </View>
       </InfoModal>
+
+      {importStage !== 'idle' && (
+        <View
+          pointerEvents="auto"
+          style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.85)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32,
+          }}
+        >
+          <View style={{ width: '100%', maxWidth: 300 }}>
+            {importStage === 'error' ? (
+              <>
+                <Text className="text-white text-base font-semibold mb-2 text-center">
+                  Import failed
+                </Text>
+                <Text className="text-white/50 text-sm mb-5 text-center" style={{ lineHeight: 20 }}>
+                  {importErrorMsg}
+                </Text>
+                <Pressable
+                  onPress={() => setImportStage('idle')}
+                  className="py-[13px] rounded-2xl items-center"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+                >
+                  <Text className="text-white text-base font-medium">Dismiss</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <Text className="text-white text-base font-medium mb-4 text-center">
+                  {importStage === 'reading' && 'Reading file…'}
+                  {importStage === 'importing' && 'Importing transactions…'}
+                  {importStage === 'done' && importMessage}
+                </Text>
+                <View style={{ height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden', width: '100%' }}>
+                  <Animated.View style={[{ height: 8, borderRadius: 4, backgroundColor: '#4ade80' }, progressBarStyle]} />
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      )}
     </View>
   );
 }

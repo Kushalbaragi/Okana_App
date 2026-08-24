@@ -9,7 +9,6 @@ import { useAuth } from '../../context/AuthContext';
 import { useSubscription } from '../../hooks/useSubscription';
 import { supabase } from '../../lib/supabase';
 import { BackIcon, EditIcon, ChevronRight, CheckIcon, CameraIcon } from '../../components/icons';
-import { GlassPressable } from '../../components/Glass';
 import { ONBOARDING_SEEN_KEY } from '../onboarding';
 import { AnimatedModal } from '../../components/AnimatedModal';
 
@@ -310,9 +309,16 @@ export default function AccountPage() {
   async function saveName() {
     if (!nameInput.trim() || nameInput.trim() === profile?.name) { setEditingName(false); return; }
     setSavingName(true);
-    await supabase.auth.updateUser({ data: { name: nameInput.trim() } });
-    setSavingName(false);
-    setEditingName(false);
+    setActionError('');
+    try {
+      const { error } = await supabase.auth.updateUser({ data: { name: nameInput.trim() } });
+      if (error) throw error;
+      setEditingName(false);
+    } catch (err) {
+      setActionError(err.message || 'Failed to update name. Please try again.');
+    } finally {
+      setSavingName(false);
+    }
   }
 
   async function pickAndUploadAvatar() {

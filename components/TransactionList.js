@@ -4,7 +4,8 @@ import TransactionItem from './TransactionItem';
 import { monthLabel } from '../utils/format';
 
 const ListHeader = (
-  <Text className="text-white/25 text-sm font-medium uppercase tracking-wide mt-4 mb-3 px-1">
+  <Text
+    className="text-white/25 text-sm font-medium uppercase tracking-wide mt-4 mb-3 px-1">
     Transactions
   </Text>
 );

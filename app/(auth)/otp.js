@@ -3,7 +3,7 @@ import { View, Text, Pressable, useWindowDimensions } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming, Easing } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming } from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
 import { NumericKeypad, DIGIT_ONLY_KEYPAD_ROWS } from '../../components/NumericKeypad';
 import { BackIcon } from '../../components/icons';
@@ -120,7 +120,7 @@ export default function OtpScreen() {
       </View>
 
       <View className="flex-1 items-center justify-center px-8">
-        <Text className="text-white text-xl font-semibold mb-2 text-center">Enter the code</Text>
+        <Text className="text-white text-[22px] font-semibold mb-2 text-center">Enter the code</Text>
         <Text className="text-white/40 text-base text-center mb-10">
           We sent a {CODE_LENGTH}-digit code to{'\n'}
           <Text className="text-white/60">{email}</Text>

@@ -13,7 +13,10 @@ function Divider() {
 }
 
 function SectionLabel({ children }) {
-  return <Text className="text-white/30 text-[11px] font-medium uppercase tracking-widest px-1 pt-2 mb-2">{children}</Text>;
+  return (
+    <Text
+      className="text-white/30 text-[11px] font-medium uppercase tracking-widest px-1 pt-2 mb-2">{children}</Text>
+  );
 }
 
 function Card({ children }) {

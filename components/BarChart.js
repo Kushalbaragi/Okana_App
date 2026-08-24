@@ -1,18 +1,31 @@
-import { memo, useEffect, Fragment } from 'react';
+import { memo, useEffect, useRef, Fragment } from 'react';
 import Svg, { Line, Rect, Text as SvgText } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedProps, withDelay, withTiming, Easing } from 'react-native-reanimated';
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
-const BAR_HEIGHT = 80;
+const BAR_HEIGHT = 90;
 const CHART_W    = 264;
 
 function Bar({ x, width, rx, targetHeight, delay, fill, animKey, onPress, disabled }) {
   const progress = useSharedValue(0);
+  // null (not animKey's initial value) so the very first mount still gets
+  // the reveal — only a later *change* of animKey (a genuinely new period)
+  // should replay it. Switching Expense<->Income for the SAME period keeps
+  // animKey identical, so bars just reflect the new heights instantly
+  // instead of collapsing back to 0 and re-growing with the full stagger —
+  // that collapse-and-regrow was reading as "slow to switch tabs".
+  const prevAnimKey = useRef(null);
 
   useEffect(() => {
-    progress.value = 0;
-    progress.value = withDelay(delay, withTiming(1, { duration: 350, easing: Easing.out(Easing.exp) }));
+    const isNewPeriod = prevAnimKey.current !== animKey;
+    prevAnimKey.current = animKey;
+    if (isNewPeriod) {
+      progress.value = 0;
+      progress.value = withDelay(delay, withTiming(1, { duration: 200, easing: Easing.out(Easing.exp) }));
+    } else {
+      progress.value = 1;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animKey, targetHeight]);
 
@@ -72,7 +85,13 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
                 width={BAR_W}
                 rx={BAR_W / 3}
                 targetHeight={h}
-                delay={i * 45}
+                // Spread proportionally across a fixed budget instead of a
+                // flat i*45 — that scaled with bar count, so "All Time"
+                // views with dozens of bars could take 1.5s+ just to finish
+                // staggering in, on top of each bar's own animation time.
+                // Kept tight (130ms) so switching to Year/All Time settles
+                // quickly instead of reading as a slow load.
+                delay={n > 1 ? (i / (n - 1)) * 130 : 0}
                 fill={isActive ? activeColor : dimColor}
                 animKey={animKey}
                 onPress={() => onBarClick && !isDisabled && onBarClick(i)}

@@ -10,8 +10,7 @@
     "backgroundColor": "#0a0a0a",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.kushalbaragi.okana",
-      "usesAppleSignIn": true
+      "bundleIdentifier": "com.kushalbaragi.okana"
     },
     "android": {
       "versionCode": 3,
@@ -28,7 +27,6 @@
     },
     "plugins": [
       "expo-router",
-      "expo-font",
       "expo-notifications",
       "./plugins/withAndroidSoftInputMode",
       [
@@ -37,8 +35,7 @@
           "photosPermission": "Okana uses your photo library so you can set a profile picture."
         }
       ],
-      "expo-web-browser",
-      "expo-apple-authentication"
+      "expo-document-picker"
     ]
   }
 }

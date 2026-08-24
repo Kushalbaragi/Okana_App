@@ -96,7 +96,7 @@ function CalendarPicker({ value, onChange, onClose }) {
                     className="w-8 h-8 rounded-full items-center justify-center"
                     style={isToday ? { borderWidth: 1, borderColor: '#4ade80' } : null}
                   >
-                    <Text className={isToday ? 'text-base font-medium' : 'text-white/60 text-base'} style={isToday ? { color: '#4ade80' } : null}>{d}</Text>
+                    <Text className={isToday ? "text-base font-medium" : "text-white/60 text-base"} style={isToday ? { color: '#4ade80' } : null}>{d}</Text>
                   </Pressable>
                 )}
               </View>

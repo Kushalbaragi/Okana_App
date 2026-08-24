@@ -4,7 +4,7 @@ import Svg, { Defs, LinearGradient, Stop, Path, Circle, Line, Text as SvgText, G
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 
 const CHART_W = 300;
-const CHART_H = 72;
+const CHART_H = 82;
 const PAD_TOP = 12;
 const LABEL_H = 16;
 
@@ -37,7 +37,7 @@ function LineChart({ incomeData, expenseData, labels, animKey }) {
   useEffect(() => {
     if (!containerWidth) return;
     progress.value = 0;
-    progress.value = withTiming(1, { duration: 900, easing: Easing.out(Easing.cubic) });
+    progress.value = withTiming(1, { duration: 550, easing: Easing.out(Easing.cubic) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animKey, containerWidth]);
 
@@ -73,7 +73,16 @@ function LineChart({ incomeData, expenseData, labels, animKey }) {
   const incomeArea  = areaPath(incomePts,  bottom);
   const expenseArea = areaPath(expensePts, bottom);
 
-  const showLabel = i => n <= 7 || i % 2 === 0 || i === n - 1;
+  // Every-other-label spacing collided with the always-shown last label
+  // whenever n was even (e.g. 20 months of "All Time" history) — index
+  // n-2 and n-1 both got shown a single stepX apart, overlapping. Suppress
+  // a regular label that would land within one step of the forced last one.
+  const labelStride = n <= 7 ? 1 : 2;
+  const showLabel = i => {
+    if (i === n - 1) return true;
+    if (i % labelStride !== 0) return false;
+    return (n - 1 - i) >= labelStride;
+  };
   const svgPixelHeight = containerWidth * (svgH / CHART_W);
 
   return (

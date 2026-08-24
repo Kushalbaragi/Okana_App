@@ -1,18 +1,23 @@
 import { memo } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { HamburgerIcon, CalendarIcon } from './icons';
 
 const BTN_W = 88; // a hair under the original 92 — "Overview" still fits at text-base
 const PAD   = 2;
 const TABS  = ['expense', 'income', 'overview'];
+const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 
 function ChartTabToggle({ value, onChange }) {
   const idx = TABS.indexOf(value);
 
+  // transform-based rather than animating `left` directly — runs on the
+  // compositor instead of the layout thread, and the ease-out-expo settle
+  // curve (used for every other reveal in this app) reads far smoother
+  // than the previous plain 220ms default-eased `left` timing.
   const pillStyle = useAnimatedStyle(() => ({
-    left: withTiming(PAD + idx * BTN_W, { duration: 220 }),
+    transform: [{ translateX: withTiming(idx * BTN_W, { duration: 280, easing: SETTLE_EASING }) }],
   }));
 
   return (
@@ -22,7 +27,7 @@ function ChartTabToggle({ value, onChange }) {
     >
       <Animated.View
         style={[
-          { position: 'absolute', top: PAD, bottom: PAD, width: BTN_W, borderRadius: 999, backgroundColor: '#ffffff' },
+          { position: 'absolute', top: PAD, bottom: PAD, left: PAD, width: BTN_W, borderRadius: 999, backgroundColor: '#d4d4d4' },
           pillStyle,
         ]}
       />
@@ -33,7 +38,8 @@ function ChartTabToggle({ value, onChange }) {
           style={{ width: BTN_W }}
           className="py-[5px] items-center"
         >
-          <Text className={value === tab ? 'text-black text-base font-medium' : 'text-white/35 text-base font-medium'}>
+          <Text
+            className={value === tab ? 'text-black text-base font-medium' : 'text-white/35 text-base font-medium'}>
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
           </Text>
         </Pressable>

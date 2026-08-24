@@ -22,7 +22,7 @@ const MONTH_LABELS_SHORT = ['J','F','M','A','M','J','J','A','S','O','N','D'];
 
 const fmt = new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR',
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
+  minimumFractionDigits: 0, maximumFractionDigits: 0,
 });
 
 // Matches web's `.digit-up` keyframe exactly (translateY 18%→0, 500ms,
@@ -62,8 +62,8 @@ function AnimatedAmount({ value, color }) {
           char={char}
           delay={i * 22}
           distance={7}
-          className="text-4xl font-semibold tracking-tight"
-          style={{ color }}
+          className="font-bold tracking-tight"
+          style={{ color, fontSize: 38 }}
         />
       ))}
     </View>
@@ -228,14 +228,17 @@ function SummaryCard({
     };
   }, [chartData, timeRange, year, currYear]);
 
-  const animKey   = `${chartTab}-${timeRange}-${year}`;
+  // Deliberately excludes chartTab — switching Expense<->Income shouldn't
+  // count as a "new period" and replay the reveal animation, only an
+  // actual timeRange/year change should.
+  const animKey   = `${timeRange}-${year}`;
   const labelStep = timeRange === 'month' ? 4 : (timeRange === '5y' && lifetimeGranularity === 'month' ? 6 : 1);
 
   return (
     <View className="mx-4 mb-2 p-5">
       <Text className="text-white/40 text-base text-center mb-1">{periodLabel}</Text>
 
-      <View className="items-center justify-center mb-1">
+      <View className="items-center justify-center mb-2">
         <AnimatedAmount value={Math.abs(displayAmount)} color={isOverview ? (netPositive ? '#4ade80' : '#f87171') : '#ffffff'} />
       </View>
 

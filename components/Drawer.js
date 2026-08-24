@@ -36,7 +36,12 @@ function Drawer({ open, onClose }) {
 
   async function handleLogout() {
     onClose();
-    await logout();
+    try {
+      await logout();
+    } catch {
+      // Sign-out failing (e.g. offline) shouldn't trap the user behind a
+      // closed drawer with no way forward — still navigate away.
+    }
     router.replace('/(auth)/login');
   }
 

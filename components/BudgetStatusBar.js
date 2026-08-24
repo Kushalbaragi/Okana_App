@@ -17,7 +17,7 @@ const FILL_COLOR = 'rgba(34,197,94,0.9)';
 const SEGMENT_COUNT = 84;
 const WRAPPER_STYLE = {
   paddingBottom: 10,
-  marginBottom: 10,
+  marginBottom: 16,
   borderBottomWidth: 1,
   borderBottomColor: 'rgba(255,255,255,0.08)',
 };
@@ -57,10 +57,7 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
     );
   }
 
-  const remaining = amount - spent;
-  const remainingLabel = remaining < 0
-    ? `${formatCurrency(Math.abs(remaining))} over`
-    : `${formatCurrency(remaining)} left`;
+  const statusLabel = `${Math.round(percent)}% used`;
 
   return (
     <View style={WRAPPER_STYLE}>
@@ -95,7 +92,7 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
         </Animated.View>
       </View>
 
-      <Text className="text-white/40 text-sm text-right mt-1.5">{remainingLabel}</Text>
+      <Text className="text-white/40 text-sm text-right mt-1.5">{statusLabel}</Text>
     </View>
   );
 }

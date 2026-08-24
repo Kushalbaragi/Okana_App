@@ -11,7 +11,11 @@ export default function Index() {
   const [onboardingSeen, setOnboardingSeen] = useState(null);
 
   useEffect(() => {
-    AsyncStorage.getItem(ONBOARDING_SEEN_KEY).then(v => setOnboardingSeen(v === '1'));
+    // Falls back to "not seen" rather than hanging on the loading spinner
+    // forever if this read fails.
+    AsyncStorage.getItem(ONBOARDING_SEEN_KEY)
+      .then(v => setOnboardingSeen(v === '1'))
+      .catch(() => setOnboardingSeen(false));
   }, []);
 
   if (loading || onboardingSeen === null) {

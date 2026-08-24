@@ -32,14 +32,21 @@ export function useSubscription(user) {
 
   const refresh = useCallback(async () => {
     if (!user) { setSubscription(null); setLoading(false); return null; }
-    const { data } = await supabase
-      .from('subscriptions')
-      .select('*')
-      .eq('user_id', user.id)
-      .maybeSingle();
-    setSubscription(data);
-    setLoading(false);
-    return data;
+    try {
+      const { data } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      setSubscription(data);
+      return data;
+    } catch {
+      // Best-effort — a failed fetch just leaves the previous subscription
+      // state in place rather than hanging on "loading" forever.
+      return null;
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
 
   useEffect(() => { refresh(); }, [refresh]);

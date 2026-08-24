@@ -20,6 +20,21 @@ export function CheckIcon({ size = 36, color = '#4ade80' }) {
   );
 }
 
+// Diagonal trend arrow — `up` points to the top-right (spending more),
+// otherwise bottom-right (spending less). Same stroke treatment as CheckIcon
+// so the two read as one consistent "status" icon language.
+export function TrendArrowIcon({ up, size = 28, color }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 36 36" fill="none">
+      {up ? (
+        <Path d="M11 25L25 11M25 11H14M25 11V22" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      ) : (
+        <Path d="M11 11L25 25M25 25H14M25 25V14" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      )}
+    </Svg>
+  );
+}
+
 export function BackIcon({ size = 20, color = '#ffffff' }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 20 20" fill="none">
@@ -43,21 +58,6 @@ export function TrashIcon({ size = 18, color = '#ffffff' }) {
       <Path d="M6 2.5h4a1 1 0 011 1v1H5v-1a1 1 0 011-1z" stroke={color} strokeWidth="1.3" strokeLinejoin="round" />
       <Path d="M3.5 4.5l.6 8.1a1 1 0 001 .9h5.8a1 1 0 001-.9l.6-8.1" stroke={color} strokeWidth="1.3" strokeLinejoin="round" />
       <Path d="M6.5 7v4M9.5 7v4" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
-    </Svg>
-  );
-}
-
-export function EyeIcon({ open, size = 16 }) {
-  return open ? (
-    <Svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-      <Path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" stroke="rgba(255,255,255,0.4)" strokeWidth="1.3" />
-      <Circle cx="8" cy="8" r="2" stroke="rgba(255,255,255,0.4)" strokeWidth="1.3" />
-    </Svg>
-  ) : (
-    <Svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-      <Path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" stroke="rgba(255,255,255,0.4)" strokeWidth="1.3" />
-      <Circle cx="8" cy="8" r="2" stroke="rgba(255,255,255,0.4)" strokeWidth="1.3" />
-      <Line x1="2" y1="2" x2="14" y2="14" stroke="rgba(255,255,255,0.4)" strokeWidth="1.3" strokeLinecap="round" />
     </Svg>
   );
 }
@@ -94,17 +94,6 @@ export function CameraIcon({ size = 22, color = 'rgba(255,255,255,0.5)' }) {
     <Svg width={size} height={size} viewBox="0 0 22 22" fill="none">
       <Path d="M8 5.5l1-2h4l1 2h3a1.5 1.5 0 011.5 1.5v9A1.5 1.5 0 0117 17.5H5A1.5 1.5 0 013.5 16V7A1.5 1.5 0 015 5.5h3z" stroke={color} strokeWidth="1.4" strokeLinejoin="round" />
       <Circle cx="11" cy="11.5" r="3.25" stroke={color} strokeWidth="1.4" />
-    </Svg>
-  );
-}
-
-export function GoogleIcon({ size = 18 }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 48 48">
-      <Path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z" />
-      <Path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z" />
-      <Path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24c0 3.55.85 6.91 2.34 9.88l7.35-5.7z" />
-      <Path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z" />
     </Svg>
   );
 }

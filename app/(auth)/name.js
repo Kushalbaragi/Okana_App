@@ -49,7 +49,7 @@ export default function NameScreen() {
       <Animated.View className="flex-1 bg-bg justify-center px-6" style={containerStyle}>
         <View className="w-full max-w-[400px] self-center">
           <View className="items-center mb-10">
-            <Text className="text-white text-xl font-semibold mb-1">Okana</Text>
+            <Text className="text-white text-[22px] font-semibold mb-1">Okana</Text>
             <Text className="text-white/30 text-base">Your money, beautifully tracked.</Text>
           </View>
 

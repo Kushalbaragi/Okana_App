@@ -418,8 +418,8 @@ export default function Dashboard() {
 
       <Pressable
         onPress={openAdd}
-        className="absolute bottom-20 self-center w-20 h-20 rounded-full items-center justify-center"
-        style={{ backgroundColor: '#ffffff', left: '50%', marginLeft: -40, zIndex: 50, elevation: 50 }}
+        className="absolute bottom-20 self-center w-[68px] h-[68px] rounded-full items-center justify-center"
+        style={{ backgroundColor: '#ffffff', left: '50%', marginLeft: -34, zIndex: 50, elevation: 50 }}
       >
         <PlusIcon size={30} color="#000000" />
       </Pressable>
@@ -453,7 +453,13 @@ export default function Dashboard() {
         onClose={closeRecap}
       />
 
-      <BudgetSetupModal open={budgetSetupOpen} onClose={closeBudgetSetup} onSubmit={budget.setBudget} />
+      <BudgetSetupModal
+        open={budgetSetupOpen}
+        onClose={closeBudgetSetup}
+        onSubmit={budget.setBudget}
+        lastMonthAmount={budget.lastMonthAmount}
+        lastMonthSpent={budget.lastMonthSpent}
+      />
 
       <AnimatedModal open={proRequired} onClose={closeProRequired} variant="center">
         <View

@@ -186,5 +186,39 @@ export function useTransactions() {
     }
   }, [user])
 
-  return { transactions, loading, addTransaction, editTransaction, deleteTransaction, refresh }
+  // Bulk-inserts already-validated {type, amount, date, description} rows
+  // (see utils/exportImport.js) in chunks, rather than looping addTransaction
+  // one row/network-round-trip at a time — a real import can be hundreds of
+  // rows.
+  const importTransactions = useCallback(async (rows, onProgress) => {
+    if (!user) return { success: false, error: 'Not signed in', imported: 0 }
+    if (!rows.length) return { success: true, imported: 0 }
+
+    const payload = rows.map(r => ({
+      user_id:     user.id,
+      type:        r.type,
+      amount:      r.amount,
+      date:        r.date,
+      description: r.description,
+    }))
+
+    const CHUNK_SIZE = 500
+    let imported = 0
+    for (let i = 0; i < payload.length; i += CHUNK_SIZE) {
+      const chunk = payload.slice(i, i + CHUNK_SIZE)
+      const { error } = await supabase.from('transactions').insert(chunk)
+      if (error) return { success: false, error: error.message, imported }
+      imported += chunk.length
+      // Lets the UI show real per-chunk progress rather than a single
+      // opaque jump from 0 to 100 — most imports are one chunk, but a
+      // large one (multi-thousand rows) now visibly advances as it goes.
+      if (onProgress) onProgress(imported, payload.length)
+    }
+
+    await refresh()
+    hapticAdded()
+    return { success: true, imported }
+  }, [user, refresh])
+
+  return { transactions, loading, addTransaction, editTransaction, deleteTransaction, importTransactions, refresh }
 }
