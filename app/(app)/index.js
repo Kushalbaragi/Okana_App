@@ -7,55 +7,20 @@ import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../hooks/useTransactions';
 import { useBudget } from '../../hooks/useBudget';
 import { useSubscription } from '../../hooks/useSubscription';
-import { getSubscriptionDisplayStatus, getPendingSubscriptionPopup, PRICE_PER_YEAR } from '../../utils/trial';
+import { getSubscriptionDisplayStatus } from '../../utils/trial';
 import Header from '../../components/Header';
 import SummaryCard from '../../components/SummaryCard';
 import TransactionList from '../../components/TransactionList';
 import AddModal from '../../components/AddModal';
 import Drawer from '../../components/Drawer';
 import SpendCalendarModal from '../../components/SpendCalendarModal';
-import DailyInsightModal from '../../components/DailyInsightModal';
 import MonthlyRecapModal from '../../components/MonthlyRecapModal';
 import BudgetSetupModal from '../../components/BudgetSetupModal';
 import { AnimatedModal } from '../../components/AnimatedModal';
 import { PlusIcon } from '../../components/icons';
+import { PILL_ACTIVE_COLOR } from '../../components/Glass';
 import { currentMonthYear, monthLabel, today } from '../../utils/format';
-import { getDailyInsight } from '../../utils/insights';
 import { getMonthlyRecapSlides, hasAnyRecapData, prevMonthYear, MONTH_NAMES } from '../../utils/monthlyRecap';
-
-// Mirrors the web app's App.jsx — same copy, same keys.
-const SINGLE_CTA_POPUPS = {
-  'trial-tomorrow': {
-    emoji: '⏳',
-    headline: 'Your Okana Plus trial ends tomorrow',
-    message: `Your saved payment method will be charged ₹${PRICE_PER_YEAR} for the annual plan after your trial ends.`,
-    cta: 'Continue with Okana Plus',
-  },
-  'success': {
-    emoji: '🎉',
-    headline: "You're now subscribed to Okana Plus",
-    message: 'Your annual subscription has started successfully.',
-    cta: 'Continue Tracking',
-  },
-};
-
-const DOUBLE_CTA_POPUPS = {
-  'trial-ended': {
-    emoji: '⏳',
-    headline: 'Your free trial ends today',
-    message: 'Okana Plus features will no longer be available after today. Subscribe to keep unlimited access.',
-  },
-  'payment-failed': {
-    emoji: '⚠️',
-    headline: 'Payment failed',
-    message: "We couldn't process your Okana Plus payment. Please update your payment method to continue accessing Plus features.",
-  },
-  'sub-ended': {
-    emoji: '👋',
-    headline: 'Your Okana Plus subscription has ended',
-    message: "You're now using Okana Free and no longer have access to Plus-only features.",
-  },
-};
 
 export default function Dashboard() {
   const router = useRouter();
@@ -91,7 +56,6 @@ export default function Dashboard() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editData, setEditData] = useState(null);
 
-  const [dailyInsight, setDailyInsight] = useState(null);
   const [recapOpen, setRecapOpen] = useState(false);
   const [recapSlides, setRecapSlides] = useState([]);
   const [recapMonthLabel, setRecapMonthLabel] = useState('');
@@ -104,8 +68,6 @@ export default function Dashboard() {
   const [dailyPopupsResolved, setDailyPopupsResolved] = useState(false);
 
   const [proRequired, setProRequired] = useState(false);
-  const [pendingSubPopup, setPendingSubPopup] = useState(null);
-  const [activeSubPopup, setActiveSubPopup] = useState(null);
 
   // Tracks whether AddModal's own native <Modal> has actually finished
   // closing (not just whether `modalOpen` is false) — see addModalClosed
@@ -113,16 +75,16 @@ export default function Dashboard() {
   const [addModalClosed, setAddModalClosed] = useState(true);
 
   // Mirrors web App.jsx's popup-trigger effect, rewritten against
-  // AsyncStorage (async) instead of localStorage (sync). Recap takes
-  // priority over the daily insight on the first open after a month
-  // rollover; otherwise the daily insight shows once per day.
+  // AsyncStorage (async) instead of localStorage (sync). The daily insight
+  // itself moved to a server-side push notification (check-daily-insights
+  // cron) — this effect now only resolves the once-a-day recap decision.
   //
-  // Deliberately does NOT require transactions.length > 0 — hasAnyRecapData/
-  // getDailyInsight both handle an empty array fine (nothing to show), and
-  // gating on it left dailyPopupsResolved permanently false for a brand-new
-  // user, which in turn blocked the budget-setup popup from ever opening
-  // until their first transaction — colliding with AddModal closing right
-  // at that exact moment (the "stuck after adding first transaction" bug).
+  // Deliberately does NOT require transactions.length > 0 — hasAnyRecapData
+  // handles an empty array fine (nothing to show), and gating on it left
+  // dailyPopupsResolved permanently false for a brand-new user, which in
+  // turn blocked the budget-setup popup from ever opening until their first
+  // transaction — colliding with AddModal closing right at that exact
+  // moment (the "stuck after adding first transaction" bug).
   useEffect(() => {
     if (!user || txLoading || !addModalClosed) return;
     let cancelled = false;
@@ -178,12 +140,6 @@ export default function Dashboard() {
         return;
       }
 
-      const insight = getDailyInsight(transactions, todayStr);
-      if (insight) {
-        await new Promise(r => setTimeout(r, 320));
-        if (cancelled) return;
-        setDailyInsight(insight);
-      }
       if (!cancelled) setDailyPopupsResolved(true);
     })();
 
@@ -212,53 +168,15 @@ export default function Dashboard() {
     return () => { cancelled = true; };
   }, [user, budget.loading, budget.hasBudget]);
 
-  // Only actually opens once today's recap/insight decision has resolved
-  // (and neither is currently showing) — never ahead of or instead of them.
-  // Same simultaneous-Modal concern as above — staggered behind a short delay.
+  // Only actually opens once today's recap decision has resolved (and isn't
+  // currently showing) — never ahead of or instead of it. Same
+  // simultaneous-Modal concern as above — staggered behind a short delay.
   useEffect(() => {
-    if (!(budgetSetupPending && dailyPopupsResolved && !recapOpen && !dailyInsight && addModalClosed)) return;
+    if (!(budgetSetupPending && dailyPopupsResolved && !recapOpen && addModalClosed)) return;
     let cancelled = false;
     const t = setTimeout(() => { if (!cancelled) setBudgetSetupOpen(true); }, 320);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [budgetSetupPending, dailyPopupsResolved, recapOpen, dailyInsight, addModalClosed]);
-
-  // Subscription lifecycle notices (trial ending tomorrow, payment failed,
-  // subscription started/ended) — mirrors web App.jsx's equivalent effect.
-  // Flags one as due independent of the daily-shown-key chain above, since
-  // these are once-per-event notices (see getPendingSubscriptionPopup), not
-  // once-per-day ones.
-  useEffect(() => {
-    if (!user || subLoading) return;
-    let cancelled = false;
-    (async () => {
-      const pending = getPendingSubscriptionPopup(subscription, trialInfo, user.id);
-      if (!pending) return;
-      const seen = await AsyncStorage.getItem(pending.key);
-      if (cancelled || seen === '1') return;
-      setPendingSubPopup(pending);
-    })();
-    return () => { cancelled = true; };
-  }, [user, subLoading, subscription, trialInfo.status, trialInfo.paymentFailed, trialInfo.daysLeft, trialInfo.cancelAtPeriodEnd, trialInfo.everBilled]);
-
-  // Only actually shows once today's spending summary / recap / budget
-  // prompt (if any) has resolved — spending data always comes first.
-  // Staggered behind the same short delay for the same simultaneous-Modal
-  // reason as the effects above.
-  useEffect(() => {
-    if (!pendingSubPopup) return;
-    if (!dailyPopupsResolved || recapOpen || dailyInsight || budgetSetupOpen || !addModalClosed) return;
-    let cancelled = false;
-    (async () => {
-      const seen = await AsyncStorage.getItem(pendingSubPopup.key);
-      if (seen === '1') { if (!cancelled) setPendingSubPopup(null); return; }
-      await AsyncStorage.setItem(pendingSubPopup.key, '1');
-      await new Promise(r => setTimeout(r, 320));
-      if (cancelled) return;
-      setActiveSubPopup(pendingSubPopup.type);
-      setPendingSubPopup(null);
-    })();
-    return () => { cancelled = true; };
-  }, [pendingSubPopup, dailyPopupsResolved, recapOpen, dailyInsight, budgetSetupOpen, addModalClosed]);
+  }, [budgetSetupPending, dailyPopupsResolved, recapOpen, addModalClosed]);
 
   const closeRecap = useCallback(async () => {
     setRecapOpen(false);
@@ -343,12 +261,6 @@ export default function Dashboard() {
     router.push('/(app)/subscription');
   }, [router]);
 
-  const closeActiveSubPopup = useCallback(() => setActiveSubPopup(null), []);
-  const subscribeFromPopup = useCallback(() => {
-    setActiveSubPopup(null);
-    router.push('/(app)/subscription');
-  }, [router]);
-
   const openEdit = useCallback((tx) => {
     setAddModalClosed(false);
     setEditData(tx);
@@ -357,7 +269,7 @@ export default function Dashboard() {
 
   // Stable no-arg toggles for the modal props below — each was previously
   // an inline arrow function created fresh every render, which defeated
-  // memo() on Header/AddModal/SpendCalendarModal/Drawer/DailyInsightModal:
+  // memo() on Header/AddModal/SpendCalendarModal/Drawer:
   // any unrelated Dashboard state change (e.g. switching chart tabs) handed
   // them a "new" onClose/onMenuOpen prop and forced a full re-render of
   // each of those subtrees, AddModal being the heaviest of them.
@@ -367,7 +279,6 @@ export default function Dashboard() {
   const closeCalendar = useCallback(() => setCalendarOpen(false), []);
   const closeAddModal = useCallback(() => setModalOpen(false), []);
   const handleAddModalClosed = useCallback(() => setAddModalClosed(true), []);
-  const closeDailyInsight = useCallback(() => setDailyInsight(null), []);
 
   return (
     <View
@@ -419,9 +330,9 @@ export default function Dashboard() {
       <Pressable
         onPress={openAdd}
         className="absolute bottom-20 self-center w-[68px] h-[68px] rounded-full items-center justify-center"
-        style={{ backgroundColor: '#ffffff', left: '50%', marginLeft: -34, zIndex: 50, elevation: 50 }}
+        style={{ backgroundColor: PILL_ACTIVE_COLOR, left: '50%', marginLeft: -34, zIndex: 50, elevation: 50 }}
       >
-        <PlusIcon size={30} color="#000000" />
+        <PlusIcon size={30} color="#ffffff" />
       </Pressable>
 
       <AddModal
@@ -441,8 +352,6 @@ export default function Dashboard() {
         recap={recapForCalendar}
         budget={budgetForCalendar}
       />
-
-      <DailyInsightModal insight={dailyInsight} onClose={closeDailyInsight} />
 
       <Drawer open={drawerOpen} onClose={closeDrawer} />
 
@@ -480,43 +389,6 @@ export default function Dashboard() {
             </Pressable>
           </View>
         </View>
-      </AnimatedModal>
-
-      <AnimatedModal open={!!(activeSubPopup && SINGLE_CTA_POPUPS[activeSubPopup])} onClose={closeActiveSubPopup} variant="center">
-        {activeSubPopup && SINGLE_CTA_POPUPS[activeSubPopup] && (
-          <View
-            className="w-full rounded-2xl p-6 items-center"
-            style={{ maxWidth: 360, backgroundColor: 'rgba(20,20,20,0.98)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
-          >
-            <Text style={{ fontSize: 30 }} className="mb-3">{SINGLE_CTA_POPUPS[activeSubPopup].emoji}</Text>
-            <Text className="text-white font-semibold text-base mb-2 text-center">{SINGLE_CTA_POPUPS[activeSubPopup].headline}</Text>
-            <Text className="text-white/45 text-base text-center mb-6" style={{ lineHeight: 22 }}>{SINGLE_CTA_POPUPS[activeSubPopup].message}</Text>
-            <Pressable onPress={closeActiveSubPopup} className="w-full py-[13px] rounded-2xl items-center" style={{ backgroundColor: 'rgba(74,222,128,0.25)' }}>
-              <Text className="text-base font-semibold" style={{ color: '#4ade80' }}>{SINGLE_CTA_POPUPS[activeSubPopup].cta}</Text>
-            </Pressable>
-          </View>
-        )}
-      </AnimatedModal>
-
-      <AnimatedModal open={!!(activeSubPopup && DOUBLE_CTA_POPUPS[activeSubPopup])} onClose={closeActiveSubPopup} variant="center">
-        {activeSubPopup && DOUBLE_CTA_POPUPS[activeSubPopup] && (
-          <View
-            className="w-full rounded-2xl p-6 items-center"
-            style={{ maxWidth: 360, backgroundColor: 'rgba(20,20,20,0.98)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
-          >
-            <Text style={{ fontSize: 30 }} className="mb-3">{DOUBLE_CTA_POPUPS[activeSubPopup].emoji}</Text>
-            <Text className="text-white font-semibold text-base mb-2 text-center">{DOUBLE_CTA_POPUPS[activeSubPopup].headline}</Text>
-            <Text className="text-white/45 text-base text-center mb-6" style={{ lineHeight: 22 }}>{DOUBLE_CTA_POPUPS[activeSubPopup].message}</Text>
-            <View className="flex-row w-full" style={{ gap: 12 }}>
-              <Pressable onPress={closeActiveSubPopup} className="flex-1 py-[11px] rounded-xl items-center" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
-                <Text className="text-white/60 text-base font-medium">Not now</Text>
-              </Pressable>
-              <Pressable onPress={subscribeFromPopup} className="flex-1 py-[11px] rounded-xl items-center" style={{ backgroundColor: 'rgba(74,222,128,0.25)' }}>
-                <Text className="text-base font-semibold" style={{ color: '#4ade80' }}>Subscribe Now</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
       </AnimatedModal>
     </View>
   );

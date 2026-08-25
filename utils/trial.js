@@ -31,7 +31,7 @@ export function formatChargeDate(dateStr) {
 //
 // `everBilled` distinguishes "this expiry is a trial that ran out" from "this
 // expiry is a paid plan whose billing period ended" — both land in `expired`,
-// but need different messaging (see getPendingSubscriptionPopup below).
+// but need different messaging.
 export function getSubscriptionDisplayStatus(subscription, todayStr) {
   if (!subscription) {
     return { status: 'not_started', daysLeft: TRIAL_DAYS, chargeDate: null, cancelAtPeriodEnd: false, paymentFailed: false, everBilled: false }
@@ -104,35 +104,4 @@ export function getSubscriptionDisplayStatus(subscription, todayStr) {
     paymentFailed: false,
     everBilled: false,
   }
-}
-
-// Selects the one subscription-lifecycle popup (if any) due right now, and a
-// storage key that makes showing it a one-time event. Each event type
-// dedupes against a different scope, matching how often it can legitimately
-// recur over a subscription's life:
-//   - payment failure can recur (each renewal attempt) → keyed by updated_at,
-//     so a fresh failure gets a fresh notice but re-opening the app during
-//     the same unresolved failure doesn't re-show it
-//   - trial-ending-tomorrow / success / ended are each a once-per-subscription
-//     event → keyed by the Razorpay subscription id
-export function getPendingSubscriptionPopup(subscription, trialInfo, userId) {
-  if (!subscription || !userId) return null
-  const subId = subscription.razorpay_subscription_id
-
-  if (trialInfo.paymentFailed) {
-    return { type: 'payment-failed', key: `okana_popup_payment_failed_${userId}_${subscription.updated_at}` }
-  }
-  if (trialInfo.status === 'subscribed' && !trialInfo.cancelAtPeriodEnd) {
-    return { type: 'success', key: `okana_popup_success_${userId}_${subId}` }
-  }
-  if (trialInfo.status === 'trial' && !trialInfo.cancelAtPeriodEnd && trialInfo.daysLeft === 1) {
-    return { type: 'trial-tomorrow', key: `okana_popup_trial_tomorrow_${userId}_${subId}` }
-  }
-  if (trialInfo.status === 'expired' && !trialInfo.everBilled) {
-    return { type: 'trial-ended', key: `okana_popup_trial_ended_${userId}_${subId}` }
-  }
-  if (trialInfo.status === 'expired' && trialInfo.everBilled) {
-    return { type: 'sub-ended', key: `okana_popup_sub_ended_${userId}_${subId}` }
-  }
-  return null
 }

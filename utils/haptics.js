@@ -1,8 +1,7 @@
 import { Platform } from 'react-native'
 
-// expo-haptics is native-only — guarded the same way utils/notifications.js
-// guards expo-notifications, so the web preview (`expo start --web`) never
-// touches an API that doesn't exist there.
+// expo-haptics is native-only — guarded so the web preview
+// (`expo start --web`) never touches an API that doesn't exist there.
 
 export function hapticAdded() {
   if (Platform.OS === 'web') return
