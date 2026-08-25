@@ -6,6 +6,8 @@ import Svg, { Circle } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedStyle, useAnimatedProps, withDelay, withSequence, withTiming, Easing } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
+import { useNetwork } from '../../context/NetworkContext';
+import { isConnectivityError } from '../../utils/errors';
 import { useSubscription } from '../../hooks/useSubscription';
 import { supabase } from '../../lib/supabase';
 import { BackIcon, EditIcon, ChevronRight, CheckIcon, CameraIcon } from '../../components/icons';
@@ -285,6 +287,7 @@ function ActionOverlay({ type, phase, onDone }) {
 export default function AccountPage() {
   const router = useRouter();
   const { user, profile, logout } = useAuth();
+  const { isOnline, notifyOffline } = useNetwork();
   const { subscription, cancelSubscription } = useSubscription(user);
 
   const [editingName, setEditingName] = useState(false);
@@ -308,6 +311,7 @@ export default function AccountPage() {
 
   async function saveName() {
     if (!nameInput.trim() || nameInput.trim() === profile?.name) { setEditingName(false); return; }
+    if (!isOnline) { notifyOffline(); return; }
     setSavingName(true);
     setActionError('');
     try {
@@ -315,7 +319,8 @@ export default function AccountPage() {
       if (error) throw error;
       setEditingName(false);
     } catch (err) {
-      setActionError(err.message || 'Failed to update name. Please try again.');
+      if (isConnectivityError(err, isOnline)) { notifyOffline(); }
+      else { setActionError(err.message || 'Failed to update name. Please try again.'); }
     } finally {
       setSavingName(false);
     }
@@ -334,6 +339,8 @@ export default function AccountPage() {
       quality: 0.7,
     });
     if (result.canceled || !result.assets?.[0]) return;
+
+    if (!isOnline) { notifyOffline(); return; }
 
     setAvatarPhase('uploading');
     setActionError('');
@@ -373,7 +380,8 @@ export default function AccountPage() {
       setTimeout(() => setAvatarPhase('idle'), AVATAR_SEQUENCE_MS);
     } catch (err) {
       setAvatarPhase('idle');
-      setActionError(err.message || 'Failed to update profile photo. Please try again.');
+      if (isConnectivityError(err, isOnline)) { notifyOffline(); }
+      else { setActionError(err.message || 'Failed to update profile photo. Please try again.'); }
     }
   }
 
@@ -388,8 +396,14 @@ export default function AccountPage() {
   }
 
   async function runErase() {
+    if (!isOnline) { notifyOffline(); return; }
     setActionError('');
     setActionFlow({ type: 'erase', phase: 'working' });
+    // Tracks how far the sequence got — these are separate DB calls, not
+    // one atomic transaction, so a failure partway through has already
+    // deleted whatever came before it. The error message says so instead
+    // of implying nothing happened.
+    let step = 'transactions';
     try {
       // Held to a 4s minimum so the progress bar always has time to visibly
       // fill instead of flashing straight to success when the deletes
@@ -397,6 +411,7 @@ export default function AccountPage() {
       await Promise.all([minDelay(4000), (async () => {
         const { error: txError } = await supabase.from('transactions').delete().eq('user_id', user.id);
         if (txError) throw txError;
+        step = 'budget';
         const { error: budgetError } = await supabase.from('monthly_budgets').delete().eq('user_id', user.id);
         if (budgetError) throw budgetError;
         // Lets the budget-setup popup fire again on the next Dashboard visit —
@@ -407,32 +422,54 @@ export default function AccountPage() {
       setActionFlow({ type: 'erase', phase: 'success' });
     } catch (err) {
       setActionFlow(null);
-      setActionError(err.message || 'Something went wrong. Please try again.');
+      if (isConnectivityError(err, isOnline)) { notifyOffline(); return; }
+      setActionError(
+        step === 'budget'
+          ? `Your transactions were erased, but budgets couldn't be — ${err.message || 'please try again'}.`
+          : err.message || 'Something went wrong. Please try again.'
+      );
     }
   }
 
   async function runDelete() {
+    if (!isOnline) { notifyOffline(); return; }
     setActionError('');
     setActionFlow({ type: 'delete', phase: 'working' });
+    let step = 'subscription';
     try {
       await Promise.all([minDelay(4000), (async () => {
         const TERMINAL = ['cancelled', 'expired', 'completed'];
         if (subscription && !TERMINAL.includes(subscription.status)) {
-          await cancelSubscription({ immediate: true });
+          const cancelled = await cancelSubscription({ immediate: true });
+          // cancelSubscription swallows its own errors and resolves to
+          // false rather than throwing — without this check, a failed
+          // cancellation would silently fall through to deleting the
+          // account anyway, leaving an active paid subscription with no
+          // account left to manage or cancel it from.
+          if (!cancelled) throw new Error("Couldn't cancel your subscription. Please try again.");
         }
+        step = 'transactions';
         const { error: txError } = await supabase.from('transactions').delete().eq('user_id', user.id);
         if (txError) throw txError;
         // monthly_budgets has a (no-cascade) FK to auth.users — must be cleared
         // before delete_user() or the account delete itself fails.
+        step = 'budget';
         const { error: budgetError } = await supabase.from('monthly_budgets').delete().eq('user_id', user.id);
         if (budgetError) throw budgetError;
+        step = 'account';
         const { error: rpcError } = await supabase.rpc('delete_user');
         if (rpcError) throw rpcError;
       })()]);
       setActionFlow({ type: 'delete', phase: 'success' });
     } catch (err) {
       setActionFlow(null);
-      setActionError(err.message || 'Something went wrong. Please try again.');
+      if (isConnectivityError(err, isOnline)) { notifyOffline(); return; }
+      const partial = step === 'budget' || step === 'account';
+      setActionError(
+        partial
+          ? `Your transactions were deleted, but your account couldn't be fully removed — ${err.message || 'please try again'}.`
+          : err.message || 'Something went wrong. Please try again.'
+      );
     }
   }
 
@@ -468,7 +505,14 @@ export default function AccountPage() {
     // this one, dropping the onboarding navigation entirely. Leaving the stack
     // first means the guard is unmounted by the time logout() takes effect.
     router.replace('/onboarding');
-    await logout();
+    try {
+      await logout();
+    } catch {
+      // The account (and its server-side session) is already gone via
+      // delete_user() above — a failed local sign-out just means the
+      // device's cached tokens outlive it, which AuthContext's own
+      // getSession()/onAuthStateChange handle safely regardless.
+    }
   }, [router, logout]);
 
   return (

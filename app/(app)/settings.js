@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, TextInput, Linking, Image, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -7,6 +7,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import Svg, { Rect, Path, Circle } from 'react-native-svg';
 import { useTransactions } from '../../hooks/useTransactions';
+import { useNetwork } from '../../context/NetworkContext';
+import { isConnectivityError } from '../../utils/errors';
 import { supabase } from '../../lib/supabase';
 import { buildTransactionsWorkbook, parseTransactionsWorkbook } from '../../utils/exportImport';
 import { BackIcon, ChevronRight } from '../../components/icons';
@@ -99,6 +101,7 @@ function InfoModal({ open, title, onClose, children }) {
 export default function SettingsPage() {
   const router = useRouter();
   const { transactions, importTransactions } = useTransactions();
+  const { isOnline, isOnlineRef, notifyOffline } = useNetwork();
 
   const [modal, setModal] = useState(null);
   const [feedbackText, setFeedbackText] = useState('');
@@ -116,8 +119,17 @@ export default function SettingsPage() {
   const importProgress = useSharedValue(0);
   const progressBarStyle = useAnimatedStyle(() => ({ width: `${importProgress.value * 100}%` }));
 
+  // Cleared on unmount so a completed import's delayed redirect can't fire
+  // after the user has already navigated elsewhere (e.g. tapped back right
+  // after seeing "Imported N transactions") and force them back to Home.
+  const importRedirectTimeoutRef = useRef(null);
+  useEffect(() => () => {
+    if (importRedirectTimeoutRef.current) clearTimeout(importRedirectTimeoutRef.current);
+  }, []);
+
   async function sendFeedback() {
     if (!feedbackText.trim()) return;
+    if (!isOnline) { notifyOffline(); return; }
     setFeedbackSending(true);
     setFeedbackError('');
     try {
@@ -134,7 +146,8 @@ export default function SettingsPage() {
       setFeedbackSent(true);
       setTimeout(() => { setFeedbackSent(false); setFeedbackText(''); setModal(null); }, 1500);
     } catch (err) {
-      setFeedbackError(err.message);
+      if (isConnectivityError(err, isOnlineRef.current)) { notifyOffline(); }
+      else { setFeedbackError(err.message || 'Failed to send feedback. Please try again.'); }
     } finally {
       setFeedbackSending(false);
     }
@@ -172,6 +185,8 @@ export default function SettingsPage() {
       });
       if (result.canceled || !result.assets?.[0]) return;
 
+      if (!isOnline) { notifyOffline(); return; }
+
       setImportErrorMsg('');
       setImportStage('reading');
       // A small kick so the bar visibly moves even during the read/parse
@@ -204,6 +219,7 @@ export default function SettingsPage() {
       });
 
       if (!res.success) {
+        if (res.offline) { notifyOffline(); setImportStage('idle'); return; }
         setImportErrorMsg(res.error || 'Import failed. Please try again.');
         setImportStage('error');
         return;
@@ -226,11 +242,12 @@ export default function SettingsPage() {
       );
       setImportStage('done');
 
-      setTimeout(() => {
+      importRedirectTimeoutRef.current = setTimeout(() => {
         setImportStage('idle');
         router.replace('/(app)');
       }, 1700);
     } catch (err) {
+      if (isConnectivityError(err, isOnlineRef.current)) { notifyOffline(); setImportStage('idle'); return; }
       setImportErrorMsg(err.message || 'Something went wrong. Please try again.');
       setImportStage('error');
     }

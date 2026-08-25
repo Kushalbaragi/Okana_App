@@ -3,6 +3,8 @@ import { useRouter } from 'expo-router';
 import { View, Text, Platform, Keyboard, Pressable } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
+import { useNetwork } from '../../context/NetworkContext';
+import { isConnectivityError } from '../../utils/errors';
 import { GlassTextInput, GlassPressable } from '../../components/Glass';
 import { Spinner } from '../../components/icons';
 
@@ -11,6 +13,7 @@ import { Spinner } from '../../components/icons';
 // account on first use if it doesn't exist yet.
 export default function LoginScreen() {
   const { sendOtp } = useAuth();
+  const { isOnline, notifyOffline } = useNetwork();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
@@ -44,13 +47,15 @@ export default function LoginScreen() {
   async function handleSubmit() {
     const trimmed = email.trim();
     if (!trimmed) { setError('Please enter your email'); return; }
+    if (!isOnline) { notifyOffline(); return; }
     setLoading(true);
     setError('');
     try {
       await sendOtp({ email: trimmed });
       router.push({ pathname: '/(auth)/otp', params: { email: trimmed } });
     } catch (err) {
-      setError(err.message || 'Failed to send code. Please try again.');
+      if (isConnectivityError(err, isOnline)) { notifyOffline(); }
+      else { setError(err.message || 'Failed to send code. Please try again.'); }
     } finally {
       setLoading(false);
     }

@@ -76,11 +76,11 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
       setVisible(true);
       setSelectedDate(null);
       dragY.value = 0;
-      pageTranslateY.value = withTiming(0, { duration: 680, easing: SETTLE_EASING });
+      pageTranslateY.value = withTiming(0, { duration: 950, easing: SETTLE_EASING });
     } else {
       pageTranslateY.value = withTiming(
         windowHeight,
-        { duration: 500, easing: SETTLE_EASING },
+        { duration: 700, easing: SETTLE_EASING },
         finished => {
           if (!finished) return;
           runOnJS(setVisible)(false);
@@ -110,7 +110,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
     })
     .onEnd(e => {
       if (e.translationY > DISMISS_DISTANCE || e.velocityY > DISMISS_VELOCITY) {
-        dragY.value = withTiming(OFF_SCREEN_Y, { duration: 560, easing: SETTLE_EASING });
+        dragY.value = withTiming(OFF_SCREEN_Y, { duration: 700, easing: SETTLE_EASING });
         runOnJS(onClose)();
       } else {
         dragY.value = withTiming(0, { duration: 420, easing: SETTLE_EASING });
@@ -155,7 +155,15 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-      <Animated.View className="flex-1 bg-bg" style={pageStyle}>
+      {/* RN's <Modal> stays fully touch-active for its whole lifetime —
+          `visible` only flips to false once the close animation below has
+          actually finished, so without this the calendar icon (and anything
+          else on Dashboard) is unreachable for the ~700ms this is sliding
+          off-screen, even though it's already invisible. `open` (not
+          `visible`) flips to false the instant a close starts, so touches
+          fall through immediately instead of at the end. Same fix as
+          AddModal's — see the comment there. */}
+      <Animated.View className="flex-1 bg-bg" style={pageStyle} pointerEvents={open ? 'auto' : 'none'}>
         <GestureDetector gesture={pan}>
           <View style={{ flex: 1 }}>
             <View style={{ paddingTop: insets.top + 10, paddingBottom: 8, alignItems: 'center' }}>

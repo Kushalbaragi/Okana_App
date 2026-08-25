@@ -5,6 +5,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming } from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
+import { useNetwork } from '../../context/NetworkContext';
+import { isConnectivityError } from '../../utils/errors';
 import { NumericKeypad, DIGIT_ONLY_KEYPAD_ROWS } from '../../components/NumericKeypad';
 import { BackIcon } from '../../components/icons';
 
@@ -39,6 +41,7 @@ export default function OtpScreen() {
   const { width } = useWindowDimensions();
   const { email } = useLocalSearchParams();
   const { verifyOtp, sendOtp } = useAuth();
+  const { isOnline, notifyOffline } = useNetwork();
 
   // Scales box size/gap down for longer codes so 8 boxes still fit on
   // narrow phones instead of wrapping or overflowing.
@@ -63,6 +66,12 @@ export default function OtpScreen() {
   }, [cooldown]);
 
   async function submitCode(fullCode) {
+    if (!isOnline) {
+      notifyOffline();
+      setCode('');
+      shake();
+      return;
+    }
     setVerifying(true);
     setError('');
     try {
@@ -73,10 +82,13 @@ export default function OtpScreen() {
       } else {
         router.replace('/(app)');
       }
-    } catch {
-      // Deliberately generic — matches the rest of the app's auth error
-      // copy, doesn't distinguish "wrong code" from "expired code".
-      setError('Incorrect or expired code. Please try again.');
+    } catch (err) {
+      // "Incorrect or expired code" is deliberately generic for a genuine
+      // rejection (doesn't distinguish wrong vs. expired) — but an offline
+      // attempt never even reached that check, so it gets the banner
+      // instead of this misleading message.
+      if (isConnectivityError(err, isOnline)) { notifyOffline(); }
+      else { setError('Incorrect or expired code. Please try again.'); }
       setCode('');
       shake();
       setVerifying(false);
@@ -99,13 +111,15 @@ export default function OtpScreen() {
 
   async function handleResend() {
     if (cooldown > 0 || resending) return;
+    if (!isOnline) { notifyOffline(); return; }
     setResending(true);
     setError('');
     try {
       await sendOtp({ email });
       setCooldown(RESEND_COOLDOWN_S);
     } catch (err) {
-      setError(err.message || 'Failed to resend code. Please try again.');
+      if (isConnectivityError(err, isOnline)) { notifyOffline(); }
+      else { setError(err.message || 'Failed to resend code. Please try again.'); }
     } finally {
       setResending(false);
     }

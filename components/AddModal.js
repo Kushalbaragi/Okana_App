@@ -7,7 +7,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS
 import Svg, { Rect, Line } from 'react-native-svg';
 import { today, toTitleCase } from '../utils/format';
 import CalendarPicker from './CalendarPicker';
-import { GlassPressable } from './Glass';
+import { GlassPressable, PILL_ACTIVE_COLOR } from './Glass';
 import { NumericKeypad } from './NumericKeypad';
 import { AmountRow } from './AmountField';
 
@@ -108,6 +108,26 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
   const pageTranslateY = useSharedValue(windowHeight);
   const dragY = useSharedValue(0);
 
+  // Mirrors `submitting` on the UI thread — the drag gesture below runs as
+  // a worklet and can't read React state directly. Without this, a fast
+  // drag-dismiss started right after tapping Add/Update closes the sheet
+  // (and eventually unmounts it) while onAdd/onEdit is still in flight;
+  // when that promise resolves, its result — success or a real error —
+  // lands on a component that's already gone, so a failure is silently
+  // lost and the user has no idea their entry wasn't actually saved.
+  const submittingSV = useSharedValue(false);
+  useEffect(() => { submittingSV.value = submitting; }, [submitting]);
+
+  // Defense-in-depth alongside the drag-block above: if the sheet somehow
+  // still gets closed and reopened while a submit is in flight (e.g. the
+  // Android hardware back button, which bypasses the drag gesture
+  // entirely via onRequestClose below), this tells a stale submit's
+  // eventual result apart from the fresh session that's now open, so it
+  // can't apply an error/success meant for a submission the user can no
+  // longer see to a screen they've since reopened from scratch.
+  const sessionRef = useRef(0);
+  useEffect(() => { if (open) sessionRef.current += 1; }, [open]);
+
   useEffect(() => {
     if (open) {
       setVisible(true);
@@ -157,11 +177,18 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
   async function handleSubmit() {
     const val = parseFloat(amount);
     if (!val || val <= 0) return;
+    const mySession = sessionRef.current;
     setSubmitting(true);
     setError('');
     const result = isEdit
       ? await onEdit(editData.id, { type, amount: val, date, description: toTitleCase(description) })
       : await onAdd({ type, amount: val, date, description: toTitleCase(description) });
+    // The sheet was closed and reopened while this was in flight (drag-
+    // dismiss is blocked while submitting, but the Android back button's
+    // onRequestClose isn't) — this result belongs to a session the user
+    // can no longer see; applying it now would show a stale error, or
+    // silently close a fresh session they're actively looking at.
+    if (sessionRef.current !== mySession) return;
     // On success, `submitting` deliberately stays true instead of flipping
     // back to false — resetting it here shows "Update"/"Add" again for the
     // render(s) before the close animation actually finishes, a visible
@@ -173,6 +200,12 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
       return;
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    onClose();
+  }
+
+  // Ignored while a submit is in flight — see submittingSV above for why.
+  function handleRequestClose() {
+    if (submitting) return;
     onClose();
   }
 
@@ -206,7 +239,8 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
       if (e.translationY > 0) dragY.value = e.translationY;
     })
     .onEnd(e => {
-      if (e.translationY > DISMISS_DISTANCE || e.velocityY > DISMISS_VELOCITY) {
+      const pastThreshold = e.translationY > DISMISS_DISTANCE || e.velocityY > DISMISS_VELOCITY;
+      if (pastThreshold && !submittingSV.value) {
         dragY.value = withTiming(OFF_SCREEN_Y, { duration: 420, easing: SETTLE_EASING });
         runOnJS(onClose)();
       } else {
@@ -224,7 +258,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={handleRequestClose}>
       {/* RN's <Modal> stays fully touch-active for its whole lifetime —
           `visible` only flips to false once the close animation below has
           actually finished, so without this the FAB underneath (and
@@ -258,7 +292,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
             {typeToggleWidth > 0 && (
               <Animated.View
                 style={[
-                  { position: 'absolute', top: 3, bottom: 3, left: 3, width: (typeToggleWidth - 6) / 2, borderRadius: 999, backgroundColor: '#d4d4d4' },
+                  { position: 'absolute', top: 3, bottom: 3, left: 3, width: (typeToggleWidth - 6) / 2, borderRadius: 999, backgroundColor: PILL_ACTIVE_COLOR },
                   typePillStyle,
                 ]}
               />
@@ -270,7 +304,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
                 className="flex-1 py-[6px] rounded-full items-center"
               >
                 <Text
-                  className={type === t ? 'text-black text-base font-medium' : 'text-white/35 text-base font-medium'}>
+                  className={type === t ? 'text-white text-base font-medium' : 'text-white/35 text-base font-medium'}>
                   {t.charAt(0).toUpperCase() + t.slice(1)}
                 </Text>
               </Pressable>
@@ -295,7 +329,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
           </View>
 
           <View className="mb-6">
-            <Text className="text-white text-[15px] font-medium mb-2">Description</Text>
+            <Text className="text-white text-[15px] font-medium mb-4">Description</Text>
             <TextInput
               value={description}
               onChangeText={setDescription}

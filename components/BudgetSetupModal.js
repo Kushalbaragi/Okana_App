@@ -85,6 +85,22 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
   const pageTranslateY = useSharedValue(windowHeight);
   const dragY = useSharedValue(0);
 
+  // Same submit-in-flight protection as AddModal — see the comments there.
+  // A budget set is the one place here that genuinely can't be silently
+  // lost: skipping it means the whole point of setting a budget (the
+  // confirmation, and the delta screen) never happens, with no sign
+  // anything went wrong.
+  //
+  // Deliberately its own flag, not `submitting` — `submitting` stays true
+  // through the whole post-submit confirmation screen too (to avoid a
+  // button-label flicker), but that screen is meant to stay drag-
+  // dismissible early (see the CONFIRM_HOLD_MS effect's own comment
+  // below); only the actual in-flight request should block dismissal.
+  const requestInFlightSV = useSharedValue(false);
+  const requestInFlightRef = useRef(false); // JS-side mirror for handleRequestClose (plain function, not a worklet)
+  const sessionRef = useRef(0);
+  useEffect(() => { if (open) sessionRef.current += 1; }, [open]);
+
   useEffect(() => {
     if (open) {
       setVisible(true);
@@ -126,14 +142,26 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
   async function handleSubmit() {
     const val = parseFloat(amount);
     if (!val || val <= 0) return;
+    const mySession = sessionRef.current;
     setSubmitting(true);
     setError('');
+    requestInFlightSV.value = true;
+    requestInFlightRef.current = true;
     const result = await onSubmit(val);
+    requestInFlightSV.value = false;
+    requestInFlightRef.current = false;
+    // Closed and reopened while this was in flight — belongs to a session
+    // the user can no longer see. See AddModal's handleSubmit for the
+    // same guard and why it's needed.
+    if (sessionRef.current !== mySession) return;
     if (result?.success === false) {
       setSubmitting(false);
       setError(result.error || 'Something went wrong. Please try again.');
       return;
     }
+    // A queued (offline) set is still a success here — same as adding a
+    // transaction offline, it applies locally and syncs once reconnected;
+    // useBudget's setBudget already showed the offline banner.
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     if (lastMonthAmount != null && val !== lastMonthAmount) {
       confirmProgress.value = withTiming(1, { duration: 520, easing: SETTLE_EASING });
@@ -141,6 +169,13 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
     } else {
       onClose();
     }
+  }
+
+  // Ignored while the actual request is in flight — see requestInFlightSV
+  // above for why this isn't just `submitting`.
+  function handleRequestClose() {
+    if (requestInFlightRef.current) return;
+    onClose();
   }
 
   const canSubmit = !!amount && parseFloat(amount) > 0 && !submitting;
@@ -155,7 +190,8 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
       if (e.translationY > 0) dragY.value = e.translationY;
     })
     .onEnd(e => {
-      if (e.translationY > DISMISS_DISTANCE || e.velocityY > DISMISS_VELOCITY) {
+      const pastThreshold = e.translationY > DISMISS_DISTANCE || e.velocityY > DISMISS_VELOCITY;
+      if (pastThreshold && !requestInFlightSV.value) {
         dragY.value = withTiming(OFF_SCREEN_Y, { duration: 420, easing: SETTLE_EASING });
         runOnJS(onClose)();
       } else {
@@ -182,7 +218,7 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
   const confirmBg = `rgba(${confirmRGB},0.14)`;
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={handleRequestClose}>
       <Animated.View className="flex-1 bg-bg" style={pageStyle} pointerEvents={open ? 'auto' : 'none'}>
       <GestureDetector gesture={pan}>
       <View style={{ flex: 1 }}>

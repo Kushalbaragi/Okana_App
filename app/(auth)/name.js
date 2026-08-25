@@ -3,6 +3,8 @@ import { View, Text, Platform, Keyboard, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
+import { useNetwork } from '../../context/NetworkContext';
+import { isConnectivityError } from '../../utils/errors';
 import { GlassTextInput, GlassPressable } from '../../components/Glass';
 import { Spinner } from '../../components/icons';
 
@@ -12,6 +14,7 @@ import { Spinner } from '../../components/icons';
 export default function NameScreen() {
   const router = useRouter();
   const { setName } = useAuth();
+  const { isOnline, notifyOffline } = useNetwork();
   const [name, setNameInput] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -33,13 +36,15 @@ export default function NameScreen() {
   async function handleContinue() {
     const trimmed = name.trim();
     if (!trimmed) { setError('Please enter your name'); return; }
+    if (!isOnline) { notifyOffline(); return; }
     setSaving(true);
     setError('');
     try {
       await setName({ name: trimmed });
       router.replace('/(auth)/welcome');
     } catch (err) {
-      setError(err.message || 'Something went wrong. Please try again.');
+      if (isConnectivityError(err, isOnline)) { notifyOffline(); }
+      else { setError(err.message || 'Something went wrong. Please try again.'); }
       setSaving(false);
     }
   }

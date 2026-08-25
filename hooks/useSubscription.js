@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useNetwork } from '../context/NetworkContext';
+import { isConnectivityError } from '../utils/errors';
 
 async function authToken() {
   const { data } = await supabase.auth.getSession();
@@ -24,11 +26,22 @@ async function callFunction(name, token, body) {
 // only surfaces the read side (subscription state + payment method) and
 // cancellation, which work today via the existing Razorpay/web backend.
 export function useSubscription(user) {
+  const { isOnline, notifyOffline } = useNetwork();
   const [subscription, setSubscription] = useState(null);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState(null);
+
+  // Tracks whichever `user` is current "right now" — refresh() checks
+  // this after its await resolves so a slow request for a since-replaced
+  // user (rapid logout/login, or an account switch during testing)
+  // can't land after a newer request already set fresh state and
+  // silently overwrite it with stale data belonging to the old user.
+  // (The payment-method effect just below already guards the same way
+  // with its own local `cancelled` flag — this covers the same gap here.)
+  const latestUserIdRef = useRef(user?.id ?? null);
+  useEffect(() => { latestUserIdRef.current = user?.id ?? null; }, [user]);
 
   const refresh = useCallback(async () => {
     if (!user) { setSubscription(null); setLoading(false); return null; }
@@ -38,6 +51,7 @@ export function useSubscription(user) {
         .select('*')
         .eq('user_id', user.id)
         .maybeSingle();
+      if (user.id !== latestUserIdRef.current) return null;
       setSubscription(data);
       return data;
     } catch {
@@ -45,7 +59,7 @@ export function useSubscription(user) {
       // state in place rather than hanging on "loading" forever.
       return null;
     } finally {
-      setLoading(false);
+      if (user.id === latestUserIdRef.current) setLoading(false);
     }
   }, [user]);
 
@@ -67,6 +81,7 @@ export function useSubscription(user) {
 
   const cancelSubscription = useCallback(async ({ immediate = false } = {}) => {
     if (!user) return false;
+    if (!isOnline) { notifyOffline(); return false; }
     setCancelling(true);
     setError(null);
     try {
@@ -75,12 +90,13 @@ export function useSubscription(user) {
       await refresh();
       return true;
     } catch (err) {
-      setError(err.message);
+      if (isConnectivityError(err, isOnline)) { notifyOffline(); }
+      else { setError(err.message); }
       return false;
     } finally {
       setCancelling(false);
     }
-  }, [user, refresh]);
+  }, [user, refresh, isOnline]);
 
   return {
     subscription, loading, cancelling, error, paymentMethod,
