@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Okana",
-    "slug": "okana-mobile",
+    "slug": "okana",
     "scheme": "okana",
     "version": "1.0.2",
     "orientation": "portrait",
@@ -20,14 +20,16 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "package": "com.kushalbaragi.okana"
+      "package": "com.kushalbaragi.okana",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-router",
-      "expo-notifications",
       "./plugins/withAndroidSoftInputMode",
       [
         "expo-image-picker",
@@ -35,7 +37,15 @@
           "photosPermission": "Okana uses your photo library so you can set a profile picture."
         }
       ],
-      "expo-document-picker"
-    ]
+      "expo-document-picker",
+      "expo-notifications"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "4ae7a978-9c7a-4aa1-8757-e07f03a0239c"
+      }
+    },
+    "owner": "kushalbaragi10s-team"
   }
 }
