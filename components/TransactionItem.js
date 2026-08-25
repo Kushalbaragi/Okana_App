@@ -84,7 +84,7 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
       <Pressable
         onPress={handleCardPress}
         className="flex-row items-center justify-between py-3 px-4"
-        style={{ borderBottomWidth: 1, borderBottomColor: '#1a1a1a', backgroundColor: '#161616' }}
+        style={{ backgroundColor: '#0a0a0a' }}
       >
         <View className="flex-row items-center flex-1 pr-3">
           <DateBox dateStr={tx.date} />
@@ -93,12 +93,19 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
           </Text>
         </View>
 
-        <Text
-          className="text-base font-medium shrink-0"
-          style={{ color: isIncome ? 'rgba(74,222,128,0.8)' : 'rgba(255,255,255,0.45)' }}
-        >
-          {isIncome ? '+' : '-'}{formatCurrencyFull(tx.amount)}
-        </Text>
+        <View className="flex-row items-center shrink-0" style={{ gap: 6 }}>
+          {/* Not yet synced to the server — sitting in the offline queue,
+              or an insert/update still in flight. */}
+          {tx._pending && (
+            <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: 'rgba(255,255,255,0.3)' }} />
+          )}
+          <Text
+            className="text-base font-medium"
+            style={{ color: isIncome ? 'rgba(74,222,128,0.8)' : 'rgba(255,255,255,0.45)' }}
+          >
+            {isIncome ? '+' : '-'}{formatCurrencyFull(tx.amount)}
+          </Text>
+        </View>
       </Pressable>
     </ReanimatedSwipeable>
   );

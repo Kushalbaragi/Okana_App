@@ -7,24 +7,29 @@ const AnimatedRect = Animated.createAnimatedComponent(Rect);
 const BAR_HEIGHT = 90;
 const CHART_W    = 264;
 
-function Bar({ x, width, rx, targetHeight, delay, fill, animKey, onPress, disabled }) {
-  const progress = useSharedValue(0);
+function Bar({ x, width, rx, targetHeight, delay, fill, animKey }) {
+  // Animates the actual pixel height directly (not a 0-1 progress scaled by
+  // targetHeight) — that's what lets a same-period change smoothly tween
+  // from whatever height it's currently at to the new one, rather than
+  // only ever being able to animate from 0.
+  const animatedHeight = useSharedValue(0);
   // null (not animKey's initial value) so the very first mount still gets
-  // the reveal — only a later *change* of animKey (a genuinely new period)
-  // should replay it. Switching Expense<->Income for the SAME period keeps
-  // animKey identical, so bars just reflect the new heights instantly
-  // instead of collapsing back to 0 and re-growing with the full stagger —
-  // that collapse-and-regrow was reading as "slow to switch tabs".
+  // the full grow-from-zero reveal — only a later *change* of animKey (a
+  // genuinely new period) should replay that. Switching Expense<->Income
+  // for the SAME period keeps animKey identical; bars still animate to
+  // their new height, just as a quick direct tween with no stagger delay —
+  // a full collapse-back-to-0-and-restagger there read as "slow to switch
+  // tabs", but snapping instantly read as no animation at all.
   const prevAnimKey = useRef(null);
 
   useEffect(() => {
     const isNewPeriod = prevAnimKey.current !== animKey;
     prevAnimKey.current = animKey;
     if (isNewPeriod) {
-      progress.value = 0;
-      progress.value = withDelay(delay, withTiming(1, { duration: 200, easing: Easing.out(Easing.exp) }));
+      animatedHeight.value = 0;
+      animatedHeight.value = withDelay(delay, withTiming(targetHeight, { duration: 300, easing: Easing.out(Easing.exp) }));
     } else {
-      progress.value = 1;
+      animatedHeight.value = withTiming(targetHeight, { duration: 260, easing: Easing.out(Easing.cubic) });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animKey, targetHeight]);
@@ -34,11 +39,13 @@ function Bar({ x, width, rx, targetHeight, delay, fill, animKey, onPress, disabl
   // it didn't anchor where expected, so bars grew from a fixed top edge
   // downward instead of from the baseline upward. Animating height/y
   // directly is the reliable way to get "grows from the bottom" here.
-  const animatedProps = useAnimatedProps(() => {
-    const h = targetHeight * progress.value;
-    return { height: h, y: BAR_HEIGHT - h };
-  });
+  const animatedProps = useAnimatedProps(() => ({
+    height: animatedHeight.value,
+    y: BAR_HEIGHT - animatedHeight.value,
+  }));
 
+  // No onPress here — see the static touch-target Rect rendered alongside
+  // this in BarChart below, and the comment on it explaining why.
   return (
     <AnimatedRect
       x={x}
@@ -46,7 +53,6 @@ function Bar({ x, width, rx, targetHeight, delay, fill, animKey, onPress, disabl
       rx={rx}
       fill={fill}
       animatedProps={animatedProps}
-      onPress={disabled ? undefined : onPress}
     />
   );
 }
@@ -87,18 +93,36 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
                 targetHeight={h}
                 // Spread proportionally across a fixed budget instead of a
                 // flat i*45 — that scaled with bar count, so "All Time"
-                // views with dozens of bars could take 1.5s+ just to finish
-                // staggering in, on top of each bar's own animation time.
-                // Kept tight (130ms) so switching to Year/All Time settles
-                // quickly instead of reading as a slow load.
-                delay={n > 1 ? (i / (n - 1)) * 130 : 0}
+                // views with dozens of bars could take forever to finish
+                // staggering in on top of each bar's own animation time.
+                // Wide enough (650ms) that bars visibly grow one after
+                // another left to right instead of all popping at once,
+                // regardless of how many bars are on screen.
+                delay={n > 1 ? (i / (n - 1)) * 650 : 0}
                 fill={isActive ? activeColor : dimColor}
                 animKey={animKey}
-                onPress={() => onBarClick && !isDisabled && onBarClick(i)}
-                disabled={!onBarClick || isDisabled}
               />
             ) : (
               <Rect x={x} y={BAR_HEIGHT - 2} width={BAR_W} height={2} rx={1} fill="transparent" />
+            )}
+
+            {/* A separate, never-animated full-column touch target instead
+                of onPress on the bar itself — react-native-svg's native hit
+                region for a shape driven by useAnimatedProps (height/y
+                updated on the UI thread) doesn't reliably stay in sync with
+                what's visually on screen, so a tap during or right after
+                the grow animation could land on a stale hit box and miss,
+                needing repeated taps to register. This stays a constant
+                full-height rect regardless of animation state. */}
+            {hasData && onBarClick && (
+              <Rect
+                x={x}
+                y={0}
+                width={BAR_W}
+                height={BAR_HEIGHT}
+                fill="transparent"
+                onPress={() => !isDisabled && onBarClick(i)}
+              />
             )}
 
             {showLabel && (

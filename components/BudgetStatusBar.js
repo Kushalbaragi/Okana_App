@@ -14,7 +14,7 @@ const FILL_COLOR = 'rgba(34,197,94,0.9)';
 // (capped at maxWidth:340 in SpendCalendarModal, narrower on small screens)
 // — that's what keeps the bar fitting any device width without horizontal
 // scroll, rather than computing a device-specific segment count.
-const SEGMENT_COUNT = 84;
+const SEGMENT_COUNT = 63;
 const WRAPPER_STYLE = {
   paddingBottom: 10,
   marginBottom: 16,
@@ -39,7 +39,7 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
   useEffect(() => {
     if (!hasBudget || !barWidth) return;
     progress.value = 0;
-    progress.value = withTiming(1, { duration: 1750, easing: GROW_EASING });
+    progress.value = withTiming(1, { duration: 2600, easing: GROW_EASING });
   }, [hasBudget, barWidth, cappedPercent]);
 
   const fillStyle = useAnimatedStyle(() => ({
@@ -69,24 +69,24 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
       <View style={{ height: 18 }}>
         <View
           className="flex-row"
-          style={{ gap: 1, height: 18 }}
+          style={{ gap: 2.5, height: 18 }}
           onLayout={e => setBarWidth(e.nativeEvent.layout.width)}
         >
           {Array.from({ length: SEGMENT_COUNT }).map((_, i) => (
-            <View key={i} style={{ flex: 1, height: 18, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.08)' }} />
+            <View key={i} style={{ flex: 1, height: 18,backgroundColor: 'rgba(255,255,255,0.08)' }} />
           ))}
         </View>
 
         {/* Grows via an animated clip width rather than flipping segment
             colors — a single UI-thread width animation stays smooth at 60fps
-            without re-rendering all 84 segments every frame. */}
+            without re-rendering every segment every frame. */}
         <Animated.View
           pointerEvents="none"
           style={[{ position: 'absolute', top: 0, left: 0, height: 18, overflow: 'hidden' }, fillStyle]}
         >
-          <View className="flex-row" style={{ gap: 1, height: 18, width: barWidth }}>
+          <View className="flex-row" style={{ gap: 2.5, height: 18, width: barWidth }}>
             {Array.from({ length: SEGMENT_COUNT }).map((_, i) => (
-              <View key={i} style={{ flex: 1, height: 18, borderRadius: 3, backgroundColor: FILL_COLOR }} />
+              <View key={i} style={{ flex: 1, height: 18,backgroundColor: FILL_COLOR }} />
             ))}
           </View>
         </Animated.View>

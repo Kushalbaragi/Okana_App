@@ -37,7 +37,7 @@ function LineChart({ incomeData, expenseData, labels, animKey }) {
   useEffect(() => {
     if (!containerWidth) return;
     progress.value = 0;
-    progress.value = withTiming(1, { duration: 550, easing: Easing.out(Easing.cubic) });
+    progress.value = withTiming(1, { duration: 1000, easing: Easing.out(Easing.cubic) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animKey, containerWidth]);
 
@@ -73,11 +73,17 @@ function LineChart({ incomeData, expenseData, labels, animKey }) {
   const incomeArea  = areaPath(incomePts,  bottom);
   const expenseArea = areaPath(expensePts, bottom);
 
+  // Scales the skip to a target label count instead of a flat "every
+  // other" — a fixed stride of 2 still crowded/overlapped "MMM YY" labels
+  // once "All Time" spanned enough months (e.g. 20+), since each one is
+  // wide relative to the chart. Capping around MAX_LABELS keeps the axis
+  // readable regardless of how much history is on screen.
+  const MAX_LABELS = 6;
+  const labelStride = n <= MAX_LABELS ? 1 : Math.ceil(n / MAX_LABELS);
   // Every-other-label spacing collided with the always-shown last label
   // whenever n was even (e.g. 20 months of "All Time" history) — index
   // n-2 and n-1 both got shown a single stepX apart, overlapping. Suppress
-  // a regular label that would land within one step of the forced last one.
-  const labelStride = n <= 7 ? 1 : 2;
+  // a regular label that would land within one stride of the forced last one.
   const showLabel = i => {
     if (i === n - 1) return true;
     if (i % labelStride !== 0) return false;

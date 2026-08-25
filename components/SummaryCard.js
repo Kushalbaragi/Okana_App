@@ -92,12 +92,12 @@ function RangeSelector({ value, onChange, currentYear, currentMonth }) {
         value === opt.id ? (
           <GlassPressable
             key={opt.id}
-            variant="active"
+            variant="pillActive"
             radius={9999}
             onPress={() => onChange(opt.id)}
             className="px-3 py-1"
           >
-            <Text className="text-black text-base font-medium">{opt.label}</Text>
+            <Text className="text-white text-base font-medium">{opt.label}</Text>
           </GlassPressable>
         ) : (
           <Pressable
@@ -228,10 +228,10 @@ function SummaryCard({
     };
   }, [chartData, timeRange, year, currYear]);
 
-  // Deliberately excludes chartTab — switching Expense<->Income shouldn't
-  // count as a "new period" and replay the reveal animation, only an
-  // actual timeRange/year change should.
-  const animKey   = `${timeRange}-${year}`;
+  // Includes chartTab — switching Expense<->Income should replay the full
+  // collapse-and-regrow reveal too, not just an actual timeRange/year
+  // change, so every switch reads as a clean redraw from left to right.
+  const animKey   = `${timeRange}-${year}-${chartTab}`;
   const labelStep = timeRange === 'month' ? 4 : (timeRange === '5y' && lifetimeGranularity === 'month' ? 6 : 1);
 
   return (

@@ -3,6 +3,7 @@ import { View, Text, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { HamburgerIcon, CalendarIcon } from './icons';
+import { PILL_ACTIVE_COLOR } from './Glass';
 
 const BTN_W = 88; // a hair under the original 92 — "Overview" still fits at text-base
 const PAD   = 2;
@@ -27,7 +28,7 @@ function ChartTabToggle({ value, onChange }) {
     >
       <Animated.View
         style={[
-          { position: 'absolute', top: PAD, bottom: PAD, left: PAD, width: BTN_W, borderRadius: 999, backgroundColor: '#d4d4d4' },
+          { position: 'absolute', top: PAD, bottom: PAD, left: PAD, width: BTN_W, borderRadius: 999, backgroundColor: PILL_ACTIVE_COLOR },
           pillStyle,
         ]}
       />
@@ -39,7 +40,7 @@ function ChartTabToggle({ value, onChange }) {
           className="py-[5px] items-center"
         >
           <Text
-            className={value === tab ? 'text-black text-base font-medium' : 'text-white/35 text-base font-medium'}>
+            className={value === tab ? 'text-white text-base font-medium' : 'text-white/35 text-base font-medium'}>
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
           </Text>
         </Pressable>

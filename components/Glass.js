@@ -3,10 +3,16 @@ import { View, Pressable, TextInput, StyleSheet } from 'react-native';
 // Flat, solid surfaces — no BlurView/backdrop-filter. Replaces the previous
 // glassmorphism look (translucent tint over a real-time blur), which read as
 // muddy/inconsistent on Android's software-rendered blur path.
+// Exported so pill toggles that set this same color inline (Header's chart
+// tabs, AddModal's Expense/Income toggle) can share one source of truth
+// instead of duplicating the hex.
+export const PILL_ACTIVE_COLOR = '#3a3a3a';
+
 const BG = {
   glass: '#161616',  // regular cards, secondary buttons/pills
   modal: '#161616',  // bottom sheets / modal surfaces — same solid surface color throughout, deliberately
-  active: '#d4d4d4', // primary CTAs and "this one's selected" state — one consistent treatment app-wide
+  active: '#d4d4d4', // primary CTAs — one consistent treatment app-wide
+  pillActive: PILL_ACTIVE_COLOR, // "this option is selected" state on segmented pill toggles
   field: 'transparent', // bordered form-field surfaces (inputs, date pickers) — outline only, no fill
 };
 

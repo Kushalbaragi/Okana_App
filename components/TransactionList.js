@@ -1,5 +1,6 @@
-import { forwardRef, memo, useCallback, useImperativeHandle, useMemo, useRef } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import { View, Text, SectionList, Pressable } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withDelay, withTiming, Easing } from 'react-native-reanimated';
 import TransactionItem from './TransactionItem';
 import { monthLabel } from '../utils/format';
 
@@ -9,6 +10,37 @@ const ListHeader = (
     Transactions
   </Text>
 );
+
+const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
+// Per-row stagger, capped so a long list doesn't take forever to finish
+// revealing — rows past the cap all settle together at the tail instead of
+// queuing further out.
+const REVEAL_STAGGER_MS = 40;
+const REVEAL_STAGGER_CAP_MS = 420;
+// Only the top rows that are plausibly visible without scrolling get the
+// animated wrapper at all — a phone screen shows a handful of rows below
+// the chart, not sixteen.
+const REVEAL_ANIMATE_MAX = 6;
+
+// Slides up + fades in on mount. Only ever plays for the list's very first
+// paint (see hasRevealedRef in TransactionList) — switching tabs/periods
+// just swaps content in directly, no replay, since re-animating every
+// switch was real per-row Reanimated setup cost on top of the re-filter.
+function RevealRow({ index, children }) {
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = withDelay(Math.min(index * REVEAL_STAGGER_MS, REVEAL_STAGGER_CAP_MS), withTiming(1, { duration: 300, easing: SETTLE_EASING }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ translateY: (1 - progress.value) * 14 }],
+  }));
+
+  return <Animated.View style={style}>{children}</Animated.View>;
+}
 
 function TransactionList({
   transactions,
@@ -62,6 +94,14 @@ function TransactionList({
 
   const shouldGroup = isOverview || timeRange === '5y';
 
+  // Flips to true right after the list's first paint — renderItem reads it
+  // (not state, so flipping it doesn't itself trigger a re-render) to gate
+  // the reveal animation to that first paint only.
+  const hasRevealedRef = useRef(false);
+  useEffect(() => {
+    hasRevealedRef.current = true;
+  }, []);
+
   const filtered = useMemo(() => {
     return transactions
       .filter(tx => {
@@ -84,11 +124,14 @@ function TransactionList({
         }
         return d.getMonth() === selectedMonth && d.getFullYear() === year;
       })
-      .sort(
-        (a, b) =>
-          new Date(b.date) - new Date(a.date) ||
-          new Date(b.createdAt) - new Date(a.createdAt),
-      );
+      // Sorting directly on `new Date(a.date) - new Date(b.date)` re-parses
+      // both dates on every comparison the sort makes (O(m log m) parses,
+      // not O(m)) — for a few hundred rows that's thousands of Date()
+      // constructions on every tab/period switch. Timestamps are computed
+      // once per item up front instead, then sorted on the plain numbers.
+      .map(tx => ({ tx, ts: new Date(tx.date).getTime(), cts: new Date(tx.createdAt).getTime() }))
+      .sort((a, b) => b.ts - a.ts || b.cts - a.cts)
+      .map(({ tx }) => tx);
   }, [transactions, activeTab, isOverview, selectedMonth, year, timeRange, selectedPeriod, selectedDay]);
 
   // Single source of truth for both render paths — SectionList just gets
@@ -137,28 +180,35 @@ function TransactionList({
         sections={sections}
         keyExtractor={tx => tx.id}
         onScrollBeginDrag={closeOpenRow}
-        renderItem={({ item, index, section }) => (
-          <View
-            className="bg-surface"
-            style={{
-              overflow: 'hidden',
-              borderTopLeftRadius: index === 0 ? 12 : 0,
-              borderTopRightRadius: index === 0 ? 12 : 0,
-              borderBottomLeftRadius: index === section.data.length - 1 ? 12 : 0,
-              borderBottomRightRadius: index === section.data.length - 1 ? 12 : 0,
-            }}
-          >
-            <TransactionItem
-              tx={item}
-              isIncome={isOverview ? item.type === 'income' : isIncome}
-              onEdit={onEdit}
-              onDelete={onDelete}
-              registerSwipeable={registerSwipeable}
-              onSwipeOpen={onSwipeOpen}
-              onCardPress={onCardPress}
-            />
-          </View>
-        )}
+        renderItem={({ item, index, section }) => {
+          const card = (
+            <View
+              className="bg-bg"
+              style={{
+                overflow: 'hidden',
+                borderTopLeftRadius: index === 0 ? 12 : 0,
+                borderTopRightRadius: index === 0 ? 12 : 0,
+                borderBottomLeftRadius: index === section.data.length - 1 ? 12 : 0,
+                borderBottomRightRadius: index === section.data.length - 1 ? 12 : 0,
+              }}
+            >
+              <TransactionItem
+                tx={item}
+                isIncome={isOverview ? item.type === 'income' : isIncome}
+                onEdit={onEdit}
+                onDelete={onDelete}
+                registerSwipeable={registerSwipeable}
+                onSwipeOpen={onSwipeOpen}
+                onCardPress={onCardPress}
+              />
+            </View>
+          );
+          // Only the first paint's top rows animate — once hasRevealedRef
+          // flips (right after that first paint), every later render, for
+          // any reason, just shows the card directly.
+          const shouldAnimate = !hasRevealedRef.current && index < REVEAL_ANIMATE_MAX;
+          return shouldAnimate ? <RevealRow index={index}>{card}</RevealRow> : card;
+        }}
         renderSectionHeader={({ section }) =>
           section.title ? (
             <View className={`flex-row items-center justify-between mb-2 bg-bg ${section.key === sections[0]?.key ? 'mt-0' : 'mt-6'}`}>

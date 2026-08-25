@@ -23,17 +23,23 @@ function CalendarPicker({ value, onChange, onClose }) {
   const firstDay = rawFirstDay === 0 ? 6 : rawFirstDay - 1;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-  const todayStr = toStr(new Date());
+  const now = new Date();
+  const todayStr = toStr(now);
+  const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
   const cells = [];
   for (let i = 0; i < firstDay; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
   while (cells.length % 7 !== 0) cells.push(null);
 
   function prev() { setView(new Date(year, month - 1, 1)); }
-  function next() { setView(new Date(year, month + 1, 1)); }
+  // Stops at the current month rather than letting the user navigate into
+  // an entirely-future, entirely-disabled one — a transaction can't be
+  // dated after today, so there's nothing to pick past this point anyway.
+  function next() { if (!isCurrentMonth) setView(new Date(year, month + 1, 1)); }
 
   function pick(d) {
     const dateStr = toStr(new Date(year, month, d));
+    if (dateStr > todayStr) return;
     onChange(dateStr);
     onClose();
   }
@@ -49,8 +55,14 @@ function CalendarPicker({ value, onChange, onClose }) {
           <Text className="text-white/60 text-lg">‹</Text>
         </GlassPressable>
         <Text className="text-white text-base font-semibold">{MONTHS[month]} {year}</Text>
-        <GlassPressable variant="glass" radius={9999} onPress={next} className="w-8 h-8 items-center justify-center">
-          <Text className="text-white/60 text-lg">›</Text>
+        <GlassPressable
+          variant="glass"
+          radius={9999}
+          onPress={next}
+          disabled={isCurrentMonth}
+          className="w-8 h-8 items-center justify-center"
+        >
+          <Text className={isCurrentMonth ? "text-white/20 text-lg" : "text-white/60 text-lg"}>›</Text>
         </GlassPressable>
       </View>
 
@@ -69,6 +81,7 @@ function CalendarPicker({ value, onChange, onClose }) {
             const str = toStr(new Date(year, month, d));
             const isSelected = str === selStr;
             const isToday = str === todayStr;
+            const isFuture = str > todayStr;
             return (
               <View key={i} className="flex-1 aspect-square items-center justify-center">
                 {isSelected ? (
@@ -76,9 +89,9 @@ function CalendarPicker({ value, onChange, onClose }) {
                     <Pressable
                       onPress={() => pick(d)}
                       className="w-8 h-8 rounded-full items-center justify-center"
-                      style={{ backgroundColor: '#4ade80' }}
+                      style={{ backgroundColor: '#ff3b30' }}
                     >
-                      <Text className="text-black text-base font-semibold">{d}</Text>
+                      <Text className="text-white text-base font-semibold">{d}</Text>
                     </Pressable>
                   ) : (
                     <GlassPressable
@@ -93,10 +106,16 @@ function CalendarPicker({ value, onChange, onClose }) {
                 ) : (
                   <Pressable
                     onPress={() => pick(d)}
+                    disabled={isFuture}
                     className="w-8 h-8 rounded-full items-center justify-center"
-                    style={isToday ? { borderWidth: 1, borderColor: '#4ade80' } : null}
+                    style={isToday ? { borderWidth: 1, borderColor: '#ff3b30' } : null}
                   >
-                    <Text className={isToday ? "text-base font-medium" : "text-white/60 text-base"} style={isToday ? { color: '#4ade80' } : null}>{d}</Text>
+                    <Text
+                      className={isFuture ? "text-white/15 text-base" : isToday ? "text-base font-medium" : "text-white/60 text-base"}
+                      style={!isFuture && isToday ? { color: '#ff3b30' } : null}
+                    >
+                      {d}
+                    </Text>
                   </Pressable>
                 )}
               </View>
