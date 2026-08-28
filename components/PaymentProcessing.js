@@ -6,6 +6,7 @@ import Animated, {
   withTiming,
   withDelay,
   withRepeat,
+  withSequence,
   cancelAnimation,
   Easing,
 } from 'react-native-reanimated';
@@ -19,7 +20,7 @@ const SUCCESS_HOLD_MS = 3000;
 // How far above true screen-center the coin sits while it's still grouped
 // with the two labels below it — animated back to 0 once those labels are
 // gone, so the coin visibly settles into the center rather than jump-cutting.
-const COIN_CENTER_OFFSET = -40;
+const COIN_CENTER_OFFSET = -56;
 
 function FadeIn({ delay, duration = 450, distance = 8, style, children }) {
   const progress = useSharedValue(0);
@@ -49,13 +50,17 @@ export function PaymentProcessing({ succeeded, successMessage = 'Payment is succ
   const coinOpacity = useSharedValue(0);
   const coinScale = useSharedValue(0.85);
   const coinTranslateY = useSharedValue(COIN_CENTER_OFFSET);
-  const coinRotation = useSharedValue(0);
   const labelsOpacity = useSharedValue(1);
 
   useEffect(() => {
     coinOpacity.value = withTiming(1, { duration: 500, easing: SETTLE_EASING });
-    coinScale.value = withTiming(1, { duration: 500, easing: SETTLE_EASING });
-    coinRotation.value = withRepeat(withTiming(360, { duration: 2200, easing: Easing.linear }), -1, false);
+    // Settles in to full size, then breathes — a smooth, gentle scale in/out
+    // pulse (reverse:true auto-reverses back to 1 each cycle) instead of a
+    // continuous spin.
+    coinScale.value = withSequence(
+      withTiming(1, { duration: 500, easing: SETTLE_EASING }),
+      withRepeat(withTiming(1.1, { duration: 900, easing: SETTLE_EASING }), -1, true),
+    );
   }, []);
 
   const startedRef = useRef(false);
@@ -63,7 +68,8 @@ export function PaymentProcessing({ succeeded, successMessage = 'Payment is succ
     if (!succeeded || startedRef.current) return;
     startedRef.current = true;
 
-    cancelAnimation(coinRotation);
+    cancelAnimation(coinScale);
+    coinScale.value = withTiming(1, { duration: 250, easing: Easing.out(Easing.cubic) });
     labelsOpacity.value = withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) });
 
     const LABELS_FADE_MS = 320;
@@ -89,7 +95,6 @@ export function PaymentProcessing({ succeeded, successMessage = 'Payment is succ
     transform: [
       { translateY: coinTranslateY.value },
       { scale: coinScale.value },
-      { rotate: `${coinRotation.value}deg` },
     ],
   }));
   const labelsStyle = useAnimatedStyle(() => ({ opacity: labelsOpacity.value }));
@@ -99,7 +104,7 @@ export function PaymentProcessing({ succeeded, successMessage = 'Payment is succ
       {!showSuccess && (
         <Animated.Image
           source={require('../assets/coin.png')}
-          style={[{ width: 64, height: 64, marginBottom: showLabels ? 22 : 0 }, coinStyle]}
+          style={[{ width: 64, height: 64, marginBottom: showLabels ? 14 : 0 }, coinStyle]}
           resizeMode="contain"
         />
       )}
