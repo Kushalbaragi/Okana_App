@@ -229,6 +229,7 @@ const ACTION_COPY = {
 // Settings, since deleting the account never cancels an active native
 // subscription — see runDelete's comment for why that's not possible here.
 function DeleteAccountOverlay({ type, phase, onDone, subscriptionWarning }) {
+  const { isOnline, notifyOffline } = useNetwork();
   const copy = ACTION_COPY[type];
   return (
     <ActionOverlay
@@ -244,7 +245,7 @@ function DeleteAccountOverlay({ type, phase, onDone, subscriptionWarning }) {
             Your {Platform.OS === 'ios' ? 'App Store' : 'Play Store'} subscription is still active — cancel it to stop future charges.
           </Text>
           <Pressable
-            onPress={openManageSubscription}
+            onPress={() => (isOnline ? openManageSubscription() : notifyOffline())}
             className="mt-4 px-4 py-[10px] rounded-xl"
             style={{ backgroundColor: 'rgba(74,222,128,0.14)' }}
           >
