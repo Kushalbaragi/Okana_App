@@ -168,8 +168,12 @@ export default function SubscriptionPage() {
     // this screen doesn't flash stale "not subscribed" state right after a
     // real purchase succeeds. Stops early the moment the webhook's write
     // actually lands, rather than always waiting out the full 5s.
+    // A normal (non-error) webhook delivery can still take several seconds
+    // to land — 15 one-second attempts gives real-world RevenueCat webhook
+    // latency room to land within before this gives up on it, rather than
+    // second-guessing a purchase that actually just succeeded.
     let confirmed = false;
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 15; i++) {
       const data = await refresh();
       if (['trial', 'subscribed'].includes(getSubscriptionDisplayStatus(data, today()).status)) {
         confirmed = true;

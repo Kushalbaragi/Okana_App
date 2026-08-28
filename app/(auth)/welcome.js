@@ -277,8 +277,10 @@ export default function WelcomeScreen() {
       return;
     }
 
+    // Same widened window as subscription.js's handleSubscribe — a normal
+    // (non-error) webhook delivery can still take several seconds to land.
     let confirmed = false;
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 15; i++) {
       const { data } = await supabase.from('subscriptions').select('*').eq('user_id', user.id).maybeSingle();
       if (data && ['trial', 'subscribed'].includes(getSubscriptionDisplayStatus(data, today()).status)) {
         confirmed = true;
