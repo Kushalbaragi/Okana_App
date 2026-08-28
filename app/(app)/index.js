@@ -141,14 +141,16 @@ export default function Dashboard() {
 
       // The CTA is available only on the day the recap was actually seen —
       // check whether that stamped date is today, not just whether there's
-      // data to review.
+      // data to review. Deliberately doesn't build the full slide data here
+      // (getMonthlyRecapSlides) — this whole effect re-runs on every
+      // transaction add/edit/delete (transactions is a dependency below),
+      // so doing that work here would rebuild last month's charts on every
+      // single transaction change just to answer a yes/no question. The
+      // slides are built lazily, only once the recap is actually about to
+      // be shown — see openRecapFromCalendar and the auto-open block below.
       if (hasAnyRecapData(transactions, prev.month, prev.year)) {
         const availDate = await AsyncStorage.getItem(`okana_recap_available_date_${user.id}`);
         if (cancelled) return;
-        setRecapSlides(getMonthlyRecapSlides(transactions, prev.month, prev.year, {
-          amount: budget.lastMonthAmount,
-          spent: budget.lastMonthSpent,
-        }, budget.hasBudget));
         setRecapMonthName(MONTH_NAMES[prev.month]);
         setRecapAvailable(availDate === todayStr);
       } else if (!cancelled) {
@@ -270,7 +272,20 @@ export default function Dashboard() {
   // (fired only once it's truly gone) trigger it.
   const pendingAfterCalendarClose = useRef(null); // 'recap' | 'budget' | null
 
+  // Holds whatever this render's transactions/budget values are, purely so
+  // openRecapFromCalendar below can build the actual slide data on demand
+  // (when the user taps the CTA) without needing transactions/budget in its
+  // own dependency array — see the comment on the availability effect above
+  // for why that matters.
+  const recapInputsRef = useRef(null);
+  recapInputsRef.current = { transactions, lastMonthAmount: budget.lastMonthAmount, lastMonthSpent: budget.lastMonthSpent, hasBudget: budget.hasBudget };
+
   const openRecapFromCalendar = useCallback(() => {
+    const { month, year: cy } = currentMonthYear();
+    const prev = prevMonthYear(month, cy);
+    const { transactions: txs, lastMonthAmount, lastMonthSpent, hasBudget } = recapInputsRef.current;
+    setRecapSlides(getMonthlyRecapSlides(txs, prev.month, prev.year, { amount: lastMonthAmount, spent: lastMonthSpent }, hasBudget));
+    setRecapMonthName(MONTH_NAMES[prev.month]);
     pendingAfterCalendarClose.current = 'recap';
     setCalendarOpen(false);
   }, []);
