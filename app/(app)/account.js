@@ -283,6 +283,10 @@ export default function AccountPage() {
   const pendingAfterConfirmClose = useRef(null); // 'erase' | 'delete' | null
 
   async function saveName() {
+    // Belt-and-suspenders alongside the Save button's own `disabled` prop —
+    // see login.js's handleSubmit for why: onSubmitEditing and a button tap
+    // can both fire this before React's state update re-renders the button.
+    if (savingName) return;
     if (!nameInput.trim() || nameInput.trim() === profile?.name) { setEditingName(false); return; }
     if (!isOnline) { notifyOffline(); return; }
     setSavingName(true);
