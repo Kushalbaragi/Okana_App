@@ -9,6 +9,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
+import { useNetwork } from '../../context/NetworkContext';
 import { usePurchases } from '../../hooks/usePurchases';
 import { supabase } from '../../lib/supabase';
 import { PRICE_PER_YEAR, getSubscriptionDisplayStatus } from '../../utils/trial';
@@ -232,6 +233,7 @@ const STEPS = ['created', 'why', 'trial-info', 'trial-started', 'welcome', 'intr
 export default function WelcomeScreen() {
   const router = useRouter();
   const { profile, user } = useAuth();
+  const { isOnline, notifyOffline } = useNetwork();
   const { getOfferings, purchasePackage } = usePurchases(user?.id);
   const [step, setStep] = useState(STEPS[0]);
   const [processingVisible, setProcessingVisible] = useState(false);
@@ -256,6 +258,7 @@ export default function WelcomeScreen() {
   // the pre-app (auth) route group and can't reach into app/(app)/subscription.js.
   async function handleStartTrial() {
     if (!user) return;
+    if (!isOnline) { notifyOffline(); return; }
     setPurchaseError(null);
     setProcessingVisible(true);
 
