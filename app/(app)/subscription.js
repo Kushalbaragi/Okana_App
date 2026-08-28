@@ -7,7 +7,7 @@ import { useSubscription } from '../../hooks/useSubscription';
 import { usePurchases, openManageSubscription } from '../../hooks/usePurchases';
 import { formatChargeDate, getSubscriptionDisplayStatus } from '../../utils/trial';
 import { today } from '../../utils/format';
-import { BackIcon } from '../../components/icons';
+import { BackIcon, ChevronRight } from '../../components/icons';
 import { PaymentProcessing } from '../../components/PaymentProcessing';
 import { ActionOverlay } from '../../components/ActionOverlay';
 
@@ -324,11 +324,12 @@ export default function SubscriptionPage() {
               <Card>
                 <Pressable
                   onPress={openManageSubscription}
-                  className="flex-row items-center justify-between px-4 py-[14px]"
+                  className="flex-row items-center justify-between gap-3 px-4 py-[14px]"
                 >
                   <Text className="text-white/70 text-base flex-1" style={{ lineHeight: 20 }}>
                     Change plan or update payment in {Platform.OS === 'ios' ? 'the App Store' : 'Play Store'}
                   </Text>
+                  <ChevronRight />
                 </Pressable>
               </Card>
             </View>
