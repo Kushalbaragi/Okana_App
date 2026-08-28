@@ -128,6 +128,12 @@ export default function SettingsPage() {
     if (importRedirectTimeoutRef.current) clearTimeout(importRedirectTimeoutRef.current);
   }, []);
 
+  function closeFeedbackModal() {
+    setModal(null);
+    setFeedbackText('');
+    setFeedbackError('');
+  }
+
   async function sendFeedback() {
     if (!feedbackText.trim()) return;
     if (!isOnline) { notifyOffline(); return; }
@@ -335,7 +341,7 @@ export default function SettingsPage() {
         <Text className="text-white/20 mt-3" style={{ fontSize: 12 }}>We typically respond within 1–2 business days.</Text>
       </InfoModal>
 
-      <InfoModal open={modal === 'feedback'} title={feedbackSent ? '✓ Feedback sent!' : 'Send Feedback'} onClose={() => setModal(null)}>
+      <InfoModal open={modal === 'feedback'} title={feedbackSent ? '✓ Feedback sent!' : 'Send Feedback'} onClose={closeFeedbackModal}>
         {!feedbackSent && (
           <>
             <Text className="text-white/40 text-base mb-4" style={{ lineHeight: 22 }}>
