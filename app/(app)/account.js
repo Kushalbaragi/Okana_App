@@ -10,6 +10,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
 import { isConnectivityError } from '../../utils/errors';
 import { useSubscription } from '../../hooks/useSubscription';
+import { openManageSubscription } from '../../hooks/usePurchases';
 import { getSubscriptionDisplayStatus } from '../../utils/trial';
 import { today } from '../../utils/format';
 import { supabase } from '../../lib/supabase';
@@ -214,6 +215,10 @@ function ConfirmModal({ open, title, message, confirmLabel, onConfirm, onCancel,
 }
 
 const SUCCESS_HOLD_MS = 3000;
+// Longer hold specifically for a delete that leaves an active native
+// subscription behind — long enough to actually read the warning and tap
+// through to Settings before this auto-advances to logout.
+const SUBSCRIPTION_WARNING_HOLD_MS = 10000;
 
 const ACTION_COPY = {
   erase:  { working: 'Erasing your data',     success: 'Data erased' },
@@ -226,9 +231,13 @@ const ACTION_COPY = {
 // renders; the parent flips it from 'working' to 'success' once the actual
 // Supabase calls resolve (held to a minimum duration there so the bar always
 // has time to visibly fill, even when the calls finish near-instantly).
-function ActionOverlay({ type, phase, onDone }) {
+// `subscriptionWarning` (delete only) shows a reminder + deep link to
+// Settings, since deleting the account never cancels an active native
+// subscription — see runDelete's comment for why that's not possible here.
+function ActionOverlay({ type, phase, onDone, subscriptionWarning }) {
   const copy = ACTION_COPY[type];
   const fillProgress = useSharedValue(0);
+  const holdMs = subscriptionWarning ? SUBSCRIPTION_WARNING_HOLD_MS : SUCCESS_HOLD_MS;
 
   // Fills toward ~92% over roughly the same span as the parent's enforced
   // minimum "working" duration — there's no true progress signal from the
@@ -243,19 +252,19 @@ function ActionOverlay({ type, phase, onDone }) {
     }
   }, [phase, fillProgress]);
 
-  // Holds on the success message for a flat 5s, then fires onDone — no
-  // visible countdown, just a plain hold before the redirect.
+  // Holds on the success message, then fires onDone — no visible countdown,
+  // just a plain hold before the redirect.
   useEffect(() => {
     if (phase !== 'success') return;
-    const t = setTimeout(() => onDone?.(), SUCCESS_HOLD_MS);
+    const t = setTimeout(() => onDone?.(), holdMs);
     return () => clearTimeout(t);
-  }, [phase, onDone]);
+  }, [phase, onDone, holdMs]);
 
   const fillStyle = useAnimatedStyle(() => ({ width: `${fillProgress.value * 100}%` }));
 
   return (
     <AnimatedModal open onClose={() => {}} variant="center">
-      <View className="items-center">
+      <View className="items-center" style={{ maxWidth: 320 }}>
         {phase === 'working' ? (
           <>
             <View style={{ width: 200, height: 8, borderRadius: 4, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 20 }}>
@@ -268,6 +277,20 @@ function ActionOverlay({ type, phase, onDone }) {
           <>
             <SuccessBadge style={{ marginBottom: 20 }} />
             <Text className="text-white font-semibold text-base text-center">{copy.success}</Text>
+            {subscriptionWarning && (
+              <>
+                <Text className="text-white/45 text-sm text-center mt-3" style={{ lineHeight: 19 }}>
+                  Your {Platform.OS === 'ios' ? 'App Store' : 'Play Store'} subscription is still active — cancel it to stop future charges.
+                </Text>
+                <Pressable
+                  onPress={openManageSubscription}
+                  className="mt-4 px-4 py-[10px] rounded-xl"
+                  style={{ backgroundColor: 'rgba(74,222,128,0.14)' }}
+                >
+                  <Text className="text-sm font-semibold" style={{ color: '#4ade80' }}>Manage Subscription</Text>
+                </Pressable>
+              </>
+            )}
           </>
         )}
       </View>
@@ -597,6 +620,7 @@ export default function AccountPage() {
           type={actionFlow.type}
           phase={actionFlow.phase}
           onDone={actionFlow.type === 'erase' ? handleEraseDone : handleDeleteDone}
+          subscriptionWarning={actionFlow.type === 'delete' && hasActivePlus}
         />
       )}
     </View>

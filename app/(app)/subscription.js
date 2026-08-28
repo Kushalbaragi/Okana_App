@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Platform, ActivityIndicator, StyleSheet, Linking } from 'react-native';
+import { View, Text, Pressable, ScrollView, Platform, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { useSubscription } from '../../hooks/useSubscription';
-import { usePurchases } from '../../hooks/usePurchases';
+import { usePurchases, openManageSubscription } from '../../hooks/usePurchases';
 import { formatChargeDate, getSubscriptionDisplayStatus } from '../../utils/trial';
 import { today } from '../../utils/format';
 import { BackIcon } from '../../components/icons';
@@ -45,15 +45,6 @@ const PLAN_PILL = {
   subscribed: { label: 'Active', tone: 'green' },
   expired: { label: 'Free', tone: 'grey' },
 };
-
-// Neither the App Store nor Play Store gives an app a way to cancel a
-// subscription or read its payment method on the user's behalf — that only
-// happens on-device. This just opens the OS's own subscription management
-// screen instead of pretending to offer an in-app cancel flow.
-function openManageSubscription() {
-  if (Platform.OS === 'ios') Linking.openURL('itms-apps://apps.apple.com/account/subscriptions');
-  else if (Platform.OS === 'android') Linking.openURL('https://play.google.com/store/account/subscriptions');
-}
 
 export default function SubscriptionPage() {
   const router = useRouter();

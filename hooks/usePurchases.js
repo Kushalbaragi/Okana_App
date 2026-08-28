@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 
 const API_KEY = Platform.select({
   android: process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY,
@@ -67,4 +67,14 @@ export function usePurchases(userId) {
   }, []);
 
   return { getOfferings, purchasePackage, restorePurchases };
+}
+
+// Neither the App Store nor Play Store gives an app a way to cancel a
+// subscription or read its payment method on the user's behalf — that only
+// happens on-device. This just opens the OS's own subscription management
+// screen instead of pretending to offer an in-app cancel flow. Shared
+// between the Subscription page and the account-deletion warning.
+export function openManageSubscription() {
+  if (Platform.OS === 'ios') Linking.openURL('itms-apps://apps.apple.com/account/subscriptions');
+  else if (Platform.OS === 'android') Linking.openURL('https://play.google.com/store/account/subscriptions');
 }
