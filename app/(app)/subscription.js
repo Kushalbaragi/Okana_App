@@ -96,10 +96,11 @@ export default function SubscriptionPage() {
       }
     }
     // Not detected within the window — they may have backed out of Settings
-    // without actually cancelling. Dismiss quietly rather than claim a
-    // success that was never confirmed; the page already reflects whatever
-    // the real current state is from the polling refreshes above.
-    setCancelFlow(null);
+    // without actually cancelling. Say so plainly rather than claim a
+    // success that was never confirmed, or silently vanish with no
+    // explanation; the page already reflects whatever the real current
+    // state is from the polling refreshes above.
+    setCancelFlow({ phase: 'notConfirmed' });
   }
 
   function handleCancelPress() {
@@ -371,6 +372,8 @@ export default function SubscriptionPage() {
           workingText="Checking subscription status"
           workingSubtext="Hold on"
           successText="Plan has been cancelled successfully"
+          notConfirmedText="Cancellation not detected"
+          notConfirmedSubtext="Looks like you didn't finish cancelling — you can try again anytime from here."
           onDone={() => setCancelFlow(null)}
         />
       )}
