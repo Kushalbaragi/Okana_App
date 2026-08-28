@@ -25,9 +25,17 @@ function Drawer({ open, onClose }) {
   const { subscription } = useSubscription(user);
 
   const trialInfo = subscription ? getSubscriptionDisplayStatus(subscription, today()) : null;
-  const planLabel = trialInfo
-    ? (trialInfo.status === 'subscribed' ? 'Plus' : trialInfo.status === 'trial' ? 'Trial' : null)
-    : null;
+  // Mirrors subscription.js's own isEnding check — a cancelled-but-not-yet-
+  // expired plan (still 'trial' or 'subscribed' under the hood, access
+  // continuing until the period ends) should read the same way here as it
+  // does on the Subscription page, not just plain "Plus"/"Trial" as if
+  // nothing had changed.
+  const isEnding = trialInfo?.cancelAtPeriodEnd && (trialInfo.status === 'trial' || trialInfo.status === 'subscribed');
+  const planLabel = isEnding
+    ? 'Ending'
+    : trialInfo
+      ? (trialInfo.status === 'subscribed' ? 'Plus' : trialInfo.status === 'trial' ? 'Trial' : null)
+      : null;
 
   function openPage(path) {
     onClose();
