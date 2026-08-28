@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -230,6 +231,16 @@ function IntroQuotePage({ onFinish }) {
 
 const STEPS = ['created', 'why', 'trial-info', 'trial-started', 'welcome', 'intro'];
 
+// Set only once the carousel is actually finished (not on mount, unlike
+// onboarding.js's pre-signup ONBOARDING_SEEN_KEY) — app/index.js redirects
+// back here on every cold launch until this is set, so closing the app
+// mid-carousel (e.g. right after a failed trial purchase) picks the whole
+// sequence back up from the start next time instead of silently dropping
+// the user onto Home having skipped the trial-purchase step entirely.
+export function welcomeSeenKey(userId) {
+  return `okana_welcome_seen_${userId}`;
+}
+
 export default function WelcomeScreen() {
   const router = useRouter();
   const { profile, user } = useAuth();
@@ -249,6 +260,7 @@ export default function WelcomeScreen() {
   }
 
   function finish() {
+    if (user) AsyncStorage.setItem(welcomeSeenKey(user.id), '1');
     router.replace('/(app)');
   }
 
