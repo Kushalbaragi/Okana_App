@@ -142,7 +142,10 @@ export default function SubscriptionPage() {
       setOfferingLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [needsAction, getOfferings, loading]);
+    // isOnline is a dependency so a failed fetch (offline) automatically
+    // retries once connectivity returns, instead of leaving the user stuck
+    // on "unavailable" until they leave and revisit this screen.
+  }, [needsAction, getOfferings, loading, isOnline]);
 
   async function handleSubscribe() {
     if (!pkg) return;
