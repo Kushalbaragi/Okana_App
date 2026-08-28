@@ -34,6 +34,10 @@ export default function NameScreen() {
   const containerStyle = useAnimatedStyle(() => ({ paddingBottom: keyboardOffset.value }));
 
   async function handleContinue() {
+    // Belt-and-suspenders alongside the button's own `disabled` prop — see
+    // login.js's handleSubmit for why: onSubmitEditing and a button tap can
+    // both fire this before React's state update re-renders the button.
+    if (saving) return;
     const trimmed = name.trim();
     if (!trimmed) { setError('Please enter your name'); return; }
     if (!isOnline) { notifyOffline(); return; }
