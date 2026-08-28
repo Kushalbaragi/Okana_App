@@ -177,21 +177,15 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                 {recap?.available && (
                   <Pressable
                     onPress={recap.onOpen}
-                    className="flex-row items-center justify-between mb-4 px-3 py-[10px] rounded-xl"
-                    style={{ backgroundColor: 'rgba(255,255,255,0.07)' }}
+                    className="flex-row items-center justify-center mb-4"
+                    style={{ gap: 5, alignSelf: 'center' }}
                   >
-                    <View className="flex-row items-center" style={{ gap: 10 }}>
-                      <View
-                        className="w-7 h-7 rounded-full items-center justify-center"
-                        style={{ backgroundColor: recap.seen ? 'rgba(255,255,255,0.08)' : '#a855f7' }}
-                      >
-                        <Text style={{ fontSize: 13 }}>📊</Text>
-                      </View>
-                      <Text className="text-white/80 text-base font-medium">
-                        {recap.monthName} Review
-                      </Text>
-                    </View>
-                    <Text style={{ color: 'rgba(255,255,255,0.4)' }}>›</Text>
+                    {!recap.seen && (
+                      <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#a855f7' }} />
+                    )}
+                    <Text className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                      Monthly Summary ›
+                    </Text>
                   </Pressable>
                 )}
 

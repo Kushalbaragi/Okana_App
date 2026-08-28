@@ -26,11 +26,24 @@ export function AuthProvider({ children }) {
   // Sends a 6-digit code to `email` — works for both new and returning
   // users (shouldCreateUser lets a brand-new address create the account
   // right here), so there's no separate "sign up" entry point anymore.
+  //
+  // Raced against a timeout — an unbounded await here means a slow/hung
+  // Supabase response leaves the caller's button spinning forever with no
+  // error and no way out, which is exactly what tempts a user to force-quit
+  // and retry, generating the extra send attempts a hung request can't
+  // otherwise explain (there's no automatic retry anywhere in this app).
+  // The timeout only stops the client from waiting — it doesn't cancel
+  // whatever Supabase is doing server-side.
   async function sendOtp({ email }) {
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { shouldCreateUser: true },
-    });
+    const { error } = await Promise.race([
+      supabase.auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: true },
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Request timed out. Please try again.')), 15000)
+      ),
+    ]);
     if (error) throw error;
   }
 

@@ -4,7 +4,7 @@ import Animated, { useSharedValue, useAnimatedProps, withDelay, withTiming, Easi
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
-const BAR_HEIGHT = 90;
+const BAR_HEIGHT = 110;
 const CHART_W    = 264;
 
 function Bar({ x, width, rx, targetHeight, delay, fill, animKey }) {

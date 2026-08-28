@@ -9,8 +9,10 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0a0a0a",
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.kushalbaragi.okana"
+      "bundleIdentifier": "com.kushalbaragi.okana",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "versionCode": 4,
@@ -38,7 +40,8 @@
         }
       ],
       "expo-document-picker",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-audio"
     ],
     "extra": {
       "router": {},

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, ScrollView, TextInput, Linking, Image, useWindowDimensions } from 'react-native';
+import { View, Text, Pressable, ScrollView, TextInput, Linking, useWindowDimensions } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -369,7 +370,9 @@ export default function SettingsPage() {
           <Image
             source={require('../../assets/developer-photo.jpg')}
             style={{ width: 84, height: 84, borderRadius: 16, marginBottom: 16 }}
-            resizeMode="cover"
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={150}
           />
           <Text className="text-white font-semibold text-lg mb-3">Hi, I'm Kushal</Text>
           <Text className="text-white/50 text-base mb-3" style={{ lineHeight: 22 }}>

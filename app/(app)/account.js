@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, Image } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import Svg, { Circle } from 'react-native-svg';
@@ -121,7 +122,12 @@ function AvatarPhoto({ uri, phase, onPress }) {
   return (
     <Pressable onPress={onPress} disabled={phase === 'uploading'} style={{ width: 80, height: 80 }}>
       {uri ? (
-        <Image source={{ uri }} style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 1, borderColor: 'rgba(255,255,255,0.13)' }} />
+        <Image
+          source={{ uri }}
+          style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 1, borderColor: 'rgba(255,255,255,0.13)' }}
+          cachePolicy="memory-disk"
+          transition={150}
+        />
       ) : (
         <View
           className="w-20 h-20 rounded-full items-center justify-center"

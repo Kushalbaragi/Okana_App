@@ -1,5 +1,12 @@
 import { View, Pressable } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
+import { useAudioPlayer } from 'expo-audio';
+
+// Two minimal, pitch-paired tones — entering (higher) and clearing/
+// backspace (lower) — so they read as the same sound family rather than
+// two unrelated effects.
+const CLICK_SOUND = require('../assets/sounds/key_click.wav');
+const CLEAR_SOUND = require('../assets/sounds/key_clear.wav');
 
 // Default layout — Amount entry (digits + decimal point). Screens that only
 // need digits (e.g. an OTP code) pass their own `rows` with a blank spacer
@@ -64,12 +71,25 @@ function KeypadKey({ label, onPress }) {
 // native lifecycle to sync with at all: it just renders as a permanent,
 // fixed-height part of the screen's layout from the moment it mounts.
 export function NumericKeypad({ onKeyPress, insetBottom, rows = DECIMAL_KEYPAD_ROWS }) {
+  // One shared player per tone rather than one per key — keys are tapped
+  // in quick succession, and seekTo(0)+play() restarts from the top each
+  // time, same as a real keyboard's click sound retriggering.
+  const clickPlayer = useAudioPlayer(CLICK_SOUND);
+  const clearPlayer = useAudioPlayer(CLEAR_SOUND);
+
+  function handlePress(key) {
+    const player = key === 'backspace' ? clearPlayer : clickPlayer;
+    player.seekTo(0);
+    player.play();
+    onKeyPress(key);
+  }
+
   return (
     <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insetBottom + 10 }}>
       {rows.map((row, ri) => (
         <View key={ri} className="flex-row" style={{ gap: 0, marginBottom: ri === rows.length - 1 ? 0 : 6 }}>
           {row.map((key, ki) => (
-            <KeypadKey key={key ?? `blank-${ki}`} label={key} onPress={key == null ? undefined : () => onKeyPress(key)} />
+            <KeypadKey key={key ?? `blank-${ki}`} label={key} onPress={key == null ? undefined : () => handlePress(key)} />
           ))}
         </View>
       ))}

@@ -70,11 +70,8 @@ export default function SubscriptionPage() {
   const [purchaseError, setPurchaseError] = useState(null);
   const [restoring, setRestoring] = useState(false);
 
-  // Only Android has a real store product wired up right now — iOS keeps
-  // showing "Coming soon" below until Apple Developer verification clears
-  // and a matching App Store Connect product exists.
   useEffect(() => {
-    if (Platform.OS !== 'android' || !needsAction) return;
+    if (Platform.OS === 'web' || !needsAction) return;
     let cancelled = false;
     setOfferingLoading(true);
     setOfferingError(null);
@@ -216,7 +213,7 @@ export default function SubscriptionPage() {
             </View>
           )}
 
-          {needsAction && Platform.OS === 'android' && (
+          {needsAction && Platform.OS !== 'web' && (
             <View style={{ gap: 8 }}>
               {!!purchaseError && (
                 <View className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderWidth: 1, borderColor: 'rgba(248,113,113,0.2)' }}>
@@ -256,7 +253,7 @@ export default function SubscriptionPage() {
             </View>
           )}
 
-          {needsAction && Platform.OS !== 'android' && (
+          {needsAction && Platform.OS === 'web' && (
             <View style={{ gap: 8 }}>
               <View
                 className="w-full py-[13px] rounded-2xl items-center"

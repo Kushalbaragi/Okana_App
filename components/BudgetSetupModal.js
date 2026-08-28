@@ -7,7 +7,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming, runOnJS } from 
 import { GlassPressable, GlassView } from './Glass';
 import { NumericKeypad } from './NumericKeypad';
 import { AmountRow, SETTLE_EASING } from './AmountField';
-import { TrendArrowIcon } from './icons';
+import { TrendArrowIcon, CheckIcon } from './icons';
 import { formatCurrency, currentMonthYear } from '../utils/format';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 
@@ -21,6 +21,9 @@ const OFF_SCREEN_Y = 1200;
 // auto-redirecting home — long enough to actually read, short enough not to
 // feel stuck.
 const CONFIRM_HOLD_MS = 6000;
+// Same idea for the first-ever-budget greeting, at the 5s the request asked
+// for specifically.
+const FIRST_BUDGET_HOLD_MS = 5000;
 
 function lastMonthMessage(lastMonthAmount, lastMonthSpent) {
   if (lastMonthAmount == null) {
@@ -131,11 +134,12 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
     }
   }, [open]);
 
-  // Holds the confirmation screen up for CONFIRM_HOLD_MS, then redirects
-  // home — cleared if the sheet gets dragged shut early instead.
+  // Holds the confirmation screen up for CONFIRM_HOLD_MS (or
+  // FIRST_BUDGET_HOLD_MS for the first-ever-budget greeting), then
+  // redirects home — cleared if the sheet gets dragged shut early instead.
   useEffect(() => {
     if (!confirmDelta) return;
-    const t = setTimeout(onClose, CONFIRM_HOLD_MS);
+    const t = setTimeout(onClose, confirmDelta.greeting ? FIRST_BUDGET_HOLD_MS : CONFIRM_HOLD_MS);
     return () => clearTimeout(t);
   }, [confirmDelta, onClose]);
 
@@ -166,6 +170,11 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
     if (lastMonthAmount != null && val !== lastMonthAmount) {
       confirmProgress.value = withTiming(1, { duration: 520, easing: SETTLE_EASING });
       setConfirmDelta({ diff: Math.abs(val - lastMonthAmount), up: val > lastMonthAmount });
+    } else if (lastMonthAmount == null) {
+      // No prior month to compare against — this is their first budget, so
+      // greet them instead of silently closing with no feedback at all.
+      confirmProgress.value = withTiming(1, { duration: 520, easing: SETTLE_EASING });
+      setConfirmDelta({ greeting: true, amount: val });
     } else {
       onClose();
     }
@@ -228,15 +237,31 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
 
         {confirmDelta ? (
           <Animated.View style={[{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }, confirmStyle]}>
-            <View
-              className="items-center justify-center mb-6"
-              style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: confirmBg }}
-            >
-              <TrendArrowIcon up={confirmDelta.up} color={confirmColor} size={28} />
-            </View>
-            <Text className="text-white text-lg font-semibold text-center" style={{ lineHeight: 26 }}>
-              You decided to spend{'\n'}{formatCurrency(confirmDelta.diff)} {confirmDelta.up ? 'more' : 'less'} this month
-            </Text>
+            {confirmDelta.greeting ? (
+              <>
+                <View
+                  className="items-center justify-center mb-6"
+                  style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(74,222,128,0.14)' }}
+                >
+                  <CheckIcon size={30} />
+                </View>
+                <Text className="text-white text-lg font-semibold text-center" style={{ lineHeight: 26 }}>
+                  You set {formatCurrency(confirmDelta.amount)} budget{'\n'}for {MONTH_NAMES[currMonth]}. Stick with it!
+                </Text>
+              </>
+            ) : (
+              <>
+                <View
+                  className="items-center justify-center mb-6"
+                  style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: confirmBg }}
+                >
+                  <TrendArrowIcon up={confirmDelta.up} color={confirmColor} size={28} />
+                </View>
+                <Text className="text-white text-lg font-semibold text-center" style={{ lineHeight: 26 }}>
+                  You decided to spend{'\n'}{formatCurrency(confirmDelta.diff)} {confirmDelta.up ? 'more' : 'less'} this month
+                </Text>
+              </>
+            )}
           </Animated.View>
         ) : (
           <>

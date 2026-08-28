@@ -45,6 +45,11 @@ export default function LoginScreen() {
   const containerStyle = useAnimatedStyle(() => ({ paddingBottom: keyboardOffset.value }));
 
   async function handleSubmit() {
+    // Belt-and-suspenders alongside the button's own `disabled` prop — the
+    // field's onSubmitEditing and the button's onPress both call this, and
+    // React's state update isn't synchronous, so a fast Enter-then-tap
+    // could otherwise fire signInWithOtp twice before `loading` re-renders.
+    if (loading) return;
     const trimmed = email.trim();
     if (!trimmed) { setError('Please enter your email'); return; }
     if (!isOnline) { notifyOffline(); return; }

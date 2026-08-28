@@ -192,9 +192,11 @@ function SummaryCard({
   }, [chartTab, chartData, timeRange, transactions, selectedMonth, year, selectedPeriodIndex]);
 
   const delta = useMemo(() => {
-    if (chartTab === 'overview' || timeRange !== 'year') return null;
-    return getDelta(transactions, chartTab, selectedMonth, year);
-  }, [chartTab, timeRange, transactions, selectedMonth, year]);
+    if (chartTab === 'overview') return null;
+    if (timeRange === 'year')  return getDelta(transactions, chartTab, selectedMonth, year);
+    if (timeRange === 'month') return getDelta(transactions, chartTab, currMonth, currYear);
+    return null;
+  }, [chartTab, timeRange, transactions, selectedMonth, year, currMonth, currYear]);
 
   const isIncome    = chartTab === 'income';
   const isOverview  = chartTab === 'overview';
@@ -235,7 +237,7 @@ function SummaryCard({
   const labelStep = timeRange === 'month' ? 4 : (timeRange === '5y' && lifetimeGranularity === 'month' ? 6 : 1);
 
   return (
-    <View className="mx-4 mb-2 p-5">
+    <View className="mx-4 mb-3 p-5">
       <Text className="text-white/40 text-base text-center mb-1">{periodLabel}</Text>
 
       <View className="items-center justify-center mb-2">

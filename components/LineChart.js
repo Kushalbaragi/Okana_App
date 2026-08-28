@@ -4,7 +4,7 @@ import Svg, { Defs, LinearGradient, Stop, Path, Circle, Line, Text as SvgText, G
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 
 const CHART_W = 300;
-const CHART_H = 82;
+const CHART_H = 90;
 const PAD_TOP = 12;
 const LABEL_H = 16;
 

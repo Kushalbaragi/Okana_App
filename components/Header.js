@@ -1,24 +1,26 @@
 import { memo } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { HamburgerIcon, CalendarIcon } from './icons';
 import { PILL_ACTIVE_COLOR } from './Glass';
 
 const BTN_W = 88; // a hair under the original 92 — "Overview" still fits at text-base
 const PAD   = 2;
 const TABS  = ['expense', 'income', 'overview'];
-const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
+// Matches the springy, slightly-overshooting snap of iOS's native segmented
+// control / Control Center sliders — low mass + moderate damping so the
+// pill briefly overshoots the target before settling, rather than the
+// eased glide a withTiming curve produces.
+const PILL_SPRING = { damping: 18, stiffness: 220, mass: 0.5 };
 
 function ChartTabToggle({ value, onChange }) {
   const idx = TABS.indexOf(value);
 
   // transform-based rather than animating `left` directly — runs on the
-  // compositor instead of the layout thread, and the ease-out-expo settle
-  // curve (used for every other reveal in this app) reads far smoother
-  // than the previous plain 220ms default-eased `left` timing.
+  // compositor instead of the layout thread.
   const pillStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: withTiming(idx * BTN_W, { duration: 280, easing: SETTLE_EASING }) }],
+    transform: [{ translateX: withSpring(idx * BTN_W, PILL_SPRING) }],
   }));
 
   return (
@@ -56,7 +58,7 @@ function Header({ onMenuOpen, chartTab, onChartTabChange, onCalendarOpen }) {
   const insets = useSafeAreaInsets();
 
   return (
-    <View className="flex-row items-center justify-between pb-3 px-5" style={{ paddingTop: insets.top + 12 }}>
+    <View className="flex-row items-center justify-between pb-5 px-5" style={{ paddingTop: insets.top + 16 }}>
       <Pressable onPress={onMenuOpen} className="w-9 h-9 items-center justify-center rounded-xl">
         <HamburgerIcon />
       </Pressable>

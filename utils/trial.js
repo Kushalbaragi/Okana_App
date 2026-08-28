@@ -91,7 +91,19 @@ export function getSubscriptionDisplayStatus(subscription, todayStr) {
     return { status: 'not_started', daysLeft: TRIAL_DAYS, chargeDate: null, cancelAtPeriodEnd: false, paymentFailed: false, everBilled: false }
   }
 
-  // authenticated — mandate is set up, trial window is running
+  // authenticated — mandate is set up, trial window is running.
+  //
+  // Except: a `free_trial_`-prefixed razorpay_subscription_id means this row
+  // was auto-granted at signup by a DB trigger, with no real payment mandate
+  // behind it (the web app's own free-trial-without-a-card flow). The mobile
+  // app deliberately does not honor that here — native purchases (Apple/
+  // Google) are the only way to start a trial or subscribe on mobile,
+  // matching how the App Store/Play Store collect a payment method upfront
+  // for an introductory-offer trial. Treated as if no subscription exists.
+  if (subscription.platform === 'razorpay' && subscription.razorpay_subscription_id?.startsWith('free_trial_')) {
+    return { status: 'not_started', daysLeft: TRIAL_DAYS, chargeDate: null, cancelAtPeriodEnd: false, paymentFailed: false, everBilled: false }
+  }
+
   const trial = getTrialInfo(subscription.trial_start, todayStr)
   if (trial.status === 'expired') {
     return { status: 'expired', daysLeft: 0, chargeDate: trial.chargeDate, cancelAtPeriodEnd: false, paymentFailed: false, everBilled: false }
