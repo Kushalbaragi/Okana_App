@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Platform, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, Platform, ActivityIndicator, StyleSheet, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { useSubscription } from '../../hooks/useSubscription';
 import { usePurchases } from '../../hooks/usePurchases';
-import { PRICE_PER_YEAR, formatChargeDate, getSubscriptionDisplayStatus } from '../../utils/trial';
+import { formatChargeDate, getSubscriptionDisplayStatus } from '../../utils/trial';
 import { today } from '../../utils/format';
 import { BackIcon } from '../../components/icons';
-import { AnimatedModal } from '../../components/AnimatedModal';
 import { PaymentProcessing } from '../../components/PaymentProcessing';
 
 function Divider() {
@@ -47,15 +46,20 @@ const PLAN_PILL = {
   expired: { label: 'Free', tone: 'grey' },
 };
 
-const CARD_NETWORK_LABEL = { visa: 'VISA', mastercard: 'MC', amex: 'AMEX', rupay: 'RUPAY', diners: 'DINERS' };
+// Neither the App Store nor Play Store gives an app a way to cancel a
+// subscription or read its payment method on the user's behalf — that only
+// happens on-device. This just opens the OS's own subscription management
+// screen instead of pretending to offer an in-app cancel flow.
+function openManageSubscription() {
+  if (Platform.OS === 'ios') Linking.openURL('itms-apps://apps.apple.com/account/subscriptions');
+  else if (Platform.OS === 'android') Linking.openURL('https://play.google.com/store/account/subscriptions');
+}
 
 export default function SubscriptionPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { subscription, loading, cancelling, error, paymentMethod, cancelSubscription, refresh } = useSubscription(user);
+  const { subscription, loading, refresh } = useSubscription(user);
   const { getOfferings, purchasePackage, restorePurchases } = usePurchases(user?.id);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [cancelSuccess, setCancelSuccess] = useState(false);
   const [processingVisible, setProcessingVisible] = useState(false);
   const [purchaseSucceeded, setPurchaseSucceeded] = useState(false);
 
@@ -63,7 +67,7 @@ export default function SubscriptionPage() {
   const status = trialInfo.status;
   const isEnding = trialInfo.cancelAtPeriodEnd && (status === 'trial' || status === 'subscribed');
   const pill = isEnding ? { label: 'Ending', tone: 'grey' } : PLAN_PILL[status];
-  const canCancel = (status === 'trial' || status === 'subscribed') && !trialInfo.cancelAtPeriodEnd;
+  const canManage = status === 'trial' || status === 'subscribed';
   const needsAction = status === 'not_started' || status === 'expired';
 
   const [pkg, setPkg] = useState(null);
@@ -145,15 +149,6 @@ export default function SubscriptionPage() {
     setRestoring(false);
   }
 
-  async function handleConfirmCancel() {
-    const ok = await cancelSubscription({ immediate: false });
-    setConfirmOpen(false);
-    if (ok) {
-      setCancelSuccess(true);
-      setTimeout(() => setCancelSuccess(false), 4000);
-    }
-  }
-
   return (
     <View className="flex-1 bg-bg">
       <ScrollView>
@@ -170,18 +165,6 @@ export default function SubscriptionPage() {
           </View>
         ) : (
         <View className="px-4 pb-16" style={{ gap: 12 }}>
-          {!!error && (
-            <View className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderWidth: 1, borderColor: 'rgba(248,113,113,0.2)' }}>
-              <Text className="text-red-300 text-base">{error}</Text>
-            </View>
-          )}
-
-          {cancelSuccess && (
-            <View className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(74,222,128,0.08)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.25)' }}>
-              <Text className="text-base" style={{ color: '#4ade80' }}>You've successfully unsubscribed</Text>
-            </View>
-          )}
-
           <View>
             <SectionLabel>Current Plan</SectionLabel>
             <Card>
@@ -197,7 +180,7 @@ export default function SubscriptionPage() {
                     <Text className="text-white/40 text-base">
                       {trialInfo.cancelAtPeriodEnd
                         ? `Plus access ends ${formatChargeDate(trialInfo.chargeDate)} — you won't be charged`
-                        : `You'll be charged ₹${PRICE_PER_YEAR} on ${formatChargeDate(trialInfo.chargeDate)}`}
+                        : `Your free trial converts to a paid plan on ${formatChargeDate(trialInfo.chargeDate)}`}
                     </Text>
                   </View>
                 </>
@@ -210,39 +193,18 @@ export default function SubscriptionPage() {
                   </View>
                 </>
               )}
+              {status === 'subscribed' && trialInfo.paymentFailed && (
+                <>
+                  <Divider />
+                  <View className="px-4 py-[14px]">
+                    <Text className="text-base" style={{ color: 'rgba(248,113,113,0.85)' }}>
+                      There's a problem with your payment — update it in {Platform.OS === 'ios' ? 'the App Store' : 'Play Store'} to keep your access.
+                    </Text>
+                  </View>
+                </>
+              )}
             </Card>
           </View>
-
-          {(paymentMethod || status === 'trial' || status === 'subscribed') && (
-            <View>
-              <SectionLabel>Payment Method</SectionLabel>
-              <Card>
-                {paymentMethod ? (
-                  <View className="flex-row items-center justify-between px-4 py-[14px]">
-                    <View className="flex-row items-center" style={{ gap: 12 }}>
-                      <View className="px-2 py-1 rounded" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
-                        <Text className="text-[10px] font-bold" style={{ color: 'rgba(255,255,255,0.55)' }}>
-                          {paymentMethod.card
-                            ? (CARD_NETWORK_LABEL[paymentMethod.card.network?.toLowerCase()] || 'CARD')
-                            : (paymentMethod.method || 'UPI').toUpperCase()}
-                        </Text>
-                      </View>
-                      <Text className="text-white/70 text-base">
-                        {paymentMethod.card ? `•••• ${paymentMethod.card.last4}` : paymentMethod.vpa || 'Linked'}
-                      </Text>
-                    </View>
-                    {trialInfo.paymentFailed && (
-                      <Text className="text-[12px] font-medium" style={{ color: 'rgba(248,113,113,0.85)' }}>Payment failed</Text>
-                    )}
-                  </View>
-                ) : (
-                  <View className="px-4 py-[14px]">
-                    <Text className="text-white/30 text-base">No payment method on file</Text>
-                  </View>
-                )}
-              </Card>
-            </View>
-          )}
 
           {needsAction && Platform.OS !== 'web' && (
             <View style={{ gap: 8 }}>
@@ -290,58 +252,32 @@ export default function SubscriptionPage() {
                 className="w-full py-[13px] rounded-2xl items-center"
                 style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
               >
-                <Text className="text-base font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>Coming soon</Text>
+                <Text className="text-base font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>Not available on web</Text>
               </View>
               <Text className="w-full text-center text-white/25 text-base">
-                Subscribing from the app is on its way — manage your plan from the web for now.
+                Subscribing is only available from the iOS or Android app.
               </Text>
             </View>
           )}
 
-          {canCancel && (
+          {canManage && Platform.OS !== 'web' && (
             <View>
-              <SectionLabel>Cancel Plan</SectionLabel>
+              <SectionLabel>Manage Subscription</SectionLabel>
               <Card>
-                <View className="flex-row items-center justify-between gap-3 px-4 py-[14px]">
-                  <Text className="text-white/40 text-base flex-1" style={{ lineHeight: 20 }}>
-                    If you cancel, you'll keep full access until {formatChargeDate(trialInfo.chargeDate)}.
+                <Pressable
+                  onPress={openManageSubscription}
+                  className="flex-row items-center justify-between px-4 py-[14px]"
+                >
+                  <Text className="text-white/70 text-base flex-1" style={{ lineHeight: 20 }}>
+                    Change plan, update payment, or cancel in {Platform.OS === 'ios' ? 'the App Store' : 'Play Store'}
                   </Text>
-                  <Pressable
-                    onPress={() => setConfirmOpen(true)}
-                    className="px-3 py-[7px] rounded-full"
-                    style={{ borderWidth: 1, borderColor: 'rgba(248,113,113,0.35)' }}
-                  >
-                    <Text className="text-base font-medium" style={{ color: 'rgba(248,113,113,0.85)' }}>Cancel</Text>
-                  </Pressable>
-                </View>
+                </Pressable>
               </Card>
             </View>
           )}
         </View>
         )}
       </ScrollView>
-
-      <AnimatedModal open={confirmOpen} onClose={() => setConfirmOpen(false)} variant="center">
-        <View
-          className="w-full rounded-2xl p-6"
-          style={{ maxWidth: 360, backgroundColor: 'rgba(20,20,20,0.98)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
-        >
-          <Text className="text-white font-semibold text-base mb-2">
-            End access on {trialInfo.chargeDate ? formatChargeDate(trialInfo.chargeDate) : 'period end'}?
-          </Text>
-          <Text className="text-white/45 text-base mb-6" style={{ lineHeight: 22 }}>
-            If you cancel now, you'll still be able to access all features until {trialInfo.chargeDate ? formatChargeDate(trialInfo.chargeDate) : 'then'}.
-          </Text>
-          <View className="flex-row" style={{ gap: 12 }}>
-            <Pressable onPress={() => setConfirmOpen(false)} className="flex-1 py-3 rounded-xl items-center" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
-              <Text className="text-white/60 text-base font-medium">Go back</Text>
-            </Pressable>
-            <Pressable onPress={handleConfirmCancel} disabled={cancelling} className="flex-1 py-3 rounded-xl items-center" style={{ backgroundColor: 'rgba(248,113,113,0.14)', opacity: cancelling ? 0.5 : 1 }}>
-              <Text className="text-base font-semibold" style={{ color: 'rgba(248,113,113,0.9)' }}>{cancelling ? 'Cancelling…' : 'Cancel subscription'}</Text>
-            </Pressable>
-          </View>
-        </View>
-      </AnimatedModal>
 
       {processingVisible && (
         <View style={StyleSheet.absoluteFill}>

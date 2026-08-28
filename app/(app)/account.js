@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -10,6 +10,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
 import { isConnectivityError } from '../../utils/errors';
 import { useSubscription } from '../../hooks/useSubscription';
+import { getSubscriptionDisplayStatus } from '../../utils/trial';
+import { today } from '../../utils/format';
 import { supabase } from '../../lib/supabase';
 import { BackIcon, EditIcon, ChevronRight, CheckIcon, CameraIcon } from '../../components/icons';
 import { ONBOARDING_SEEN_KEY } from '../onboarding';
@@ -277,7 +279,8 @@ export default function AccountPage() {
   const router = useRouter();
   const { user, profile, logout } = useAuth();
   const { isOnline, notifyOffline } = useNetwork();
-  const { subscription, cancelSubscription } = useSubscription(user);
+  const { subscription } = useSubscription(user);
+  const hasActivePlus = ['trial', 'subscribed'].includes(getSubscriptionDisplayStatus(subscription, today()).status);
 
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(profile?.name || '');
@@ -424,20 +427,14 @@ export default function AccountPage() {
     if (!isOnline) { notifyOffline(); return; }
     setActionError('');
     setActionFlow({ type: 'delete', phase: 'working' });
-    let step = 'subscription';
+    // Nothing to cancel via API here — neither the App Store nor Play Store
+    // lets an app cancel a subscription on the user's behalf, only the user
+    // can do that on-device. The delete confirmation warns them of this
+    // upfront (see the ConfirmModal below) rather than pretending this flow
+    // can do it for them.
+    let step = 'transactions';
     try {
       await Promise.all([minDelay(4000), (async () => {
-        const TERMINAL = ['cancelled', 'expired', 'completed'];
-        if (subscription && !TERMINAL.includes(subscription.status)) {
-          const cancelled = await cancelSubscription({ immediate: true });
-          // cancelSubscription swallows its own errors and resolves to
-          // false rather than throwing — without this check, a failed
-          // cancellation would silently fall through to deleting the
-          // account anyway, leaving an active paid subscription with no
-          // account left to manage or cancel it from.
-          if (!cancelled) throw new Error("Couldn't cancel your subscription. Please try again.");
-        }
-        step = 'transactions';
         const { error: txError } = await supabase.from('transactions').delete().eq('user_id', user.id);
         if (txError) throw txError;
         // monthly_budgets has a (no-cascade) FK to auth.users — must be cleared
@@ -584,7 +581,11 @@ export default function AccountPage() {
       <ConfirmModal
         open={showDeleteConfirm}
         title="Delete Account"
-        message="Your account and all data will be permanently deleted. This cannot be undone."
+        message={
+          hasActivePlus
+            ? `Your account and all data will be permanently deleted. This cannot be undone. Deleting your account does not cancel your ${Platform.OS === 'ios' ? 'App Store' : 'Play Store'} subscription — cancel it separately in ${Platform.OS === 'ios' ? 'Settings' : 'Play Store'} or you'll keep being charged with no account to use it.`
+            : 'Your account and all data will be permanently deleted. This cannot be undone.'
+        }
         confirmLabel="Delete Account"
         onConfirm={confirmDelete}
         onCancel={() => setShowDeleteConfirm(false)}
