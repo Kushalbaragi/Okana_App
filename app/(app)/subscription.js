@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, Platform, ActivityIndicator, StyleSheet, Alert, AppState } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
+import { useNetwork } from '../../context/NetworkContext';
 import { useSubscription } from '../../hooks/useSubscription';
 import { usePurchases, openManageSubscription } from '../../hooks/usePurchases';
 import { formatChargeDate, getSubscriptionDisplayStatus } from '../../utils/trial';
@@ -50,6 +51,7 @@ const PLAN_PILL = {
 export default function SubscriptionPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const { isOnline, notifyOffline } = useNetwork();
   const { subscription, loading, refresh } = useSubscription(user);
   const { getOfferings, purchasePackage, restorePurchases } = usePurchases(user?.id);
   const [processingVisible, setProcessingVisible] = useState(false);
@@ -144,6 +146,7 @@ export default function SubscriptionPage() {
 
   async function handleSubscribe() {
     if (!pkg) return;
+    if (!isOnline) { notifyOffline(); return; }
     setPurchaseError(null);
     // Opens the full-screen processing takeover immediately, before the
     // purchase sheet even resolves — see PaymentProcessing.
@@ -188,6 +191,7 @@ export default function SubscriptionPage() {
   }
 
   async function handleRestore() {
+    if (!isOnline) { notifyOffline(); return; }
     setRestoring(true);
     setPurchaseError(null);
     const result = await restorePurchases();

@@ -30,6 +30,30 @@ async function savePendingBudget(userId, pending) {
   } catch { /* best-effort, same as the transaction cache */ }
 }
 
+// Separate from the pending-write cache above — this is the last
+// successfully *synced* budget (both this month's and last month's), used
+// purely as an offline fallback so a cold launch with no connection doesn't
+// read as "no budget set" and re-trigger the setup prompt for a month that
+// already has one. Scoped to the month it was fetched for, same as the
+// pending cache, so an old month's cached amount can't silently apply after
+// the calendar rolls over.
+const syncedKey = (userId) => `okana_synced_budget_${userId}`
+
+async function loadSyncedBudget(userId, monthStart) {
+  try {
+    const raw = await AsyncStorage.getItem(syncedKey(userId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed.monthStart === monthStart ? parsed : null
+  } catch { return null }
+}
+
+async function saveSyncedBudget(userId, monthStart, current, last) {
+  try {
+    await AsyncStorage.setItem(syncedKey(userId), JSON.stringify({ monthStart, current, last }))
+  } catch { /* best-effort */ }
+}
+
 // Pushes a still-pending offline budget set to the server, if there is
 // one. Discards it instead of applying it if the calendar month has
 // rolled over since it was queued — an August budget shouldn't silently
@@ -70,23 +94,59 @@ export function useBudget(user, transactions) {
   const [lastMonthAmount, setLastMonthAmount] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  // Shows the last synced-to-disk budget immediately on a fresh mount,
+  // before the network fetch below even resolves — a cold launch offline
+  // would otherwise sit on "no budget" for however long the fetch takes to
+  // time out, even for a month that already has one set. Only fills in if
+  // refresh() hasn't already set real state by the time this resolves.
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    loadSyncedBudget(user.id, monthStart).then(cached => {
+      if (cancelled || !cached) return
+      if (cached.current) setBudgetRow(prev => prev ?? cached.current)
+      if (cached.last != null) setLastMonthAmount(prev => prev ?? cached.last)
+    })
+    return () => { cancelled = true }
+  }, [user, monthStart])
+
   const refresh = useCallback(async () => {
     if (!user) { setBudgetRow(null); setLastMonthAmount(null); setLoading(false); return }
     setLoading(true)
+
+    async function applyCacheFallback() {
+      // Offline (or NetInfo hasn't reported it yet on a cold launch — its
+      // first check is async, so `isOnlineRef.current` still defaults true
+      // for a moment even with no connection at all) — whatever's already
+      // in state is a fine fallback, but if this is a genuinely fresh
+      // mount there's nothing there yet, so also pull the last synced
+      // budget off disk.
+      const cached = await loadSyncedBudget(user.id, monthStart)
+      const pending = await loadPendingBudget(user.id)
+      if (pending && pending.month_start === monthStart) {
+        setBudgetRow(prev => prev ?? { ...(cached?.current || {}), user_id: user.id, month_start: monthStart, budget_amount: pending.budget_amount, _pending: true })
+      } else if (cached?.current) {
+        setBudgetRow(prev => prev ?? cached.current)
+      }
+      if (cached?.last != null) setLastMonthAmount(prev => prev ?? cached.last)
+    }
+
     try {
       if (!isOnlineRef.current) {
-        // Nothing reachable — whatever's already in state (including a
-        // pending local set) is the best we can show right now.
+        await applyCacheFallback()
         return
       }
       await flushPendingBudget(user.id, monthStart)
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('monthly_budgets')
         .select('*')
         .eq('user_id', user.id)
         .in('month_start', [monthStart, prevMonthStart])
+      if (error) throw error
       const current = data?.find(row => row.month_start === monthStart)
       const last = data?.find(row => row.month_start === prevMonthStart)
+
+      await saveSyncedBudget(user.id, monthStart, current ?? null, last?.budget_amount ?? null)
 
       // A flush that failed (still offline, or a genuine rejection) or
       // never ran leaves a pending value sitting in storage — prefer that
@@ -100,8 +160,13 @@ export function useBudget(user, transactions) {
       }
       setLastMonthAmount(last?.budget_amount ?? null)
     } catch {
-      // Best-effort — a failed fetch just leaves the previous budget state
-      // in place rather than crashing or hanging on "loading" forever.
+      // Supabase returns network failures as `{ data: null, error }` rather
+      // than throwing, so this catches both that and a genuine thrown
+      // error the same way — fall back to the last synced state on disk
+      // instead of leaving budgetRow cleared, which would read as "no
+      // budget" and re-trigger the setup prompt for a month that already
+      // has one.
+      await applyCacheFallback()
     } finally {
       setLoading(false)
     }

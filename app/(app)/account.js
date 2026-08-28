@@ -532,12 +532,18 @@ export default function AccountPage() {
         </View>
 
         <View className="mx-4 mt-4 rounded-2xl overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' }}>
-          <Pressable onPress={() => setShowEraseConfirm(true)} className="flex-row items-center justify-between px-4 py-4">
+          <Pressable
+            onPress={() => (isOnline ? setShowEraseConfirm(true) : notifyOffline())}
+            className="flex-row items-center justify-between px-4 py-4"
+          >
             <Text className="text-red-400 text-base">Erase Data</Text>
             <ChevronRight />
           </Pressable>
           <Divider />
-          <Pressable onPress={() => setShowDeleteConfirm(true)} className="flex-row items-center justify-between px-4 py-4">
+          <Pressable
+            onPress={() => (isOnline ? setShowDeleteConfirm(true) : notifyOffline())}
+            className="flex-row items-center justify-between px-4 py-4"
+          >
             <Text className="text-red-400 text-base">Delete Account</Text>
             <ChevronRight />
           </Pressable>
