@@ -8,6 +8,11 @@ import { isConnectivityError } from '../../utils/errors';
 import { GlassTextInput, GlassPressable } from '../../components/Glass';
 import { Spinner } from '../../components/icons';
 
+// Deliberately loose (no full RFC 5322 validation) — just enough to catch
+// an obvious typo (missing @, no domain) before spending a network round
+// trip on it, not to reject anything Supabase would otherwise accept.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // One screen for both new and returning users — email + OTP makes the
 // old "sign up" vs "log in" distinction moot, sendOtp() creates the
 // account on first use if it doesn't exist yet.
@@ -52,6 +57,7 @@ export default function LoginScreen() {
     if (loading) return;
     const trimmed = email.trim();
     if (!trimmed) { setError('Please enter your email'); return; }
+    if (!EMAIL_PATTERN.test(trimmed)) { setError('Please enter a valid email'); return; }
     if (!isOnline) { notifyOffline(); return; }
     setLoading(true);
     setError('');
