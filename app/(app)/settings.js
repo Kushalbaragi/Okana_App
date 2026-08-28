@@ -91,7 +91,7 @@ function InfoModal({ open, title, onClose, children }) {
       >
         <View className="w-8 h-1 rounded-full mx-auto mb-5" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }} />
         <Text className="text-white font-semibold text-base mb-4">{title}</Text>
-        <ScrollView showsVerticalScrollIndicator={false}>
+        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {children}
         </ScrollView>
       </View>
