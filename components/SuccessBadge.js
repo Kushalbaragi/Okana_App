@@ -7,12 +7,15 @@ const SIZE = 64;
 const ICON_SIZE = 28;
 const SUCCESS_SOUND = require('../assets/sounds/success.wav');
 
-// Canonical "something just succeeded" badge — same circle, color, sound,
-// and bounce-in used everywhere the app confirms a completed action
-// (payment, budget set, account changes, onboarding steps). Mount this
-// fresh each time (conditional render, not a visibility toggle) so the
-// bounce and sound replay.
-export function SuccessBadge({ size = SIZE, iconSize = ICON_SIZE, style }) {
+// Canonical "something just succeeded" badge — same circle, color, and
+// bounce-in used everywhere the app confirms a completed action (payment,
+// budget set, account changes, onboarding steps). Mount this fresh each
+// time (conditional render, not a visibility toggle) so the bounce replays.
+// The ding (`playSound`) is opt-in, deliberately reserved for the two
+// moments that most deserve it — account creation and payment success —
+// rather than firing on every minor confirmation (budget set, account
+// erase/delete, cancel-subscription) this badge also appears for.
+export function SuccessBadge({ size = SIZE, iconSize = ICON_SIZE, style, playSound = false }) {
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.6);
   const player = useAudioPlayer(SUCCESS_SOUND);
@@ -23,8 +26,10 @@ export function SuccessBadge({ size = SIZE, iconSize = ICON_SIZE, style }) {
       withTiming(1.15, { duration: 380, easing: Easing.out(Easing.back(1.4)) }),
       withTiming(1, { duration: 220, easing: Easing.out(Easing.cubic) }),
     );
-    player.seekTo(0);
-    player.play();
+    if (playSound) {
+      player.seekTo(0);
+      player.play();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

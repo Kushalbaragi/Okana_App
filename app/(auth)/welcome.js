@@ -113,7 +113,7 @@ function ChecklistPage({ title, items, buttonLabel, buttonColor, buttonTextColor
 // confirmations, which only differ in copy. Each line gets its own FadeIn
 // (same bottom-to-center settle used for the checklist items) staggered by
 // LINE_STAGGER_MS, rather than the whole block fading in as one unit.
-function TickPopup({ lines, onDone }) {
+function TickPopup({ lines, onDone, playSound }) {
   useEffect(() => {
     const t = setTimeout(onDone, HOLD_MS);
     return () => clearTimeout(t);
@@ -122,7 +122,7 @@ function TickPopup({ lines, onDone }) {
 
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
-      <SuccessBadge style={{ marginBottom: 22 }} />
+      <SuccessBadge style={{ marginBottom: 22 }} playSound={playSound} />
       <View style={{ alignItems: 'center' }}>
         {lines.map((line, i) => (
           <FadeIn key={i} delay={500 + i * LINE_STAGGER_MS} distance={20}>
@@ -324,6 +324,7 @@ export default function WelcomeScreen() {
         <TickPopup
           lines={[{ text: 'Account has been created successfully', style: { color: 'rgba(255,255,255,0.85)', fontSize: 16, fontWeight: '500' } }]}
           onDone={next}
+          playSound
         />
       )}
 

@@ -120,7 +120,7 @@ export function PaymentProcessing({ succeeded, successMessage = 'Payment is succ
       )}
       {showSuccess && (
         <>
-          <SuccessBadge style={{ marginBottom: 18 }} />
+          <SuccessBadge style={{ marginBottom: 18 }} playSound />
           <FadeIn delay={350} duration={450} distance={10}>
             <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '500', textAlign: 'center' }}>{successMessage}</Text>
           </FadeIn>
