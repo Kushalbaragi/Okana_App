@@ -372,8 +372,8 @@ export default function SubscriptionPage() {
           workingText="Checking subscription status"
           workingSubtext="Hold on"
           successText="Plan has been cancelled successfully"
-          notConfirmedText="Cancellation not detected"
-          notConfirmedSubtext="Looks like you didn't finish cancelling — you can try again anytime from here."
+          notConfirmedText="Still confirming with the App Store"
+          notConfirmedSubtext="We'll update your subscription automatically, usually within a few minutes — you'll get a notification once it's confirmed."
           onDone={() => setCancelFlow(null)}
         />
       )}
