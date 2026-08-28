@@ -348,11 +348,7 @@ export default function SubscriptionPage() {
 
       {processingVisible && (
         <View style={StyleSheet.absoluteFill}>
-          <PaymentProcessing
-            succeeded={purchaseSucceeded}
-            successMessage="Payment is successful"
-            onDone={handleProcessingDone}
-          />
+          <PaymentProcessing succeeded={purchaseSucceeded} onDone={handleProcessingDone} />
         </View>
       )}
 

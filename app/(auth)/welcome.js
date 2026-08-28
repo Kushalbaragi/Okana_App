@@ -350,11 +350,7 @@ export default function WelcomeScreen() {
 
       {processingVisible && (
         <View style={StyleSheet.absoluteFill}>
-          <PaymentProcessing
-            succeeded={purchaseSucceeded}
-            successMessage="Payment method set successfully"
-            onDone={handleProcessingDone}
-          />
+          <PaymentProcessing succeeded={purchaseSucceeded} onDone={handleProcessingDone} />
         </View>
       )}
     </View>
