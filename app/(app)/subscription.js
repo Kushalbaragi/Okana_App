@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ScrollView, Platform, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { useSubscription } from '../../hooks/useSubscription';
@@ -8,6 +8,7 @@ import { PRICE_PER_YEAR, formatChargeDate, getSubscriptionDisplayStatus } from '
 import { today } from '../../utils/format';
 import { BackIcon } from '../../components/icons';
 import { AnimatedModal } from '../../components/AnimatedModal';
+import { PaymentProcessing } from '../../components/PaymentProcessing';
 
 function Divider() {
   return <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.07)', marginHorizontal: 16 }} />;
@@ -51,11 +52,12 @@ const CARD_NETWORK_LABEL = { visa: 'VISA', mastercard: 'MC', amex: 'AMEX', rupay
 export default function SubscriptionPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { subscription, cancelling, error, paymentMethod, cancelSubscription, refresh } = useSubscription(user);
+  const { subscription, loading, cancelling, error, paymentMethod, cancelSubscription, refresh } = useSubscription(user);
   const { getOfferings, purchasePackage, restorePurchases } = usePurchases(user?.id);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [cancelSuccess, setCancelSuccess] = useState(false);
-  const [purchaseSuccess, setPurchaseSuccess] = useState(false);
+  const [processingVisible, setProcessingVisible] = useState(false);
+  const [purchaseSucceeded, setPurchaseSucceeded] = useState(false);
 
   const trialInfo = subscription ? getSubscriptionDisplayStatus(subscription, today()) : { status: 'not_started' };
   const status = trialInfo.status;
@@ -72,7 +74,7 @@ export default function SubscriptionPage() {
   const [restoring, setRestoring] = useState(false);
 
   useEffect(() => {
-    if (Platform.OS === 'web' || !needsAction) return;
+    if (Platform.OS === 'web' || loading || !needsAction) return;
     let cancelled = false;
     setOfferingLoading(true);
     setOfferingError(null);
@@ -87,15 +89,19 @@ export default function SubscriptionPage() {
       setOfferingLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [needsAction, getOfferings]);
+  }, [needsAction, getOfferings, loading]);
 
   async function handleSubscribe() {
     if (!pkg) return;
-    setPurchasing(true);
     setPurchaseError(null);
+    // Opens the full-screen processing takeover immediately, before the
+    // purchase sheet even resolves — see PaymentProcessing.
+    setProcessingVisible(true);
+    setPurchasing(true);
     const result = await purchasePackage(pkg);
     if (!result.success) {
       setPurchasing(false);
+      setProcessingVisible(false);
       if (!result.cancelled) setPurchaseError(result.error || 'Purchase failed. Please try again.');
       return;
     }
@@ -116,9 +122,18 @@ export default function SubscriptionPage() {
     }
     setPurchasing(false);
     if (confirmed) {
-      setPurchaseSuccess(true);
-      setTimeout(() => setPurchaseSuccess(false), 4000);
+      setPurchaseSucceeded(true);
+    } else {
+      // Webhook never confirmed within the poll window — don't strand the
+      // user on a success animation that was never earned.
+      setProcessingVisible(false);
+      setPurchaseError('Purchase is taking longer than expected to confirm. Pull to refresh in a moment.');
     }
+  }
+
+  function handleProcessingDone() {
+    setProcessingVisible(false);
+    setPurchaseSucceeded(false);
   }
 
   async function handleRestore() {
@@ -149,6 +164,11 @@ export default function SubscriptionPage() {
           <Text className="text-white text-base font-semibold">Subscription</Text>
         </View>
 
+        {loading ? (
+          <View className="items-center" style={{ paddingTop: 80 }}>
+            <ActivityIndicator color="rgba(255,255,255,0.4)" />
+          </View>
+        ) : (
         <View className="px-4 pb-16" style={{ gap: 12 }}>
           {!!error && (
             <View className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderWidth: 1, borderColor: 'rgba(248,113,113,0.2)' }}>
@@ -159,12 +179,6 @@ export default function SubscriptionPage() {
           {cancelSuccess && (
             <View className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(74,222,128,0.08)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.25)' }}>
               <Text className="text-base" style={{ color: '#4ade80' }}>You've successfully unsubscribed</Text>
-            </View>
-          )}
-
-          {purchaseSuccess && (
-            <View className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(74,222,128,0.08)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.25)' }}>
-              <Text className="text-base" style={{ color: '#4ade80' }}>You're now on Okana Plus 🎉</Text>
             </View>
           )}
 
@@ -250,7 +264,7 @@ export default function SubscriptionPage() {
                   style={{ backgroundColor: 'rgba(74,222,128,0.25)', opacity: purchasing ? 0.6 : 1 }}
                 >
                   <Text className="text-base font-semibold" style={{ color: '#4ade80' }}>
-                    {purchasing ? 'Confirming…' : `Subscribe — ${pkg.product.priceString}/year`}
+                    Subscribe — {pkg.product.priceString}/year
                   </Text>
                 </Pressable>
               ) : (
@@ -304,6 +318,7 @@ export default function SubscriptionPage() {
             </View>
           )}
         </View>
+        )}
       </ScrollView>
 
       <AnimatedModal open={confirmOpen} onClose={() => setConfirmOpen(false)} variant="center">
@@ -327,6 +342,16 @@ export default function SubscriptionPage() {
           </View>
         </View>
       </AnimatedModal>
+
+      {processingVisible && (
+        <View style={StyleSheet.absoluteFill}>
+          <PaymentProcessing
+            succeeded={purchaseSucceeded}
+            successMessage="Payment is successful"
+            onDone={handleProcessingDone}
+          />
+        </View>
+      )}
     </View>
   );
 }

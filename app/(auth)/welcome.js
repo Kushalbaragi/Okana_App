@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, Image } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
   withDelay,
-  withSequence,
   Easing,
 } from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
-import { PRICE_PER_YEAR } from '../../utils/trial';
+import { usePurchases } from '../../hooks/usePurchases';
+import { supabase } from '../../lib/supabase';
+import { PRICE_PER_YEAR, getSubscriptionDisplayStatus } from '../../utils/trial';
+import { today } from '../../utils/format';
 import { CheckIcon } from '../../components/icons';
+import { PaymentProcessing } from '../../components/PaymentProcessing';
+import { SuccessBadge } from '../../components/SuccessBadge';
 
 // Shared "settle" ease-out-expo feel used for every reveal in this flow —
 // keeps the whole sequence reading as one calm motion language rather than
@@ -71,7 +75,7 @@ function ChecklistItem({ title, description, delay }) {
 
 // Shared layout for "Why Okana" and "Take your time" — same one-by-one
 // reveal, same trailing CTA, differing only in copy and button color.
-function ChecklistPage({ title, items, buttonLabel, buttonColor, buttonTextColor, onContinue }) {
+function ChecklistPage({ title, items, buttonLabel, buttonColor, buttonTextColor, onContinue, error }) {
   const buttonDelay = 400 + items.length * ITEM_STAGGER_MS;
 
   return (
@@ -85,6 +89,10 @@ function ChecklistPage({ title, items, buttonLabel, buttonColor, buttonTextColor
           <ChecklistItem key={item.title} title={item.title} description={item.description} delay={400 + i * ITEM_STAGGER_MS} />
         ))}
       </View>
+
+      {!!error && (
+        <Text style={{ color: 'rgba(248,113,113,0.9)', fontSize: 13, textAlign: 'center', marginBottom: 10 }}>{error}</Text>
+      )}
 
       <FadeIn delay={buttonDelay} duration={500}>
         <Pressable
@@ -104,36 +112,15 @@ function ChecklistPage({ title, items, buttonLabel, buttonColor, buttonTextColor
 // (same bottom-to-center settle used for the checklist items) staggered by
 // LINE_STAGGER_MS, rather than the whole block fading in as one unit.
 function TickPopup({ lines, onDone }) {
-  const circleOpacity = useSharedValue(0);
-  const circleScale = useSharedValue(0.6);
-
   useEffect(() => {
-    circleOpacity.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) });
-    circleScale.value = withDelay(80, withSequence(
-      withTiming(1.15, { duration: 420, easing: Easing.out(Easing.back(1.4)) }),
-      withTiming(1, { duration: 240, easing: Easing.out(Easing.cubic) }),
-    ));
-
     const t = setTimeout(onDone, HOLD_MS);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const circleStyle = useAnimatedStyle(() => ({
-    opacity: circleOpacity.value,
-    transform: [{ scale: circleScale.value }],
-  }));
-
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
-      <Animated.View
-        style={[
-          { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center', marginBottom: 22, backgroundColor: 'rgba(74,222,128,0.12)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.3)' },
-          circleStyle,
-        ]}
-      >
-        <CheckIcon size={20} />
-      </Animated.View>
+      <SuccessBadge style={{ marginBottom: 22 }} />
       <View style={{ alignItems: 'center' }}>
         {lines.map((line, i) => (
           <FadeIn key={i} delay={500 + i * LINE_STAGGER_MS} distance={20}>
@@ -244,8 +231,12 @@ const STEPS = ['created', 'why', 'trial-info', 'trial-started', 'welcome', 'intr
 
 export default function WelcomeScreen() {
   const router = useRouter();
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
+  const { getOfferings, purchasePackage } = usePurchases(user?.id);
   const [step, setStep] = useState(STEPS[0]);
+  const [processingVisible, setProcessingVisible] = useState(false);
+  const [purchaseSucceeded, setPurchaseSucceeded] = useState(false);
+  const [purchaseError, setPurchaseError] = useState(null);
   const firstName = (profile?.name || 'there').split(' ')[0];
 
   function next() {
@@ -257,6 +248,57 @@ export default function WelcomeScreen() {
 
   function finish() {
     router.replace('/(app)');
+  }
+
+  // Real native purchase, triggered from the "Start Free Trial" button —
+  // same purchase + webhook-confirmation pattern as subscription.js's
+  // handleSubscribe, just self-contained here since this screen lives in
+  // the pre-app (auth) route group and can't reach into app/(app)/subscription.js.
+  async function handleStartTrial() {
+    if (!user) return;
+    setPurchaseError(null);
+    setProcessingVisible(true);
+
+    const offeringResult = await getOfferings();
+    const pkg = offeringResult.success ? offeringResult.offering?.availablePackages?.[0] : null;
+    if (!pkg) {
+      setProcessingVisible(false);
+      setPurchaseError(offeringResult.error || 'Subscription options aren’t available right now.');
+      return;
+    }
+
+    const result = await purchasePackage(pkg);
+    if (!result.success) {
+      setProcessingVisible(false);
+      if (!result.cancelled) setPurchaseError(result.error || 'Purchase failed. Please try again.');
+      return;
+    }
+
+    let confirmed = false;
+    for (let i = 0; i < 5; i++) {
+      const { data } = await supabase.from('subscriptions').select('*').eq('user_id', user.id).maybeSingle();
+      if (data && ['trial', 'subscribed'].includes(getSubscriptionDisplayStatus(data, today()).status)) {
+        confirmed = true;
+        break;
+      }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+
+    if (confirmed) {
+      setPurchaseSucceeded(true);
+    } else {
+      setProcessingVisible(false);
+      setPurchaseError('Purchase is taking longer than expected to confirm. Please try again.');
+    }
+  }
+
+  // Success plays out on its own inside PaymentProcessing — once it's done,
+  // move on to the existing "trial started" step instead of the standalone
+  // Subscription page, since this purchase happened inside onboarding.
+  function handleProcessingDone() {
+    setProcessingVisible(false);
+    setPurchaseSucceeded(false);
+    next();
   }
 
   return (
@@ -286,7 +328,8 @@ export default function WelcomeScreen() {
           buttonLabel="Start Free Trial"
           buttonColor="#22c55e"
           buttonTextColor="#ffffff"
-          onContinue={next}
+          onContinue={handleStartTrial}
+          error={purchaseError}
         />
       )}
 
@@ -304,6 +347,16 @@ export default function WelcomeScreen() {
       {step === 'welcome' && <WelcomeGreetingPage name={firstName} onDone={next} />}
 
       {step === 'intro' && <IntroQuotePage onFinish={finish} />}
+
+      {processingVisible && (
+        <View style={StyleSheet.absoluteFill}>
+          <PaymentProcessing
+            succeeded={purchaseSucceeded}
+            successMessage="Payment method set successfully"
+            onDone={handleProcessingDone}
+          />
+        </View>
+      )}
     </View>
   );
 }

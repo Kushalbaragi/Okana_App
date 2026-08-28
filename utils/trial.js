@@ -50,6 +50,20 @@ export function getSubscriptionDisplayStatus(subscription, todayStr) {
     if (!isActive) {
       return { status: 'expired', daysLeft: 0, chargeDate: subscription.expires_at, cancelAtPeriodEnd: false, paymentFailed: subscription.status === 'on_hold', everBilled: true }
     }
+    // RevenueCat's own period_type (TRIAL/INTRO/NORMAL), mirrored onto this
+    // row by the webhook — without this, a still-in-trial native subscriber
+    // showed the same "subscribed"/Active state as someone actually being
+    // billed, with no sign they haven't been charged yet.
+    if (subscription.is_trial) {
+      return {
+        status: 'trial',
+        daysLeft: 0,
+        chargeDate: subscription.expires_at,
+        cancelAtPeriodEnd: subscription.auto_renew === false,
+        paymentFailed: false,
+        everBilled: false,
+      }
+    }
     return {
       status: 'subscribed',
       daysLeft: 0,

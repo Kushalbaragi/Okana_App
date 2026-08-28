@@ -7,7 +7,8 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming, runOnJS } from 
 import { GlassPressable, GlassView } from './Glass';
 import { NumericKeypad, nextAmountValue } from './NumericKeypad';
 import { AmountRow, SETTLE_EASING } from './AmountField';
-import { TrendArrowIcon, CheckIcon } from './icons';
+import { TrendArrowIcon } from './icons';
+import { SuccessBadge } from './SuccessBadge';
 import { formatCurrency, currentMonthYear } from '../utils/format';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 
@@ -244,12 +245,7 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
           <Animated.View style={[{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }, confirmStyle]}>
             {confirmDelta.greeting ? (
               <>
-                <View
-                  className="items-center justify-center mb-6"
-                  style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(74,222,128,0.14)' }}
-                >
-                  <CheckIcon size={30} />
-                </View>
+                <SuccessBadge style={{ marginBottom: 24 }} />
                 <Text className="text-white text-lg font-semibold text-center" style={{ lineHeight: 26 }}>
                   You set {formatCurrency(confirmDelta.amount)} budget{'\n'}for {MONTH_NAMES[currMonth]}. Stick with it!
                 </Text>

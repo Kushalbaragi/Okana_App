@@ -14,6 +14,7 @@ import { supabase } from '../../lib/supabase';
 import { BackIcon, EditIcon, ChevronRight, CheckIcon, CameraIcon } from '../../components/icons';
 import { ONBOARDING_SEEN_KEY } from '../onboarding';
 import { AnimatedModal } from '../../components/AnimatedModal';
+import { SuccessBadge } from '../../components/SuccessBadge';
 
 function Divider() {
   return <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.07)', marginHorizontal: 16 }} />;
@@ -226,7 +227,6 @@ const ACTION_COPY = {
 function ActionOverlay({ type, phase, onDone }) {
   const copy = ACTION_COPY[type];
   const fillProgress = useSharedValue(0);
-  const checkScale = useSharedValue(0);
 
   // Fills toward ~92% over roughly the same span as the parent's enforced
   // minimum "working" duration — there's no true progress signal from the
@@ -241,17 +241,6 @@ function ActionOverlay({ type, phase, onDone }) {
     }
   }, [phase, fillProgress]);
 
-  // Same overshoot "pop" used elsewhere for a checkmark reveal, delayed
-  // slightly so it reads as a deliberate follow-up to the bar finishing
-  // rather than two competing motions.
-  useEffect(() => {
-    if (phase !== 'success') { checkScale.value = 0; return; }
-    checkScale.value = withDelay(200, withSequence(
-      withTiming(1.12, { duration: 420, easing: Easing.out(Easing.back(1.4)) }),
-      withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) }),
-    ));
-  }, [phase, checkScale]);
-
   // Holds on the success message for a flat 5s, then fires onDone — no
   // visible countdown, just a plain hold before the redirect.
   useEffect(() => {
@@ -261,7 +250,6 @@ function ActionOverlay({ type, phase, onDone }) {
   }, [phase, onDone]);
 
   const fillStyle = useAnimatedStyle(() => ({ width: `${fillProgress.value * 100}%` }));
-  const checkStyle = useAnimatedStyle(() => ({ transform: [{ scale: checkScale.value }] }));
 
   return (
     <AnimatedModal open onClose={() => {}} variant="center">
@@ -276,12 +264,7 @@ function ActionOverlay({ type, phase, onDone }) {
           </>
         ) : (
           <>
-            <Animated.View
-              className="w-16 h-16 rounded-full items-center justify-center mb-5"
-              style={[{ backgroundColor: 'rgba(74,222,128,0.12)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.3)' }, checkStyle]}
-            >
-              <CheckIcon size={28} />
-            </Animated.View>
+            <SuccessBadge style={{ marginBottom: 20 }} />
             <Text className="text-white font-semibold text-base text-center">{copy.success}</Text>
           </>
         )}
