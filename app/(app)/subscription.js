@@ -103,6 +103,7 @@ export default function SubscriptionPage() {
   }
 
   function handleCancelPress() {
+    if (!isOnline) { notifyOffline(); return; }
     Alert.alert(
       'Cancel Subscription?',
       `You'll be taken to ${Platform.OS === 'ios' ? 'the App Store' : 'Play Store'} to cancel — you'll keep access until the end of the period you've already paid for.`,
@@ -323,7 +324,7 @@ export default function SubscriptionPage() {
               <SectionLabel>Manage Subscription</SectionLabel>
               <Card>
                 <Pressable
-                  onPress={openManageSubscription}
+                  onPress={() => (isOnline ? openManageSubscription() : notifyOffline())}
                   className="flex-row items-center justify-between gap-3 px-4 py-[14px]"
                 >
                   <Text className="text-white/70 text-base flex-1" style={{ lineHeight: 20 }}>
