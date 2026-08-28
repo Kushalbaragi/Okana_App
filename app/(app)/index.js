@@ -57,7 +57,7 @@ export default function Dashboard() {
   const { user } = useAuth();
   const { transactions, loading: txLoading, addTransaction, editTransaction, deleteTransaction, refresh: refreshTransactions } = useTransactions();
   const budget = useBudget(user, transactions);
-  const { subscription, loading: subLoading } = useSubscription(user);
+  const { subscription, loading: subLoading, refresh: refreshSubscription } = useSubscription(user);
   const trialInfo = useMemo(() => getSubscriptionDisplayStatus(subscription, today()), [subscription]);
   const transactionListRef = useRef(null);
 
@@ -65,8 +65,18 @@ export default function Dashboard() {
   // update Supabase directly without touching this screen's own useTransactions/
   // useBudget state — refetch both whenever Dashboard regains focus so
   // returning here reflects them instead of showing stale, pre-erase data.
+  // Subscription is refreshed here too — useSubscription only fetches once
+  // on mount, so without this, completing a purchase on the Subscription
+  // screen and navigating back would leave Dashboard's own `subscription`
+  // (and the Add-transaction gate that reads it) stuck on whatever it was
+  // when Dashboard first mounted, still showing "subscription required"
+  // even though the purchase succeeded.
   useFocusEffect(
-    useCallback(() => { refreshTransactions(); budget.refresh(); }, [refreshTransactions, budget.refresh])
+    useCallback(() => {
+      refreshTransactions();
+      budget.refresh();
+      refreshSubscription();
+    }, [refreshTransactions, budget.refresh, refreshSubscription])
   );
 
   const [drawerOpen, setDrawerOpen] = useState(false);

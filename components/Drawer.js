@@ -26,7 +26,7 @@ function Drawer({ open, onClose }) {
 
   const trialInfo = subscription ? getSubscriptionDisplayStatus(subscription, today()) : null;
   const planLabel = trialInfo
-    ? (trialInfo.status === 'subscribed' ? 'Pro' : trialInfo.status === 'trial' ? 'Trial' : null)
+    ? (trialInfo.status === 'subscribed' ? 'Plus' : trialInfo.status === 'trial' ? 'Trial' : null)
     : null;
 
   function openPage(path) {
@@ -66,11 +66,11 @@ function Drawer({ open, onClose }) {
             {planLabel && (
               <View
                 className="px-2 py-0.5 rounded-full"
-                style={planLabel === 'Pro' ? { backgroundColor: 'rgba(74,222,128,0.14)' } : { backgroundColor: 'rgba(255,255,255,0.08)' }}
+                style={planLabel === 'Plus' ? { backgroundColor: 'rgba(74,222,128,0.14)' } : { backgroundColor: 'rgba(255,255,255,0.08)' }}
               >
                 <Text
                   className="text-[10px] font-semibold uppercase tracking-wider"
-                  style={{ color: planLabel === 'Pro' ? 'rgba(74,222,128,0.9)' : 'rgba(255,255,255,0.5)' }}
+                  style={{ color: planLabel === 'Plus' ? 'rgba(74,222,128,0.9)' : 'rgba(255,255,255,0.5)' }}
                 >
                   {planLabel}
                 </Text>

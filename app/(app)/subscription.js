@@ -42,7 +42,7 @@ function Pill({ children, tone = 'green' }) {
 const PLAN_PILL = {
   not_started: { label: 'Free', tone: 'grey' },
   trial: { label: 'Trial', tone: 'green' },
-  subscribed: { label: 'Pro', tone: 'green' },
+  subscribed: { label: 'Active', tone: 'green' },
   expired: { label: 'Free', tone: 'grey' },
 };
 
@@ -55,6 +55,7 @@ export default function SubscriptionPage() {
   const { getOfferings, purchasePackage, restorePurchases } = usePurchases(user?.id);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [cancelSuccess, setCancelSuccess] = useState(false);
+  const [purchaseSuccess, setPurchaseSuccess] = useState(false);
 
   const trialInfo = subscription ? getSubscriptionDisplayStatus(subscription, today()) : { status: 'not_started' };
   const status = trialInfo.status;
@@ -102,12 +103,22 @@ export default function SubscriptionPage() {
     // revenuecat-webhook, not synchronously with the purchase completing on
     // device — poll refresh() briefly instead of a single immediate call so
     // this screen doesn't flash stale "not subscribed" state right after a
-    // real purchase succeeds.
+    // real purchase succeeds. Stops early the moment the webhook's write
+    // actually lands, rather than always waiting out the full 5s.
+    let confirmed = false;
     for (let i = 0; i < 5; i++) {
-      await refresh();
+      const data = await refresh();
+      if (['trial', 'subscribed'].includes(getSubscriptionDisplayStatus(data, today()).status)) {
+        confirmed = true;
+        break;
+      }
       await new Promise(r => setTimeout(r, 1000));
     }
     setPurchasing(false);
+    if (confirmed) {
+      setPurchaseSuccess(true);
+      setTimeout(() => setPurchaseSuccess(false), 4000);
+    }
   }
 
   async function handleRestore() {
@@ -148,6 +159,12 @@ export default function SubscriptionPage() {
           {cancelSuccess && (
             <View className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(74,222,128,0.08)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.25)' }}>
               <Text className="text-base" style={{ color: '#4ade80' }}>You've successfully unsubscribed</Text>
+            </View>
+          )}
+
+          {purchaseSuccess && (
+            <View className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(74,222,128,0.08)', borderWidth: 1, borderColor: 'rgba(74,222,128,0.25)' }}>
+              <Text className="text-base" style={{ color: '#4ade80' }}>You're now on Okana Plus 🎉</Text>
             </View>
           )}
 
