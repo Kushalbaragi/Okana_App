@@ -17,7 +17,7 @@ import { supabase } from '../../lib/supabase';
 import { BackIcon, EditIcon, ChevronRight, CheckIcon, CameraIcon } from '../../components/icons';
 import { ONBOARDING_SEEN_KEY } from '../onboarding';
 import { AnimatedModal } from '../../components/AnimatedModal';
-import { SuccessBadge } from '../../components/SuccessBadge';
+import { ActionOverlay } from '../../components/ActionOverlay';
 
 function Divider() {
   return <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.07)', marginHorizontal: 16 }} />;
@@ -225,76 +225,34 @@ const ACTION_COPY = {
   delete: { working: 'Deleting your account', success: 'Account deleted' },
 };
 
-// One continuous popup covering both the in-progress and success states —
-// replaces the old pattern of a "Erasing…"/"Deleting…" label on the confirm
-// button followed by a separate success modal. `phase` drives which half
-// renders; the parent flips it from 'working' to 'success' once the actual
-// Supabase calls resolve (held to a minimum duration there so the bar always
-// has time to visibly fill, even when the calls finish near-instantly).
 // `subscriptionWarning` (delete only) shows a reminder + deep link to
 // Settings, since deleting the account never cancels an active native
 // subscription — see runDelete's comment for why that's not possible here.
-function ActionOverlay({ type, phase, onDone, subscriptionWarning }) {
+function DeleteAccountOverlay({ type, phase, onDone, subscriptionWarning }) {
   const copy = ACTION_COPY[type];
-  const fillProgress = useSharedValue(0);
-  const holdMs = subscriptionWarning ? SUBSCRIPTION_WARNING_HOLD_MS : SUCCESS_HOLD_MS;
-
-  // Fills toward ~92% over roughly the same span as the parent's enforced
-  // minimum "working" duration — there's no true progress signal from the
-  // underlying deletes, so this reads as "still going" rather than claiming
-  // a precision it doesn't have — then snaps the rest of the way to 100%
-  // the instant it actually succeeds.
-  useEffect(() => {
-    if (phase === 'working') {
-      fillProgress.value = withTiming(0.92, { duration: 3600, easing: Easing.out(Easing.cubic) });
-    } else {
-      fillProgress.value = withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) });
-    }
-  }, [phase, fillProgress]);
-
-  // Holds on the success message, then fires onDone — no visible countdown,
-  // just a plain hold before the redirect.
-  useEffect(() => {
-    if (phase !== 'success') return;
-    const t = setTimeout(() => onDone?.(), holdMs);
-    return () => clearTimeout(t);
-  }, [phase, onDone, holdMs]);
-
-  const fillStyle = useAnimatedStyle(() => ({ width: `${fillProgress.value * 100}%` }));
-
   return (
-    <AnimatedModal open onClose={() => {}} variant="center">
-      <View className="items-center" style={{ maxWidth: 320 }}>
-        {phase === 'working' ? (
-          <>
-            <View style={{ width: 200, height: 8, borderRadius: 4, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 20 }}>
-              <Animated.View style={[{ height: '100%', borderRadius: 4, backgroundColor: '#4ade80' }, fillStyle]} />
-            </View>
-            <Text className="text-white font-semibold text-base text-center">{copy.working}</Text>
-            <Text className="text-white/40 text-base mt-1 text-center">This will just take a moment</Text>
-          </>
-        ) : (
-          <>
-            <SuccessBadge style={{ marginBottom: 20 }} />
-            <Text className="text-white font-semibold text-base text-center">{copy.success}</Text>
-            {subscriptionWarning && (
-              <>
-                <Text className="text-white/45 text-sm text-center mt-3" style={{ lineHeight: 19 }}>
-                  Your {Platform.OS === 'ios' ? 'App Store' : 'Play Store'} subscription is still active — cancel it to stop future charges.
-                </Text>
-                <Pressable
-                  onPress={openManageSubscription}
-                  className="mt-4 px-4 py-[10px] rounded-xl"
-                  style={{ backgroundColor: 'rgba(74,222,128,0.14)' }}
-                >
-                  <Text className="text-sm font-semibold" style={{ color: '#4ade80' }}>Manage Subscription</Text>
-                </Pressable>
-              </>
-            )}
-          </>
-        )}
-      </View>
-    </AnimatedModal>
+    <ActionOverlay
+      phase={phase}
+      workingText={copy.working}
+      successText={copy.success}
+      holdMs={subscriptionWarning ? SUBSCRIPTION_WARNING_HOLD_MS : SUCCESS_HOLD_MS}
+      onDone={onDone}
+    >
+      {subscriptionWarning && (
+        <>
+          <Text className="text-white/45 text-sm text-center mt-3" style={{ lineHeight: 19 }}>
+            Your {Platform.OS === 'ios' ? 'App Store' : 'Play Store'} subscription is still active — cancel it to stop future charges.
+          </Text>
+          <Pressable
+            onPress={openManageSubscription}
+            className="mt-4 px-4 py-[10px] rounded-xl"
+            style={{ backgroundColor: 'rgba(74,222,128,0.14)' }}
+          >
+            <Text className="text-sm font-semibold" style={{ color: '#4ade80' }}>Manage Subscription</Text>
+          </Pressable>
+        </>
+      )}
+    </ActionOverlay>
   );
 }
 
@@ -616,7 +574,7 @@ export default function AccountPage() {
       />
 
       {actionFlow && (
-        <ActionOverlay
+        <DeleteAccountOverlay
           type={actionFlow.type}
           phase={actionFlow.phase}
           onDone={actionFlow.type === 'erase' ? handleEraseDone : handleDeleteDone}
