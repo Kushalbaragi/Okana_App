@@ -110,7 +110,7 @@ export default function OtpScreen() {
   }
 
   async function handleResend() {
-    if (cooldown > 0 || resending) return;
+    if (cooldown > 0 || resending || verifying) return;
     if (!isOnline) { notifyOffline(); return; }
     setResending(true);
     setError('');
@@ -161,7 +161,7 @@ export default function OtpScreen() {
           {error}
         </Text>
 
-        <Pressable onPress={handleResend} disabled={cooldown > 0 || resending} className="mt-3 py-1">
+        <Pressable onPress={handleResend} disabled={cooldown > 0 || resending || verifying} className="mt-3 py-1">
           <Text className="text-white/40 text-base">
             {cooldown > 0 ? `Resend code in ${cooldown}s` : resending ? 'Sending…' : 'Resend code'}
           </Text>
