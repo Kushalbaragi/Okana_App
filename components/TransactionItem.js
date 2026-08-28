@@ -62,7 +62,8 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
 
   const handleDelete = useCallback(() => {
     swipeableRef.current?.close();
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    // Heavy impact — the strongest discrete pulse the API offers.
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     onDelete(tx.id);
   }, [tx.id, onDelete]);
 

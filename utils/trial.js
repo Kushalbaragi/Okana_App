@@ -1,10 +1,10 @@
 import { MONTH_NAMES } from './monthlyRecap'
 import { shiftDate } from './format'
 
-export const TRIAL_DAYS = 30
+const TRIAL_DAYS = 30
 export const PRICE_PER_YEAR = 499
 
-export function getTrialInfo(trialStartStr, todayStr) {
+function getTrialInfo(trialStartStr, todayStr) {
   if (!trialStartStr) {
     return { status: 'not_started', daysLeft: TRIAL_DAYS, chargeDate: null }
   }

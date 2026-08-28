@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withDelay, withTiming, Easing } from 'react-native-reanimated';
 import BarChart from './BarChart';
@@ -221,6 +221,18 @@ function SummaryCard({
   }, [timeRange, selectedMonth, currYear, currMonth, selectedPeriod, earliestYear]);
 
   const lineChartData = useMemo(() => {
+    // Daily-within-month view (chartData here is always the current month —
+    // see the chartData useMemo above) — truncate to today's day so the
+    // line doesn't run flat out to day 31 for days that haven't happened
+    // yet, same idea as the year-view truncation below.
+    if (timeRange === 'month') {
+      const end = new Date().getDate();
+      return {
+        income:  chartData.income.slice(0, end),
+        expense: chartData.expense.slice(0, end),
+        labels:  chartData.labels.slice(0, end),
+      };
+    }
     if (timeRange !== 'year' || year < currYear) return chartData;
     const end = new Date().getMonth() + 1;
     return {
@@ -235,6 +247,21 @@ function SummaryCard({
   // change, so every switch reads as a clean redraw from left to right.
   const animKey   = `${timeRange}-${year}-${chartTab}`;
   const labelStep = timeRange === 'month' ? 4 : (timeRange === '5y' && lifetimeGranularity === 'month' ? 6 : 1);
+
+  // BarChart is memo()-wrapped — inline arrows here would hand it a new
+  // onBarClick/onDeselect identity every render (this card re-renders on
+  // every transaction add/edit/delete) and defeat that memo entirely.
+  // Precomputed per-mode so each stays stable across renders that don't
+  // actually change its inputs, instead of just once per timeRange switch.
+  const onBarClickMonth  = useCallback((i) => onDayChange(i + 1), [onDayChange]);
+  const onBarClickPeriod = useCallback((i) => onPeriodChange(periodsList[i]), [onPeriodChange, periodsList]);
+  const onDeselectMonth  = useCallback(() => onDayChange(null), [onDayChange]);
+  const onBarClick =
+    timeRange === 'month' ? onBarClickMonth :
+    timeRange === 'year' ? onMonthChange :
+    timeRange === '5y' ? onBarClickPeriod :
+    null;
+  const onDeselect = timeRange === 'month' ? onDeselectMonth : null;
 
   return (
     <View className="mx-4 mb-3 p-5">
@@ -273,13 +300,8 @@ function SummaryCard({
             timeRange === '5y' ? selectedPeriodIndex :
             -1
           }
-          onBarClick={
-            timeRange === 'month' ? (i) => onDayChange(i + 1) :
-            timeRange === 'year' ? onMonthChange :
-            timeRange === '5y' ? (i) => onPeriodChange(periodsList[i]) :
-            null
-          }
-          onDeselect={timeRange === 'month' ? () => onDayChange(null) : null}
+          onBarClick={onBarClick}
+          onDeselect={onDeselect}
           disabledAfterIndex={disabledAfterIndex}
           isIncome={isIncome}
           animKey={animKey}

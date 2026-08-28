@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import { toDateStr } from './format';
 
 const HEADERS = ['Date', 'Type', 'Amount', 'Description'];
 
@@ -6,6 +6,10 @@ const HEADERS = ['Date', 'Type', 'Amount', 'Description'];
 // from account start through today rather than most-recent-first, which is
 // how the app itself displays things.
 export function buildTransactionsWorkbook(transactions) {
+  // Required lazily, not at module scope — xlsx is a sizeable, rarely-used
+  // library (only these two Export/Import buttons in Settings touch it), so
+  // its parse cost shouldn't be paid at app startup for every user.
+  const XLSX = require('xlsx');
   const sorted = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
   const rows = sorted.map(tx => [
     tx.date,
@@ -41,21 +45,19 @@ function normalizeType(raw) {
   return null;
 }
 
-function pad2(n) { return String(n).padStart(2, '0'); }
-
 // Accepts either a real Date (from a genuinely date-formatted Excel cell —
 // see cellDates:true below) or plain text someone typed into the column.
 function normalizeDate(raw) {
   if (raw == null || raw === '') return null;
   if (raw instanceof Date) {
     if (isNaN(raw.getTime())) return null;
-    return `${raw.getFullYear()}-${pad2(raw.getMonth() + 1)}-${pad2(raw.getDate())}`;
+    return toDateStr(raw);
   }
   const str = raw.toString().trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
   const d = new Date(str);
   if (isNaN(d.getTime())) return null;
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  return toDateStr(d);
 }
 
 function normalizeAmount(raw) {
@@ -72,6 +74,7 @@ function normalizeAmount(raw) {
 // Returns { parsed, skipped } — invalid rows are skipped rather than
 // aborting the whole import, since one bad row shouldn't block the rest.
 export function parseTransactionsWorkbook(base64) {
+  const XLSX = require('xlsx');
   const wb = XLSX.read(base64, { type: 'base64', cellDates: true });
   const ws = wb.Sheets[wb.SheetNames[0]];
   if (!ws) return { parsed: [], skipped: [] };

@@ -40,6 +40,17 @@ async function markRecapViewedServerSide(userId, monthId) {
   }
 }
 
+// The calendar's "Monthly Summary" CTA is only visible on the day the
+// recap is actually seen, not the whole rest of the month — this stamps
+// that day so the next app-open can check it.
+async function markRecapAvailableToday(userId) {
+  try {
+    await AsyncStorage.setItem(`okana_recap_available_date_${userId}`, today());
+  } catch {
+    // best-effort
+  }
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -49,10 +60,6 @@ export default function Dashboard() {
   const { subscription, loading: subLoading } = useSubscription(user);
   const trialInfo = useMemo(() => getSubscriptionDisplayStatus(subscription, today()), [subscription]);
   const transactionListRef = useRef(null);
-  // Which month (as "YYYY-M") the currently-loaded recap slides are for —
-  // closeRecap needs this to mark the right month "seen", but it's a
-  // separate useCallback from the effect that computes it.
-  const recapMonthIdRef = useRef(null);
 
   // Erase Data / other changes made from Account (a separate stacked screen)
   // update Supabase directly without touching this screen's own useTransactions/
@@ -83,7 +90,6 @@ export default function Dashboard() {
   const [recapSlides, setRecapSlides] = useState([]);
   const [recapMonthName, setRecapMonthName] = useState('');
   const [recapAvailable, setRecapAvailable] = useState(false);
-  const [recapSeen, setRecapSeen] = useState(false);
 
   const [budgetSetupOpen, setBudgetSetupOpen] = useState(false);
   const [budgetSetupPending, setBudgetSetupPending] = useState(false);
@@ -115,22 +121,26 @@ export default function Dashboard() {
       const todayStr = today();
       const { month, year: cy } = currentMonthYear();
       const prev = prevMonthYear(month, cy);
+      // Deliberately 0-indexed (prev.month straight from prevMonthYear, no
+      // +1) — matches the check-monthly-summary Edge Function's month_id
+      // exactly, which is what lets the client's own "viewed" write and the
+      // cron's "notified" write land on the same monthly_summary_status
+      // row. Don't "fix" this to look like the budget-popup's own (1-indexed)
+      // monthId below — they're unrelated keys for unrelated systems.
       const recapMonthId = `${prev.year}-${String(prev.month).padStart(2, '0')}`;
-      recapMonthIdRef.current = recapMonthId;
 
-      // Available for the whole month being reviewed, not just the day it
-      // first became available — the calendar's "Monthly Summary" CTA
-      // should keep working any day this month, not just the trigger day.
+      // The CTA is available only on the day the recap was actually seen —
+      // check whether that stamped date is today, not just whether there's
+      // data to review.
       if (hasAnyRecapData(transactions, prev.month, prev.year)) {
-        const seenVal = await AsyncStorage.getItem(`okana_recap_seen_${user.id}`);
+        const availDate = await AsyncStorage.getItem(`okana_recap_available_date_${user.id}`);
         if (cancelled) return;
         setRecapSlides(getMonthlyRecapSlides(transactions, prev.month, prev.year, {
           amount: budget.lastMonthAmount,
           spent: budget.lastMonthSpent,
         }, budget.hasBudget));
         setRecapMonthName(MONTH_NAMES[prev.month]);
-        setRecapAvailable(true);
-        setRecapSeen(seenVal === recapMonthId);
+        setRecapAvailable(availDate === todayStr);
       } else if (!cancelled) {
         setRecapAvailable(false);
       }
@@ -152,7 +162,6 @@ export default function Dashboard() {
         }, budget.hasBudget));
         setRecapMonthName(MONTH_NAMES[prev.month]);
         setRecapAvailable(true);
-        setRecapSeen(false);
         // A short buffer before presenting this modal — this effect can fire
         // in the same tick as AddModal closing (adding a transaction changes
         // `transactions`, which is this effect's own dependency), and two
@@ -163,6 +172,7 @@ export default function Dashboard() {
         if (cancelled) return;
         setRecapOpen(true);
         setDailyPopupsResolved(true);
+        markRecapAvailableToday(user.id);
         markRecapViewedServerSide(user.id, recapMonthId);
         return;
       }
@@ -188,7 +198,6 @@ export default function Dashboard() {
     if (!hasAnyRecapData(transactions, prev.month, prev.year)) return;
 
     const recapMonthId = `${prev.year}-${String(prev.month).padStart(2, '0')}`;
-    recapMonthIdRef.current = recapMonthId;
     setRecapSlides(getMonthlyRecapSlides(transactions, prev.month, prev.year, {
       amount: budget.lastMonthAmount,
       spent: budget.lastMonthSpent,
@@ -196,6 +205,7 @@ export default function Dashboard() {
     setRecapMonthName(MONTH_NAMES[prev.month]);
     setRecapAvailable(true);
     setRecapOpen(true);
+    markRecapAvailableToday(user.id);
     markRecapViewedServerSide(user.id, recapMonthId);
   }, [params.openRecap, user, txLoading, transactions, budget.lastMonthAmount, budget.lastMonthSpent, budget.hasBudget, router]);
 
@@ -231,16 +241,9 @@ export default function Dashboard() {
     return () => { cancelled = true; clearTimeout(t); };
   }, [budgetSetupPending, dailyPopupsResolved, recapOpen, addModalClosed]);
 
-  const closeRecap = useCallback(async () => {
+  const closeRecap = useCallback(() => {
     setRecapOpen(false);
-    if (!user) return;
-    // Keyed by which month the recap was actually for, not by today's date —
-    // it stays "seen" for the whole month, not just the day it was closed.
-    if (recapMonthIdRef.current) {
-      await AsyncStorage.setItem(`okana_recap_seen_${user.id}`, recapMonthIdRef.current);
-    }
-    setRecapSeen(true);
-  }, [user]);
+  }, []);
 
   // MonthlyRecapModal isn't a native <Modal> (it's a plain overlay View),
   // so unlike the calendar-to-budget handoff below, there's no "two native
@@ -275,9 +278,9 @@ export default function Dashboard() {
   // tabs, adding a transaction, etc.) would defeat that memo every time.
   const recapForCalendar = useMemo(() => (
     recapAvailable
-      ? { available: true, seen: recapSeen, monthName: recapMonthName, onOpen: openRecapFromCalendar }
+      ? { available: true, monthName: recapMonthName, onOpen: openRecapFromCalendar }
       : null
-  ), [recapAvailable, recapSeen, recapMonthName, openRecapFromCalendar]);
+  ), [recapAvailable, recapMonthName, openRecapFromCalendar]);
 
   const closeBudgetSetup = useCallback(async () => {
     setBudgetSetupOpen(false);
@@ -441,9 +444,9 @@ export default function Dashboard() {
           style={{ maxWidth: 360, backgroundColor: 'rgba(20,20,20,0.98)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
         >
           <Text style={{ fontSize: 30 }} className="mb-3">🔒</Text>
-          <Text className="text-white font-semibold text-base mb-2 text-center">Pro subscription required</Text>
+          <Text className="text-white font-semibold text-base mb-2 text-center">Subscription Required</Text>
           <Text className="text-white/45 text-base text-center mb-6" style={{ lineHeight: 22 }}>
-            You can still view everything — subscribe to Okana Plus to keep adding new transactions.
+            Your existing transactions are still here. Subscribe to Okana Plus to keep adding new ones.
           </Text>
           <View className="flex-row w-full" style={{ gap: 12 }}>
             <Pressable onPress={closeProRequired} className="flex-1 py-[11px] rounded-xl items-center" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>

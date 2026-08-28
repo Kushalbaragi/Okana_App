@@ -43,7 +43,7 @@ export function formatDateFull(dateStr) {
   return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`
 }
 
-export const SPEND_SHADES = {
+const SPEND_SHADES = {
   neutral: { bg: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.25)' },
   green:   { bg: 'rgba(34,197,94,0.18)',  color: '#4ade80' },
   red: [

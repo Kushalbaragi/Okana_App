@@ -1,8 +1,9 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import { View, Text, SectionList, Pressable } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withDelay, withTiming, Easing } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withDelay, withTiming } from 'react-native-reanimated';
 import TransactionItem from './TransactionItem';
 import { monthLabel } from '../utils/format';
+import { SETTLE_EASING } from './AmountField';
 
 const ListHeader = (
   <Text
@@ -10,8 +11,6 @@ const ListHeader = (
     Transactions
   </Text>
 );
-
-const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 // Per-row stagger, capped so a long list doesn't take forever to finish
 // revealing — rows past the cap all settle together at the tail instead of
 // queuing further out.

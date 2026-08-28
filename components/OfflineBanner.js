@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { useNetwork } from '../context/NetworkContext';
-
-const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
+import { SETTLE_EASING } from './AmountField';
 
 const COPY = {
   offline: { text: "You're offline", color: 'rgba(255,255,255,0.55)' },

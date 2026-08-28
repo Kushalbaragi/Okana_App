@@ -3,13 +3,13 @@ import { Modal, View, Text, TextInput, Pressable, ScrollView, StyleSheet, useWin
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS } from 'react-native-reanimated';
 import Svg, { Rect, Line } from 'react-native-svg';
 import { today, toTitleCase } from '../utils/format';
 import CalendarPicker from './CalendarPicker';
 import { GlassPressable, PILL_ACTIVE_COLOR } from './Glass';
-import { NumericKeypad } from './NumericKeypad';
-import { AmountRow } from './AmountField';
+import { NumericKeypad, nextAmountValue } from './NumericKeypad';
+import { AmountRow, SETTLE_EASING } from './AmountField';
 
 // How far (px) or how fast (px/s) a downward drag on the handle needs to go
 // before it counts as "dismiss" rather than snapping back.
@@ -19,10 +19,6 @@ const DISMISS_VELOCITY = 800;
 // for the dismiss-drag's finishing slide, without needing to measure the
 // actual window height just for this.
 const OFF_SCREEN_Y = 1200;
-
-// Same ease-out-expo "settle" feel used for reveals throughout the app
-// (welcome flow, account.js, onboarding).
-const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatDisplay(dateStr) {
@@ -84,22 +80,24 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
   // digits should just appear, not play the per-keystroke blur-in.
   const skipDigitAnimRef = useRef(true);
 
-  function handleKeypadPress(key) {
+  // NumericKeypad is memo()-wrapped and re-renders on every keystroke in
+  // this modal (amount AND description both live here) — an inline
+  // onKeyPress would hand it a new function identity every render and
+  // defeat that memo the whole time the keypad is on screen. The ref keeps
+  // the latest `amount` reachable without onKeyPress itself ever changing
+  // identity.
+  const handleKeypadPressRef = useRef();
+  handleKeypadPressRef.current = (key) => {
     Haptics.selectionAsync();
-    skipDigitAnimRef.current = false;
-    setAmount(prev => {
-      if (key === 'backspace') return prev.slice(0, -1);
-      if (key === '.') {
-        if (prev.includes('.')) return prev;
-        return prev === '' ? '0.' : `${prev}.`;
-      }
-      if (prev === '0') return key;
-      const decimals = prev.split('.')[1];
-      if (decimals != null && decimals.length >= 2) return prev; // max 2 decimal places
-      if (prev.replace('.', '').length >= 9) return prev; // sane upper bound
-      return prev + key;
-    });
-  }
+    const next = nextAmountValue(amount, key);
+    const changed = next !== amount;
+    if (changed) {
+      skipDigitAnimRef.current = false;
+      setAmount(next);
+    }
+    return changed;
+  };
+  const handleKeypadPress = useCallback((key) => handleKeypadPressRef.current(key), []);
 
   // RN's built-in Modal animationType only animates the WHOLE modal content
   // as one transform — managed independently here instead so `visible`
@@ -175,6 +173,12 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
   }, [open, editData]);
 
   async function handleSubmit() {
+    // Belt-and-suspenders alongside the button's own `disabled` prop — see
+    // login.js's identical guard for why: React's state update isn't
+    // synchronous, so a fast double-tap could otherwise fire this twice
+    // before `submitting` re-renders the button disabled, inserting the
+    // same transaction twice.
+    if (submitting) return;
     const val = parseFloat(amount);
     if (!val || val <= 0) return;
     const mySession = sessionRef.current;
@@ -199,7 +203,10 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
       setError(result.error || 'Something went wrong. Please try again.');
       return;
     }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    // Heavy impact — the strongest discrete pulse the API offers, for both
+    // add and edit (NotificationFeedbackType's Success/Warning patterns are
+    // more of a semantic "ding" than something you feel firmly).
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     onClose();
   }
 

@@ -58,12 +58,14 @@ function ProgressSegment({ state, paused }) {
 function TitleSlide({ month, year }) {
   return (
     <View className="flex-1 items-center justify-center px-8">
-      <Text className="text-white/40 text-xs font-semibold uppercase tracking-wide text-center mb-2">
-        Take a moment to review
-      </Text>
-      <Text className="text-lg font-semibold text-center" style={{ color: '#4ade80', lineHeight: 26, textTransform: 'uppercase' }}>
-        {MONTH_NAMES[month]} {year} spendings
-      </Text>
+      <View style={{ marginTop: -20 }}>
+        <Text className="text-white/40 text-xs font-semibold uppercase tracking-wide text-center mb-2">
+          Take a moment to review
+        </Text>
+        <Text className="text-lg font-semibold text-center" style={{ color: '#4ade80', lineHeight: 26, textTransform: 'uppercase' }}>
+          {MONTH_NAMES[month]} {year} spendings
+        </Text>
+      </View>
     </View>
   );
 }
@@ -114,13 +116,12 @@ function titleCaseWords(str) {
 // Reuses the home screen's own daily BarChart. Staged reveal: the callout
 // lands above the bar first, then its description line, then the no-spend
 // count — each a beat after the last, not all at once.
-function DailyChartSlide({ month, year, values, labels, highestIndex, highestAmount, highestDay, highestDescription, noSpendDays, paused }) {
+function DailyChartSlide({ month, year, values, labels, highestIndex, highestAmount, highestDay, highestDescription, paused }) {
   const hasHighest = highestIndex >= 0;
   const calloutReady = usePausableReveal(paused, 1000);
   const showCallout  = calloutReady && hasHighest;
   const textReady    = usePausableReveal(paused, 1500);
   const showHighestText = textReady && hasHighest;
-  const showNoSpend  = usePausableReveal(paused, 3500);
 
   // Horizontal position (0-1) of the highest bar within the chart's own
   // width, used to place the callout above it — the callout itself lives
@@ -162,23 +163,14 @@ function DailyChartSlide({ month, year, values, labels, highestIndex, highestAmo
           />
         </View>
 
-        {/* Reserves space for both reveal lines up front so the group
-            doesn't jump vertically as they fade in. */}
-        <View className="mt-8" style={{ minHeight: 90, width: '100%' }}>
+        {/* Reserves space for the reveal line up front so the group
+            doesn't jump vertically as it fades in. */}
+        <View className="mt-8" style={{ minHeight: 44, width: '100%' }}>
           {showHighestText && (
             <FadeIn>
               <Text className="text-white/60 text-sm text-center" style={{ lineHeight: 20 }}>
                 You spent the most on {MONTH_NAMES[month]} {highestDay} — {formatCurrency(highestAmount)} on{' '}
                 <Text style={{ fontStyle: 'italic' }}>"{titleCaseWords(highestDescription)}"</Text>
-              </Text>
-            </FadeIn>
-          )}
-          {showNoSpend && (
-            <FadeIn style={{ marginTop: 12 }}>
-              <Text className="text-white/60 text-sm text-center" style={{ lineHeight: 20 }}>
-                {noSpendDays > 0
-                  ? `You had ${noSpendDays} No-spend day${noSpendDays === 1 ? '' : 's'} this month — Nice.`
-                  : 'You spent something every day this month.'}
               </Text>
             </FadeIn>
           )}
@@ -533,7 +525,7 @@ function noSpendPhrase(count) {
 // Same title position/scale as the other slides — the reused-style calendar
 // grid first, then two staged lines: the plain spend/no-spend tally, then
 // how that compares to last month.
-function CalendarSlide({ month, year, firstDay, days, daysInMonth, spentDays, noSpendDays, prevMonth, prevYear, prevNoSpendDays, paused }) {
+function CalendarSlide({ firstDay, days, daysInMonth, spentDays, noSpendDays, prevMonth, prevYear, prevNoSpendDays, paused }) {
   const showTally = usePausableReveal(paused, 600);
   const showCompare = usePausableReveal(paused, 1800);
   const prevLabel = `${MONTH_NAMES[prevMonth]} ${prevYear}`;
@@ -542,7 +534,7 @@ function CalendarSlide({ month, year, firstDay, days, daysInMonth, spentDays, no
     <View className="flex-1 px-6">
       <View className="items-center absolute" style={{ top: 100, left: 24, right: 24 }}>
         <Text className="text-white/40 text-sm font-semibold uppercase tracking-wide text-center mb-2">
-          {MONTH_NAMES[month]} {year}
+          Last month — {noSpendPhrase(noSpendDays)}
         </Text>
         <Text className="text-white text-xl font-semibold text-center uppercase">
           Calendar
@@ -586,21 +578,23 @@ function CalendarSlide({ month, year, firstDay, days, daysInMonth, spentDays, no
 function ClosingSlide({ onOpenBudgetSetup, hasBudgetThisMonth }) {
   return (
     <View className="flex-1 items-center justify-center px-8">
-      <Text className="text-white/40 text-xs font-semibold text-center mb-2">
-        Before you go Remember
-      </Text>
-      <Text className="text-lg font-semibold text-center mb-3" style={{ color: '#4ade80', lineHeight: 26 }}>
-        Savings is the real Earnings
-      </Text>
-      <Text className="text-white/60 text-sm text-center" style={{ lineHeight: 20, maxWidth: 280, marginBottom: hasBudgetThisMonth ? 0 : 32 }}>
-        Each Rupee you save now — will save you in the Future
-      </Text>
+      <View style={{ marginTop: -20, alignItems: 'center' }}>
+        <Text className="text-white/40 text-xs font-semibold text-center mb-2">
+          Before you go Remember
+        </Text>
+        <Text className="text-lg font-semibold text-center mb-3" style={{ color: '#4ade80', lineHeight: 26 }}>
+          Savings is the real Earnings
+        </Text>
+        <Text className="text-white/60 text-sm text-center" style={{ lineHeight: 20, maxWidth: 280, marginBottom: hasBudgetThisMonth ? 0 : 32 }}>
+          Each Rupee you save now — will save you in the Future
+        </Text>
 
-      {!hasBudgetThisMonth && (
-        <GlassPressable variant="active" radius={16} onPress={onOpenBudgetSetup} className="px-6 py-[14px]">
-          <Text className="text-black text-base font-semibold">Set This Month's Budget</Text>
-        </GlassPressable>
-      )}
+        {!hasBudgetThisMonth && (
+          <GlassPressable variant="active" radius={16} onPress={onOpenBudgetSetup} className="px-6 py-[14px]">
+            <Text className="text-black text-base font-semibold">Set This Month's Budget</Text>
+          </GlassPressable>
+        )}
+      </View>
     </View>
   );
 }

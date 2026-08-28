@@ -1,11 +1,11 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, View, Text, ScrollView, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, runOnJS } from 'react-native-reanimated';
 import { GlassPressable, GlassView } from './Glass';
-import { NumericKeypad } from './NumericKeypad';
+import { NumericKeypad, nextAmountValue } from './NumericKeypad';
 import { AmountRow, SETTLE_EASING } from './AmountField';
 import { TrendArrowIcon, CheckIcon } from './icons';
 import { formatCurrency, currentMonthYear } from '../utils/format';
@@ -65,22 +65,22 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
   });
   const skipDigitAnimRef = useRef(true);
 
-  function handleKeypadPress(key) {
+  // NumericKeypad is memo()-wrapped — see AddModal's identical pattern for
+  // why onKeyPress goes through a ref instead of being handed inline (this
+  // modal re-renders on every keystroke via `amount`, which would otherwise
+  // hand NumericKeypad a fresh onKeyPress each time and defeat its memo).
+  const handleKeypadPressRef = useRef();
+  handleKeypadPressRef.current = (key) => {
     Haptics.selectionAsync();
-    skipDigitAnimRef.current = false;
-    setAmount(prev => {
-      if (key === 'backspace') return prev.slice(0, -1);
-      if (key === '.') {
-        if (prev.includes('.')) return prev;
-        return prev === '' ? '0.' : `${prev}.`;
-      }
-      if (prev === '0') return key;
-      const decimals = prev.split('.')[1];
-      if (decimals != null && decimals.length >= 2) return prev;
-      if (prev.replace('.', '').length >= 9) return prev;
-      return prev + key;
-    });
-  }
+    const next = nextAmountValue(amount, key);
+    const changed = next !== amount;
+    if (changed) {
+      skipDigitAnimRef.current = false;
+      setAmount(next);
+    }
+    return changed;
+  };
+  const handleKeypadPress = useCallback((key) => handleKeypadPressRef.current(key), []);
 
   // Same "keep the native Modal mounted through the close animation" setup
   // as AddModal — see the comment there for why.
@@ -144,6 +144,11 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
   }, [confirmDelta, onClose]);
 
   async function handleSubmit() {
+    // Belt-and-suspenders alongside the button's own `disabled` prop — see
+    // login.js's identical guard for why: React's state update isn't
+    // synchronous, so a fast double-tap could otherwise fire this twice
+    // before `submitting` re-renders the button disabled.
+    if (submitting) return;
     const val = parseFloat(amount);
     if (!val || val <= 0) return;
     const mySession = sessionRef.current;

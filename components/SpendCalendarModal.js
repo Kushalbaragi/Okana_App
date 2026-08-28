@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useState } from 'react';
 import { Modal, View, Text, Pressable, ScrollView, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, Easing, runOnJS } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, runOnJS } from 'react-native-reanimated';
 import {
   formatCurrencyFull,
   formatDateFull,
@@ -15,8 +15,8 @@ import {
 } from '../utils/format';
 import { MONTH_NAMES as MONTHS } from '../utils/monthlyRecap';
 import BudgetStatusBar from './BudgetStatusBar';
+import { SETTLE_EASING } from './AmountField';
 
-const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 // Same drag-to-dismiss thresholds as AddModal, for a consistent feel.
 const DISMISS_DISTANCE = 120;
 const DISMISS_VELOCITY = 800;
@@ -75,6 +75,11 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
     if (open) {
       setVisible(true);
       setSelectedDate(null);
+      // Otherwise browsing to a past/future month, closing, and reopening
+      // later (even a different day) leaves the calendar stuck wherever it
+      // was last left instead of back on the actual current month — this
+      // modal stays mounted across opens/closes, so nothing else resets it.
+      setView(new Date(now.getFullYear(), now.getMonth(), 1));
       dragY.value = 0;
       pageTranslateY.value = withTiming(0, { duration: 950, easing: SETTLE_EASING });
     } else {
@@ -130,15 +135,21 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const todayStr = today();
 
-  const dailyTotals = useMemo(() => getDailyExpenseTotals(transactions), [transactions]);
-  const thresholds = useMemo(() => getIntensityThresholds(dailyTotals), [dailyTotals]);
-  const earliest = useMemo(() => getEarliestDate(transactions), [transactions]);
+  // Gated on `visible` — this component stays mounted (rendering null)
+  // between opens rather than unmounting, so without this guard every
+  // transaction add/edit/delete anywhere in the app would re-run these full
+  // history scans even while the calendar is closed.
+  const dailyTotals = useMemo(() => (visible ? getDailyExpenseTotals(transactions) : {}), [transactions, visible]);
+  const thresholds = useMemo(() => (visible ? getIntensityThresholds(dailyTotals) : { low: 0, high: 0 }), [dailyTotals, visible]);
+  const earliest = useMemo(() => (visible ? getEarliestDate(transactions) : null), [transactions, visible]);
 
   const dayTxs = useMemo(
-    () => transactions
-      .filter(tx => tx.date === selectedDate)
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
-    [transactions, selectedDate],
+    () => (visible && selectedDate
+      ? transactions
+        .filter(tx => tx.date === selectedDate)
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      : []),
+    [transactions, selectedDate, visible],
   );
 
   const cells = [];
@@ -180,9 +191,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                     className="flex-row items-center justify-center mb-4"
                     style={{ gap: 5, alignSelf: 'center' }}
                   >
-                    {!recap.seen && (
-                      <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#a855f7' }} />
-                    )}
+                    <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#a855f7' }} />
                     <Text className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.4)' }}>
                       Monthly Summary ›
                     </Text>
