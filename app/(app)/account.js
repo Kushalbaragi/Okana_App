@@ -851,28 +851,26 @@ export default function AccountPage() {
             </Card>
           </View>
 
-          <Card>
-            <Pressable onPress={handleLogout} className="flex-row items-center justify-between px-4 py-4">
+          <View>
+            <Pressable onPress={handleLogout} className="flex-row items-center justify-between px-4 py-[14px]">
               <Text className="text-red-400 text-base">Log Out</Text>
               <ChevronRight />
             </Pressable>
-            <Divider />
             <Pressable
               onPress={() => (isOnline ? setShowEraseConfirm(true) : notifyOffline())}
-              className="flex-row items-center justify-between px-4 py-4"
+              className="flex-row items-center justify-between px-4 py-[14px]"
             >
               <Text className="text-red-400 text-base">Erase Data</Text>
               <ChevronRight />
             </Pressable>
-            <Divider />
             <Pressable
               onPress={() => (isOnline ? setShowDeleteConfirm(true) : notifyOffline())}
-              className="flex-row items-center justify-between px-4 py-4"
+              className="flex-row items-center justify-between px-4 py-[14px]"
             >
               <Text className="text-red-400 text-base">Delete Account</Text>
               <ChevronRight />
             </Pressable>
-          </Card>
+          </View>
 
           <Text className="text-white/25 text-xs text-center mt-2 mb-8">v{APP_VERSION}</Text>
         </View>
