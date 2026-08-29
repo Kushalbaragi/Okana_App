@@ -23,7 +23,9 @@ const ITEM_STAGGER_MS = 1000;
 const ITEM_DURATION_MS = 650;
 const HOLD_MS = 6000; // dwell time on a popup/reveal page before auto-advancing
 
-const WHY_ITEMS = [
+// Exported — subscription.js reuses this exact content for its pre-conversion
+// pitch, rather than keeping a second copy that could drift out of sync.
+export const WHY_ITEMS = [
   { title: 'Keeping it simple', description: 'No distractions, unnecessary features, or colourful clutter. Just what you need to track your money.' },
   { title: 'Built for consistency', description: 'I removed as much friction as possible, so you can keep tracking without giving up after a week.' },
   { title: 'Make tracking a habit', description: 'Just add your income and expenses every day. Okana takes care of the rest.' },

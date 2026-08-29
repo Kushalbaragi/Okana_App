@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Platform, ActivityIndicator, StyleSheet, Linking } from 'react-native';
+import { View, Text, Pressable, ScrollView, Platform, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
 import { useSubscription } from '../../hooks/useSubscription';
 import { usePurchases, openManageSubscription } from '../../hooks/usePurchases';
-import { formatChargeDate, getSubscriptionDisplayStatus } from '../../utils/trial';
+import { formatChargeDate, getSubscriptionDisplayStatus, PRICE_PER_YEAR } from '../../utils/trial';
 import { today } from '../../utils/format';
-import { BackIcon, ChevronRight } from '../../components/icons';
+import { BackIcon, ChevronRight, CheckIcon } from '../../components/icons';
 import { PaymentProcessing } from '../../components/PaymentProcessing';
+import { WHY_ITEMS } from '../(auth)/welcome';
 
 function Divider() {
   return <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.07)', marginHorizontal: 16 }} />;
@@ -177,11 +178,33 @@ export default function SubscriptionPage() {
                 <Pill tone={pill.tone}>{pill.label}</Pill>
               </View>
 
-              {(status === 'trial' || status === 'subscribed') && trialInfo.cancelAtPeriodEnd && (
+              {needsAction && (
+                <>
+                  <Divider />
+                  <View className="px-4 py-[14px]">
+                    <Text className="text-base" style={{ color: status === 'expired' ? 'rgba(248,113,113,0.85)' : 'rgba(255,255,255,0.4)' }}>
+                      {status === 'expired' ? 'Your plan has expired' : "You're on the Free plan"}
+                    </Text>
+                  </View>
+                </>
+              )}
+              {!needsAction && trialInfo.cancelAtPeriodEnd && (
                 <>
                   <Divider />
                   <View className="px-4 py-[14px]">
                     <Text className="text-white/40 text-base">Access until {formatChargeDate(trialInfo.chargeDate)}</Text>
+                  </View>
+                </>
+              )}
+              {!needsAction && !trialInfo.cancelAtPeriodEnd && (
+                <>
+                  <Divider />
+                  <View className="px-4 py-[14px]">
+                    <Text className="text-white/40 text-base">
+                      {status === 'trial'
+                        ? `Free access until ${formatChargeDate(trialInfo.chargeDate)}`
+                        : `You'll be charged ₹${PRICE_PER_YEAR} on ${formatChargeDate(trialInfo.chargeDate)}`}
+                    </Text>
                   </View>
                 </>
               )}
@@ -197,6 +220,54 @@ export default function SubscriptionPage() {
               )}
             </Card>
           </View>
+
+          {/* Pre-conversion pitch — only while there's still a decision to
+              make (free, expired, or still in the trial). Not shown to an
+              actual paying subscriber; see the thank-you card below instead. */}
+          {(needsAction || status === 'trial') && (
+            <View>
+              <SectionLabel>Why Okana</SectionLabel>
+              <Card>
+                {WHY_ITEMS.map((item, i) => (
+                  <View key={item.title}>
+                    {i > 0 && <Divider />}
+                    <View className="px-4 py-[14px]">
+                      <View className="flex-row items-center" style={{ gap: 8 }}>
+                        <CheckIcon size={16} />
+                        <Text className="text-white text-base font-medium">{item.title}</Text>
+                      </View>
+                      <Text className="text-white/40 text-sm mt-1" style={{ lineHeight: 19, marginLeft: 24 }}>
+                        {item.description}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </Card>
+            </View>
+          )}
+
+          {/* Only for someone actually paying — a genuine subscriber gets no
+              further pitch (that's what Why Okana above is for), just a
+              short, honest thank-you. Deliberately doesn't repeat feature
+              claims that aren't actually exclusive to Plus. */}
+          {status === 'subscribed' && (
+            <View>
+              <Card>
+                <View className="px-4 py-4">
+                  <Text className="text-white text-base font-semibold mb-2">Thanks for being an Okana Plus member 💚</Text>
+                  <Text className="text-white/50 text-sm" style={{ lineHeight: 19 }}>
+                    Unlimited transaction tracking, no interruptions.
+                  </Text>
+                  <Text className="text-white/50 text-sm mt-1" style={{ lineHeight: 19 }}>
+                    You're supporting an independently built app, made by one person.
+                  </Text>
+                  <Text className="text-white/50 text-sm mt-1" style={{ lineHeight: 19 }}>
+                    Helps keep Okana improving and ad-free.
+                  </Text>
+                </View>
+              </Card>
+            </View>
+          )}
 
           {needsAction && Platform.OS !== 'web' && (
             <View style={{ gap: 8 }}>
@@ -268,35 +339,6 @@ export default function SubscriptionPage() {
               </Card>
             </View>
           )}
-
-          <View>
-            <SectionLabel>Legal</SectionLabel>
-            <Card>
-              <Pressable
-                onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Privacy-Policy-3c58f887c3c9806180c1ed51844d872e?source=copy_link')}
-                className="flex-row items-center justify-between px-4 py-[14px]"
-              >
-                <Text className="text-white text-base">Privacy Policy</Text>
-                <ChevronRight />
-              </Pressable>
-              <Divider />
-              <Pressable
-                onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Terms-and-Condition-3c58f887c3c9806d86eae7473775949c?source=copy_link')}
-                className="flex-row items-center justify-between px-4 py-[14px]"
-              >
-                <Text className="text-white text-base">Terms & Conditions</Text>
-                <ChevronRight />
-              </Pressable>
-              <Divider />
-              <Pressable
-                onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Refund-Cancellation-Policy-3c58f887c3c980c48cb6ded1520897ed?source=copy_link')}
-                className="flex-row items-center justify-between px-4 py-[14px]"
-              >
-                <Text className="text-white text-base">Refunds & Cancellations</Text>
-                <ChevronRight />
-              </Pressable>
-            </Card>
-          </View>
         </View>
         )}
       </ScrollView>
