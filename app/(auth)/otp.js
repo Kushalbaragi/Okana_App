@@ -80,7 +80,7 @@ export default function OtpScreen() {
       if (isNewUser) {
         router.replace({ pathname: '/(auth)/name' });
       } else {
-        router.replace('/(app)');
+        router.replace('/(auth)/welcome-back');
       }
     } catch (err) {
       // "Incorrect or expired code" is deliberately generic for a genuine

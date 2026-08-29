@@ -10,8 +10,6 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
-import { PRICE_PER_YEAR, WHY_ITEMS } from '../../utils/trial';
-import { CheckIcon } from '../../components/icons';
 import { SuccessBadge } from '../../components/SuccessBadge';
 
 // Shared "settle" ease-out-expo feel used for every reveal in this flow —
@@ -19,17 +17,8 @@ import { SuccessBadge } from '../../components/SuccessBadge';
 // a pile of one-off effects.
 const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 
-const ITEM_STAGGER_MS = 1000;
 const ITEM_DURATION_MS = 650;
 const HOLD_MS = 6000; // dwell time on a popup/reveal page before auto-advancing
-
-const TRIAL_ITEMS = [
-  { title: '30 days, completely free', description: "You'll have full access to Okana Plus for 30 days, starting today." },
-  { title: 'No payment info needed', description: "We won't ask for any payment details to start your trial." },
-  { title: `Then ₹${PRICE_PER_YEAR}/year`, description: "If you'd like to keep Okana Plus after your trial, you can subscribe anytime." },
-  { title: 'No surprise charges', description: "Nothing is billed automatically — you choose if and when to subscribe." },
-  { title: 'Secure and Trusted', description: 'Your data stays private and is never shared.' },
-];
 
 function FadeIn({ delay, duration = ITEM_DURATION_MS, distance = 14, style, children }) {
   const progress = useSharedValue(0);
@@ -45,49 +34,6 @@ function FadeIn({ delay, duration = ITEM_DURATION_MS, distance = 14, style, chil
   }));
 
   return <Animated.View style={[style, aStyle]}>{children}</Animated.View>;
-}
-
-function ChecklistItem({ title, description, delay }) {
-  return (
-    <FadeIn delay={delay} style={{ marginBottom: 32 }}>
-      <View className="flex-row items-center" style={{ gap: 10 }}>
-        <CheckIcon size={20} />
-        <Text style={{ color: '#ffffff', fontSize: 17, fontWeight: '600' }}>{title}</Text>
-      </View>
-      <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 15.5, lineHeight: 22, marginTop: 5, marginLeft: 30 }}>
-        {description}
-      </Text>
-    </FadeIn>
-  );
-}
-
-// Shared layout for "Why Okana" and "Take your time" — same one-by-one
-// reveal, same trailing CTA, differing only in copy and button color.
-function ChecklistPage({ title, items, buttonLabel, buttonColor, buttonTextColor, onContinue }) {
-  const buttonDelay = 400 + items.length * ITEM_STAGGER_MS;
-
-  return (
-    <View style={{ flex: 1, paddingHorizontal: 28, paddingTop: 100, paddingBottom: 40 }}>
-      <FadeIn delay={0} duration={500} distance={10} style={{ marginBottom: 38 }}>
-        <Text style={{ color: '#ffffff', fontSize: 30, fontWeight: '700', textAlign: 'center' }}>{title}</Text>
-      </FadeIn>
-
-      <View style={{ flex: 1 }}>
-        {items.map((item, i) => (
-          <ChecklistItem key={item.title} title={item.title} description={item.description} delay={400 + i * ITEM_STAGGER_MS} />
-        ))}
-      </View>
-
-      <FadeIn delay={buttonDelay} duration={500}>
-        <Pressable
-          onPress={onContinue}
-          style={{ width: '100%', paddingVertical: 16, borderRadius: 16, alignItems: 'center', backgroundColor: buttonColor }}
-        >
-          <Text style={{ color: buttonTextColor, fontSize: 16, fontWeight: '600' }}>{buttonLabel}</Text>
-        </Pressable>
-      </FadeIn>
-    </View>
-  );
 }
 
 function WelcomeGreetingPage({ name, onDone }) {
@@ -141,12 +87,12 @@ function TrialStartedPage({ onDone }) {
       <SuccessBadge style={{ marginBottom: 22 }} playSound />
       <FadeIn delay={500} distance={20}>
         <Text style={{ color: '#ffffff', fontSize: 19, fontWeight: '700', textAlign: 'center' }}>
-          Your free trial has started
+          You're all set
         </Text>
       </FadeIn>
       <FadeIn delay={900} distance={20}>
         <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 15, marginTop: 8, textAlign: 'center' }}>
-          You have full access to Okana Plus for the next 30 days
+          You have full access to Okana Plus for the next 30 days — no card required
         </Text>
       </FadeIn>
     </View>
@@ -193,13 +139,13 @@ function IntroQuotePage({ onFinish }) {
         resizeMode="contain"
       />
       <Animated.Text style={[{ color: '#ffffff', fontSize: 17, fontWeight: '600', textAlign: 'center' }, line1Style]}>
-        Remember - Every rupee matters
+        Small amounts add up
       </Animated.Text>
-      <Animated.Text style={[{ color: 'rgba(255,255,255,0.55)', fontSize: 15, textAlign: 'center', marginTop: 10 }, line2Style]}>
-        You will not live once, You live everyday
+      <Animated.Text style={[{ color: '#4ade80', fontSize: 15, fontWeight: '700', textAlign: 'center', marginTop: 10, letterSpacing: 0.5 }, line2Style]}>
+        TRACK EVERY RUPEE YOU SPEND
       </Animated.Text>
-      <Animated.Text style={[{ color: '#4ade80', fontSize: 15, fontWeight: '600', textAlign: 'center', marginTop: 10 }, line3Style]}>
-        Spend your rupee wisely
+      <Animated.Text style={[{ color: 'rgba(255,255,255,0.45)', fontSize: 14, textAlign: 'center', marginTop: 8 }, line3Style]}>
+        Track it, Analyse it
       </Animated.Text>
 
       <Animated.View style={[{ width: '100%', marginTop: 36 }, buttonStyle]}>
@@ -214,7 +160,7 @@ function IntroQuotePage({ onFinish }) {
   );
 }
 
-const STEPS = ['welcome', 'why', 'trial-info', 'trial-started', 'intro'];
+const STEPS = ['welcome', 'trial-started', 'intro'];
 
 // Set only once the carousel is actually finished (not on mount, unlike
 // onboarding.js's pre-signup ONBOARDING_SEEN_KEY) — app/index.js redirects
@@ -247,28 +193,6 @@ export default function WelcomeScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#000000' }}>
       {step === 'welcome' && <WelcomeGreetingPage name={firstName} onDone={next} />}
-
-      {step === 'why' && (
-        <ChecklistPage
-          title="Why Okana"
-          items={WHY_ITEMS}
-          buttonLabel="Next"
-          buttonColor="#ffffff"
-          buttonTextColor="#000000"
-          onContinue={next}
-        />
-      )}
-
-      {step === 'trial-info' && (
-        <ChecklistPage
-          title="Take your time"
-          items={TRIAL_ITEMS}
-          buttonLabel="Continue"
-          buttonColor="#22c55e"
-          buttonTextColor="#ffffff"
-          onContinue={next}
-        />
-      )}
 
       {step === 'trial-started' && <TrialStartedPage onDone={next} />}
 

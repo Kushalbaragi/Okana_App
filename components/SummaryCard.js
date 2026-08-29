@@ -15,7 +15,7 @@ import {
   currentMonthYear,
 } from '../utils/format';
 
-const LIFETIME_YEARLY_THRESHOLD = 5; // years of history before "All Time" switches from monthly to yearly bars
+const LIFETIME_YEARLY_THRESHOLD = 2; // years of history before "All Time" switches from monthly to yearly bars
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 
 const MONTH_LABELS_SHORT = ['J','F','M','A','M','J','J','A','S','O','N','D'];
@@ -128,10 +128,11 @@ function SummaryCard({
 }) {
   const { month: currMonth, year: currYear } = currentMonthYear();
 
-  // Earliest transaction year decides "All Time" granularity — under 5
-  // years of history, yearly bars would only show a handful of candles, so
-  // months are shown instead; getLifetimeYearly takes over once there's
-  // enough history for yearly bars to actually be useful.
+  // Earliest transaction year decides "All Time" granularity — under
+  // LIFETIME_YEARLY_THRESHOLD years of history, yearly bars would only show
+  // a handful of candles, so months are shown instead; getLifetimeYearly
+  // takes over once there's enough history for yearly bars to actually be
+  // useful.
   const earliestYear = useMemo(() => {
     if (!transactions.length) return currYear;
     return transactions.reduce((min, tx) => {

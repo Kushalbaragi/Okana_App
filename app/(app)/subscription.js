@@ -7,7 +7,7 @@ import { useSubscription } from '../../hooks/useSubscription';
 import { usePurchases, openManageSubscription } from '../../hooks/usePurchases';
 import { formatChargeDate, getSubscriptionDisplayStatus, PRICE_PER_YEAR, WHY_ITEMS } from '../../utils/trial';
 import { today } from '../../utils/format';
-import { BackIcon, ChevronRight, CheckIcon } from '../../components/icons';
+import { BackIcon, CheckIcon } from '../../components/icons';
 import { PaymentProcessing } from '../../components/PaymentProcessing';
 
 function Divider() {
@@ -29,6 +29,11 @@ function Card({ children }) {
   );
 }
 
+// Matches the "Identifier" column for the Okana Pro entitlement in the
+// RevenueCat dashboard (Product catalog -> Entitlements) — not a slug, the
+// literal display name is the identifier for this project.
+const ENTITLEMENT_ID = 'Okana Pro';
+
 export default function SubscriptionPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -40,7 +45,11 @@ export default function SubscriptionPage() {
 
   const trialInfo = subscription ? getSubscriptionDisplayStatus(subscription, today()) : { status: 'not_started' };
   const status = trialInfo.status;
-  const canManage = status === 'trial' || status === 'subscribed';
+  // 'trial' here is always the app-granted trial (no store intro-offer is
+  // configured), which has no real store subscription behind it — nothing
+  // for the App/Play Store's manage-subscription screen to show. Only an
+  // actual purchase gives the user something to manage.
+  const canManage = status === 'subscribed';
   const needsAction = status === 'not_started' || status === 'expired';
 
   const [pkg, setPkg] = useState(null);
@@ -48,6 +57,10 @@ export default function SubscriptionPage() {
   const [offeringError, setOfferingError] = useState(null);
   const [purchasing, setPurchasing] = useState(false);
   const [purchaseError, setPurchaseError] = useState(null);
+  // Distinct from purchaseError — this is for the "payment went through,
+  // our own DB just hasn't caught up yet" case, which isn't a failure and
+  // shouldn't read as one.
+  const [purchaseNotice, setPurchaseNotice] = useState(null);
   const [restoring, setRestoring] = useState(false);
 
   useEffect(() => {
@@ -71,10 +84,26 @@ export default function SubscriptionPage() {
     // on "unavailable" until they leave and revisit this screen.
   }, [needsAction, getOfferings, loading, isOnline]);
 
+  // Best-effort sync of our own `subscriptions` table after RevenueCat has
+  // already confirmed the purchase client-side — other screens (Settings,
+  // the Dashboard's Pro gate) read from Supabase, not RevenueCat directly,
+  // so this is what actually unlocks the rest of the app. Runs in the
+  // background and never surfaces an error — the purchase already
+  // succeeded by the time this is called, so there's nothing for the user
+  // to react to even if the webhook is slow.
+  async function syncSubscriptionInBackground() {
+    for (let i = 0; i < 15; i++) {
+      const data = await refresh();
+      if (['trial', 'subscribed'].includes(getSubscriptionDisplayStatus(data, today()).status)) return;
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  }
+
   async function handleSubscribe() {
     if (!pkg) return;
     if (!isOnline) { notifyOffline(); return; }
     setPurchaseError(null);
+    setPurchaseNotice(null);
     // Opens the full-screen processing takeover immediately, before the
     // purchase sheet even resolves — see PaymentProcessing.
     setProcessingVisible(true);
@@ -86,16 +115,24 @@ export default function SubscriptionPage() {
       if (!result.cancelled) setPurchaseError(result.error || 'Purchase failed. Please try again.');
       return;
     }
-    // The subscriptions table write happens asynchronously via
-    // revenuecat-webhook, not synchronously with the purchase completing on
-    // device — poll refresh() briefly instead of a single immediate call so
-    // this screen doesn't flash stale "not subscribed" state right after a
-    // real purchase succeeds. Stops early the moment the webhook's write
-    // actually lands, rather than always waiting out the full 5s.
-    // A normal (non-error) webhook delivery can still take several seconds
-    // to land — 15 one-second attempts gives real-world RevenueCat webhook
-    // latency room to land within before this gives up on it, rather than
-    // second-guessing a purchase that actually just succeeded.
+
+    // RevenueCat's own customerInfo already reflects the purchase the
+    // instant the store confirms it — independent of revenuecat-webhook
+    // actually landing in our own `subscriptions` table. Trusting this
+    // first means the success screen never has to sit waiting on our own
+    // DB write for a purchase that, per RevenueCat, has already gone
+    // through.
+    if (result.customerInfo?.entitlements?.active?.[ENTITLEMENT_ID]) {
+      setPurchasing(false);
+      setPurchaseSucceeded(true);
+      syncSubscriptionInBackground();
+      return;
+    }
+
+    // Fallback — RevenueCat didn't hand back an active entitlement for some
+    // reason (rare). Poll our own table like before, but treat a timeout as
+    // "still confirming," not a failure: the store already charged the
+    // user at this point, so an error banner here would be misleading.
     let confirmed = false;
     for (let i = 0; i < 15; i++) {
       const data = await refresh();
@@ -109,10 +146,8 @@ export default function SubscriptionPage() {
     if (confirmed) {
       setPurchaseSucceeded(true);
     } else {
-      // Webhook never confirmed within the poll window — don't strand the
-      // user on a success animation that was never earned.
       setProcessingVisible(false);
-      setPurchaseError('Purchase is taking longer than expected to confirm. Pull to refresh in a moment.');
+      setPurchaseNotice('Payment received — just finishing up. This can take a minute; pull to refresh if it doesn\'t update.');
     }
   }
 
@@ -154,15 +189,21 @@ export default function SubscriptionPage() {
                 <Text className="text-white text-base" style={{ textAlign: 'center' }}>
                   You are{' '}
                   <Text
-                    style={{
-                      color: '#4ade80',
-                      fontWeight: '600',
-                      backgroundColor: 'rgba(74,222,128,0.14)',
-                      paddingHorizontal: 6,
-                      borderRadius: 6,
-                    }}
+                    style={
+                      status === 'expired'
+                        ? {
+                            color: '#f87171',
+                            fontWeight: '600',
+                            backgroundColor: 'rgba(248,113,113,0.14)',
+                            paddingHorizontal: 10,
+                            paddingVertical: 3,
+                            borderRadius: 999,
+                            overflow: 'hidden',
+                          }
+                        : { color: '#4ade80', fontWeight: '600' }
+                    }
                   >
-                    {needsAction ? 'Free' : 'Plus'}
+                    {status === 'expired' ? 'Expired' : needsAction ? 'Free' : 'Plus'}
                   </Text>
                   {' '}user of Okana
                 </Text>
@@ -174,26 +215,6 @@ export default function SubscriptionPage() {
                   <View className="px-4 py-[14px]">
                     <Text className="text-base" style={{ color: 'rgba(248,113,113,0.85)' }}>
                       Your plan has expired
-                    </Text>
-                  </View>
-                </>
-              )}
-              {!needsAction && trialInfo.cancelAtPeriodEnd && (
-                <>
-                  <Divider />
-                  <View className="px-4 py-[14px]">
-                    <Text className="text-white/40 text-base">Access until {formatChargeDate(trialInfo.chargeDate)}</Text>
-                  </View>
-                </>
-              )}
-              {!needsAction && !trialInfo.cancelAtPeriodEnd && (
-                <>
-                  <Divider />
-                  <View className="px-4 py-[14px]">
-                    <Text className="text-white/40 text-base">
-                      {status === 'trial'
-                        ? `Free access until ${formatChargeDate(trialInfo.chargeDate)}`
-                        : `You'll be charged ₹${PRICE_PER_YEAR} on ${formatChargeDate(trialInfo.chargeDate)}`}
                     </Text>
                   </View>
                 </>
@@ -216,15 +237,15 @@ export default function SubscriptionPage() {
               actual paying subscriber; see the thank-you card below instead. */}
           {(needsAction || status === 'trial') && (
             <View>
-              <Text className="text-white/30 text-[11px] font-medium uppercase tracking-widest px-1 pt-2 mb-2">Features</Text>
+              <SectionLabel>Features</SectionLabel>
               <Card>
                 {WHY_ITEMS.map((item, i) => (
                   <View key={item.title}>
                     {i > 0 && <Divider />}
                     <View className="px-4 py-[14px]">
                       <View className="flex-row items-center" style={{ gap: 8 }}>
-                        <CheckIcon size={16} />
-                        <Text className="text-white text-base font-medium">{item.title}</Text>
+                        <CheckIcon size={20} />
+                        <Text className="text-white font-medium" style={{ fontSize: 16 }}>{item.title}</Text>
                       </View>
                       <Text className="text-white/40 text-sm mt-1" style={{ lineHeight: 19, marginLeft: 24 }}>
                         {item.description}
@@ -240,6 +261,12 @@ export default function SubscriptionPage() {
                       {!!purchaseError && (
                         <View className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderWidth: 1, borderColor: 'rgba(248,113,113,0.2)' }}>
                           <Text className="text-red-300 text-base">{purchaseError}</Text>
+                        </View>
+                      )}
+
+                      {!!purchaseNotice && (
+                        <View className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
+                          <Text className="text-white/60 text-base">{purchaseNotice}</Text>
                         </View>
                       )}
 
@@ -273,6 +300,14 @@ export default function SubscriptionPage() {
                 )}
               </Card>
 
+              {status === 'trial' && (
+                <Text className="text-white/40 text-sm text-center" style={{ marginTop: 14 }}>
+                  {trialInfo.cancelAtPeriodEnd
+                    ? `Access until ${formatChargeDate(trialInfo.chargeDate)}`
+                    : `Free access until ${formatChargeDate(trialInfo.chargeDate)}`}
+                </Text>
+              )}
+
               {needsAction && Platform.OS !== 'web' && (
                 <Pressable onPress={handleRestore} disabled={restoring} className="w-full py-2 items-center mt-1">
                   <Text className="text-white/40 text-base">{restoring ? 'Restoring…' : 'Restore purchases'}</Text>
@@ -304,35 +339,44 @@ export default function SubscriptionPage() {
               <Card>
                 <View className="px-4 py-4">
                   <Text className="text-white text-base font-semibold mb-2">Thanks for being an Okana Plus member 💚</Text>
-                  <Text className="text-white/50 text-sm" style={{ lineHeight: 19 }}>
-                    Unlimited transaction tracking, no interruptions.
-                  </Text>
-                  <Text className="text-white/50 text-sm mt-1" style={{ lineHeight: 19 }}>
-                    You're supporting an independently built app, made by one person.
-                  </Text>
-                  <Text className="text-white/50 text-sm mt-1" style={{ lineHeight: 19 }}>
-                    Helps keep Okana improving and ad-free.
-                  </Text>
+                  <View className="flex-row items-start" style={{ gap: 8 }}>
+                    <View style={{ marginTop: 2 }}><CheckIcon size={14} /></View>
+                    <Text className="text-white/50 text-sm flex-1" style={{ lineHeight: 19 }}>
+                      Unlimited transaction tracking, no interruptions.
+                    </Text>
+                  </View>
+                  <View className="flex-row items-start mt-1" style={{ gap: 8 }}>
+                    <View style={{ marginTop: 2 }}><CheckIcon size={14} /></View>
+                    <Text className="text-white/50 text-sm flex-1" style={{ lineHeight: 19 }}>
+                      You're supporting an independently built app, made by one person.
+                    </Text>
+                  </View>
+                  <View className="flex-row items-start mt-1" style={{ gap: 8 }}>
+                    <View style={{ marginTop: 2 }}><CheckIcon size={14} /></View>
+                    <Text className="text-white/50 text-sm flex-1" style={{ lineHeight: 19 }}>
+                      Helps keep Okana improving and ad-free.
+                    </Text>
+                  </View>
+
                 </View>
               </Card>
+
+              <Text className="text-white/40 text-sm text-center" style={{ marginTop: 40, marginBottom: 4 }}>
+                {trialInfo.cancelAtPeriodEnd
+                  ? `Access until ${formatChargeDate(trialInfo.chargeDate)}`
+                  : `You'll be charged ₹${PRICE_PER_YEAR} on ${formatChargeDate(trialInfo.chargeDate)}`}
+              </Text>
             </View>
           )}
 
           {canManage && Platform.OS !== 'web' && (
-            <View>
-              <SectionLabel>Manage Subscription</SectionLabel>
-              <Card>
-                <Pressable
-                  onPress={() => (isOnline ? openManageSubscription() : notifyOffline())}
-                  className="flex-row items-center justify-between gap-3 px-4 py-[14px]"
-                >
-                  <Text className="text-white/70 text-base flex-1" style={{ lineHeight: 20 }}>
-                    Change plan, cancel, or update payment in {Platform.OS === 'ios' ? 'the App Store' : 'Play Store'}
-                  </Text>
-                  <ChevronRight />
-                </Pressable>
-              </Card>
-            </View>
+            <Pressable
+              onPress={() => (isOnline ? openManageSubscription() : notifyOffline())}
+              className="w-full py-[15px] rounded-2xl items-center"
+              style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+            >
+              <Text className="text-white text-base font-semibold">Manage Subscription</Text>
+            </Pressable>
           )}
         </View>
         )}

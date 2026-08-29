@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, Image } from 'react-native';
+import { View, Text, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,27 +7,20 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
-  withDelay,
   withSequence,
+  withDelay,
   Easing,
 } from 'react-native-reanimated';
 
 export const ONBOARDING_SEEN_KEY = 'okana_onboarding_seen';
 
-// Same ease-out-expo "settle" feel used for digit/amount reveals elsewhere
-// in the app (SummaryCard's AnimatedAmount) — reused here so the button
-// reveal on the final page reads as part of the same motion language.
-const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
-
-// Each of the first two pages runs fade-in -> hold -> fade-out, totalling
-// exactly 4s before advancing — matches the requested "4 sec before showing
-// next page" pacing.
+// Each of the two pages runs fade-in -> hold -> fade-out, totalling exactly
+// 4s before advancing — matches the requested "4 sec before showing next
+// page" pacing.
 const FADE_IN_MS = 550;
 const HOLD_MS = 2900;
 const FADE_OUT_MS = 550;
 const PAGE_DURATION_MS = FADE_IN_MS + HOLD_MS + FADE_OUT_MS;
-
-const BUTTON_DURATION_MS = 480;
 
 function CoinPage({ active }) {
   const opacity = useSharedValue(0);
@@ -76,44 +69,6 @@ function QuotePage({ active }) {
   );
 }
 
-function WelcomePage({ active, onContinue }) {
-  const titleProgress = useSharedValue(0);
-  const buttonProgress = useSharedValue(0);
-
-  useEffect(() => {
-    if (!active) return;
-    titleProgress.value = withTiming(1, { duration: 550, easing: Easing.out(Easing.cubic) });
-    buttonProgress.value = withDelay(250, withTiming(1, { duration: BUTTON_DURATION_MS, easing: SETTLE_EASING }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
-
-  const titleStyle = useAnimatedStyle(() => ({
-    opacity: titleProgress.value,
-    transform: [{ translateY: (1 - titleProgress.value) * 12 }],
-  }));
-  const buttonStyle = useAnimatedStyle(() => ({
-    opacity: buttonProgress.value,
-    transform: [{ translateY: (1 - buttonProgress.value) * 16 }],
-  }));
-
-  return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
-      <Animated.Text style={[{ color: '#ffffff', fontSize: 22, fontWeight: '700', marginBottom: 28 }, titleStyle]}>
-        Welcome to Okana
-      </Animated.Text>
-
-      <Animated.View style={[{ width: 300 }, buttonStyle]}>
-        <Pressable
-          onPress={onContinue}
-          style={{ width: '100%', paddingVertical: 15, borderRadius: 16, alignItems: 'center', backgroundColor: '#ffffff' }}
-        >
-          <Text style={{ color: '#000000', fontSize: 16, fontWeight: '600' }}>Get Started</Text>
-        </Pressable>
-      </Animated.View>
-    </View>
-  );
-}
-
 export default function OnboardingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -127,23 +82,21 @@ export default function OnboardingScreen() {
   }, []);
 
   useEffect(() => {
-    // Pages 1 and 2 auto-advance after their fade-in/hold/fade-out cycle;
-    // the final page waits for the user to tap Create Account or Login.
-    if (page >= 2) return;
-    const t = setTimeout(() => setPage(p => p + 1), PAGE_DURATION_MS);
+    // Both pages auto-advance after their fade-in/hold/fade-out cycle; the
+    // second one hands off straight to login instead of a third "tap to
+    // continue" page.
+    const t = setTimeout(() => {
+      if (page === 0) setPage(1);
+      else router.push('/(auth)/login');
+    }, PAGE_DURATION_MS);
     return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#000000' }}>
       {page === 0 && <CoinPage active={page === 0} />}
       {page === 1 && <QuotePage active={page === 1} />}
-      {page === 2 && (
-        <WelcomePage
-          active={page === 2}
-          onContinue={() => router.push('/(auth)/login')}
-        />
-      )}
 
       <Text
         style={{

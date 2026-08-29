@@ -169,9 +169,9 @@ export function getLifetimeYearly(transactions) {
 }
 
 // Monthly data from first transaction month to now — used for "All Time"
-// when the user's history spans fewer than 5 years, since yearly bars would
-// be too coarse to be useful that early on. getLifetimeYearly takes over
-// once there are 5+ years of history.
+// while the user's history is still short, since yearly bars would be too
+// coarse to be useful that early on. getLifetimeYearly takes over once
+// there's enough history (see SummaryCard's LIFETIME_YEARLY_THRESHOLD).
 export function getLifetimeMonthly(transactions) {
   const now = new Date()
   const currYear = now.getFullYear()

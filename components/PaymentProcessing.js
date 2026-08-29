@@ -20,7 +20,7 @@ const SUCCESS_HOLD_MS = 3000;
 // How far above true screen-center the coin sits while it's still grouped
 // with the two labels below it — animated back to 0 once those labels are
 // gone, so the coin visibly settles into the center rather than jump-cutting.
-const COIN_CENTER_OFFSET = -56;
+const COIN_CENTER_OFFSET = -16;
 
 function FadeIn({ delay, duration = 450, distance = 8, style, children }) {
   const progress = useSharedValue(0);
@@ -104,7 +104,7 @@ export function PaymentProcessing({ succeeded, successMessage = 'Payment is succ
       {!showSuccess && (
         <Animated.Image
           source={require('../assets/coin.png')}
-          style={[{ width: 64, height: 64, marginBottom: showLabels ? 14 : 0 }, coinStyle]}
+          style={[{ width: 52, height: 52, marginBottom: showLabels ? 14 : 0 }, coinStyle]}
           resizeMode="contain"
         />
       )}

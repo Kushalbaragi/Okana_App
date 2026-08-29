@@ -70,6 +70,16 @@ function Card({ children }) {
   );
 }
 
+function Pill({ label, tone = 'green' }) {
+  const color = tone === 'red' ? '#f87171' : '#4ade80';
+  const bg = tone === 'red' ? 'rgba(248,113,113,0.14)' : 'rgba(74,222,128,0.14)';
+  return (
+    <View style={{ backgroundColor: bg, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999 }}>
+      <Text style={{ color, fontSize: 12, fontWeight: '600' }}>{label}</Text>
+    </View>
+  );
+}
+
 function Row({ label, value, onPress, right }) {
   const content = (
     <View className="flex-row items-center justify-between px-4 py-[14px]">
@@ -349,11 +359,17 @@ export default function AccountPage() {
 
   const trialInfo = subscription ? getSubscriptionDisplayStatus(subscription, today()) : { status: 'not_started' };
   const status = trialInfo.status;
-  const isEnding = trialInfo.cancelAtPeriodEnd && (status === 'trial' || status === 'subscribed');
+  const hasActivePlus = status === 'trial' || status === 'subscribed';
+  const isEnding = trialInfo.cancelAtPeriodEnd && hasActivePlus;
   // 'trial' is a billing-mechanics detail, not something shown to the user —
   // Plus covers it the same as a fully paid subscription.
-  const planLabel = isEnding ? 'Ending' : (status === 'subscribed' || status === 'trial') ? 'Plus' : 'Free';
-  const hasActivePlus = status === 'trial' || status === 'subscribed';
+  const planLabel = status === 'expired' ? 'Expired' : isEnding ? 'Ending' : hasActivePlus ? 'Plus' : 'Free';
+  // Only an actual purchase leaves a real store subscription to warn
+  // about — the app-granted trial has none, so warning a trial user to
+  // "cancel in the App/Play Store" would point them at a subscription that
+  // doesn't exist.
+  const hasRealSubscription = status === 'subscribed';
+  const planTone = status === 'expired' ? 'red' : 'green';
 
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(profile?.name || '');
@@ -803,7 +819,16 @@ export default function AccountPage() {
           <View>
             <SectionLabel>Subscription</SectionLabel>
             <Card>
-              <Row label="Current Plan" value={planLabel} onPress={() => router.push('/(app)/subscription')} />
+              <Row
+                label="Current Plan"
+                onPress={() => router.push('/(app)/subscription')}
+                right={
+                  <View className="flex-row items-center" style={{ gap: 8 }}>
+                    <Pill label={planLabel} tone={planTone} />
+                    <ChevronRight />
+                  </View>
+                }
+              />
             </Card>
           </View>
 
@@ -966,7 +991,7 @@ export default function AccountPage() {
         open={showDeleteConfirm}
         title="Delete Account"
         message={
-          hasActivePlus
+          hasRealSubscription
             ? `Your account and all data will be permanently deleted. This cannot be undone. Deleting your account does not cancel your ${Platform.OS === 'ios' ? 'App Store' : 'Play Store'} subscription — cancel it separately in ${Platform.OS === 'ios' ? 'Settings' : 'Play Store'} or you'll keep being charged with no account to use it.`
             : 'Your account and all data will be permanently deleted. This cannot be undone.'
         }
@@ -981,7 +1006,7 @@ export default function AccountPage() {
           type={actionFlow.type}
           phase={actionFlow.phase}
           onDone={actionFlow.type === 'erase' ? handleEraseDone : handleDeleteDone}
-          subscriptionWarning={actionFlow.type === 'delete' && hasActivePlus}
+          subscriptionWarning={actionFlow.type === 'delete' && hasRealSubscription}
         />
       )}
 
