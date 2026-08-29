@@ -12,6 +12,7 @@ import Animated, {
 import { useAuth } from '../../context/AuthContext';
 import { PRICE_PER_YEAR } from '../../utils/trial';
 import { CheckIcon } from '../../components/icons';
+import { SuccessBadge } from '../../components/SuccessBadge';
 
 // Shared "settle" ease-out-expo feel used for every reveal in this flow —
 // keeps the whole sequence reading as one calm motion language rather than
@@ -31,11 +32,11 @@ const WHY_ITEMS = [
 ];
 
 const TRIAL_ITEMS = [
-  { title: '30 days, completely free', description: "You'll have 30 days to see if Okana works for you." },
-  { title: `Then ₹${PRICE_PER_YEAR}/year`, description: "You'll only be charged after your 30-day free trial ends." },
-  { title: 'No charge today', description: "We'll collect your payment details now, but you won't be charged during your trial." },
-  { title: 'Cancel anytime', description: "If Okana isn't for you, cancel before your trial ends and you won't be charged." },
-  { title: 'Secure and Trusted', description: 'Your payment information is encrypted and secured. We never share your details.' },
+  { title: '30 days, completely free', description: "You'll have full access to Okana Plus for 30 days, starting today." },
+  { title: 'No payment info needed', description: "We won't ask for any payment details to start your trial." },
+  { title: `Then ₹${PRICE_PER_YEAR}/year`, description: "If you'd like to keep Okana Plus after your trial, you can subscribe anytime." },
+  { title: 'No surprise charges', description: "Nothing is billed automatically — you choose if and when to subscribe." },
+  { title: 'Secure and Trusted', description: 'Your data stays private and is never shared.' },
 ];
 
 function FadeIn({ delay, duration = ITEM_DURATION_MS, distance = 14, style, children }) {
@@ -131,6 +132,35 @@ function WelcomeGreetingPage({ name, onDone }) {
   );
 }
 
+// Confirms the trial that grant_free_trial_on_signup already started
+// server-side the instant the account was created — nothing happens here on
+// press, this is purely informational. Gets the success ding (see
+// SuccessBadge's playSound) since it's the one moment that replaced the old
+// "account created" celebration removed earlier.
+function TrialStartedPage({ onDone }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, HOLD_MS);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
+      <SuccessBadge style={{ marginBottom: 22 }} playSound />
+      <FadeIn delay={500} distance={20}>
+        <Text style={{ color: '#ffffff', fontSize: 19, fontWeight: '700', textAlign: 'center' }}>
+          Your free trial has started
+        </Text>
+      </FadeIn>
+      <FadeIn delay={900} distance={20}>
+        <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 15, marginTop: 8, textAlign: 'center' }}>
+          You have full access to Okana Plus for the next 30 days
+        </Text>
+      </FadeIn>
+    </View>
+  );
+}
+
 // Simple one-by-one reveal, same as the rest of the flow — coin, then each
 // quote line, then the CTA. No hold/fade-out drama on the coin itself.
 const INTRO_STAGGER_MS = 900;
@@ -192,7 +222,7 @@ function IntroQuotePage({ onFinish }) {
   );
 }
 
-const STEPS = ['welcome', 'why', 'trial-info', 'intro'];
+const STEPS = ['welcome', 'why', 'trial-info', 'trial-started', 'intro'];
 
 // Set only once the carousel is actually finished (not on mount, unlike
 // onboarding.js's pre-signup ONBOARDING_SEEN_KEY) — app/index.js redirects
@@ -247,6 +277,8 @@ export default function WelcomeScreen() {
           onContinue={next}
         />
       )}
+
+      {step === 'trial-started' && <TrialStartedPage onDone={next} />}
 
       {step === 'intro' && <IntroQuotePage onFinish={finish} />}
     </View>
