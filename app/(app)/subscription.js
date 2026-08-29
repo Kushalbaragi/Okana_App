@@ -155,9 +155,9 @@ export default function SubscriptionPage() {
                   You are{' '}
                   <Text
                     style={{
-                      color: needsAction ? 'rgba(255,255,255,0.5)' : '#4ade80',
+                      color: '#4ade80',
                       fontWeight: '600',
-                      backgroundColor: needsAction ? 'rgba(255,255,255,0.08)' : 'rgba(74,222,128,0.14)',
+                      backgroundColor: 'rgba(74,222,128,0.14)',
                       paddingHorizontal: 6,
                       borderRadius: 6,
                     }}
@@ -168,12 +168,12 @@ export default function SubscriptionPage() {
                 </Text>
               </View>
 
-              {needsAction && (
+              {status === 'expired' && (
                 <>
                   <Divider />
                   <View className="px-4 py-[14px]">
-                    <Text className="text-base" style={{ color: status === 'expired' ? 'rgba(248,113,113,0.85)' : 'rgba(255,255,255,0.4)' }}>
-                      {status === 'expired' ? 'Your plan has expired' : "You're on the Free plan"}
+                    <Text className="text-base" style={{ color: 'rgba(248,113,113,0.85)' }}>
+                      Your plan has expired
                     </Text>
                   </View>
                 </>
