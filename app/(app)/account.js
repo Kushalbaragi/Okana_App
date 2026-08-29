@@ -15,7 +15,7 @@ import { useNetwork } from '../../context/NetworkContext';
 import { isConnectivityError } from '../../utils/errors';
 import { useSubscription } from '../../hooks/useSubscription';
 import { useTransactions } from '../../hooks/useTransactions';
-import { usePurchases, openManageSubscription } from '../../hooks/usePurchases';
+import { openManageSubscription } from '../../hooks/usePurchases';
 import { getSubscriptionDisplayStatus } from '../../utils/trial';
 import { today } from '../../utils/format';
 import { supabase } from '../../lib/supabase';
@@ -81,16 +81,6 @@ function Row({ label, value, onPress, right }) {
     </View>
   );
   return onPress ? <Pressable onPress={onPress}>{content}</Pressable> : content;
-}
-
-function Pill({ children, tone = 'green' }) {
-  const bg = tone === 'green' ? 'rgba(74,222,128,0.14)' : 'rgba(255,255,255,0.08)';
-  const color = tone === 'green' ? '#4ade80' : 'rgba(255,255,255,0.5)';
-  return (
-    <View className="px-2.5 py-1 rounded-full" style={{ backgroundColor: bg }}>
-      <Text className="text-[11px] font-semibold uppercase tracking-wide" style={{ color }}>{children}</Text>
-    </View>
-  );
 }
 
 function InfoModal({ open, title, onClose, children }) {
@@ -354,25 +344,19 @@ export default function AccountPage() {
   const router = useRouter();
   const { user, profile, logout } = useAuth();
   const { isOnline, isOnlineRef, notifyOffline } = useNetwork();
-  const { subscription, refresh: refreshSubscription } = useSubscription(user);
-  const { restorePurchases } = usePurchases(user?.id);
+  const { subscription } = useSubscription(user);
   const { transactions, importTransactions } = useTransactions();
 
   const trialInfo = subscription ? getSubscriptionDisplayStatus(subscription, today()) : { status: 'not_started' };
   const status = trialInfo.status;
   const isEnding = trialInfo.cancelAtPeriodEnd && (status === 'trial' || status === 'subscribed');
   const planLabel = isEnding ? 'Ending' : status === 'subscribed' ? 'Plus' : status === 'trial' ? 'Trial' : 'Free';
-  const planTone = (status === 'trial' || status === 'subscribed') && !isEnding ? 'green' : 'grey';
-  const canManage = status === 'trial' || status === 'subscribed';
   const hasActivePlus = status === 'trial' || status === 'subscribed';
 
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(profile?.name || '');
   const [savingName, setSavingName] = useState(false);
   const [avatarPhase, setAvatarPhase] = useState('idle'); // 'idle' | 'uploading' | 'success'
-
-  const [restoring, setRestoring] = useState(false);
-  const [restoreError, setRestoreError] = useState('');
 
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showEraseConfirm, setShowEraseConfirm] = useState(false);
@@ -627,21 +611,6 @@ export default function AccountPage() {
     router.replace('/(auth)/login');
   }
 
-  // Same restore-and-refresh pattern as subscription.js's own handleRestore
-  // — kept here too (rather than only linking to that page) since it's a
-  // simple, self-contained action, unlike the full purchase flow (offering
-  // fetch, purchase, confirm-poll, success animation) that stays exclusive
-  // to that page to avoid duplicating that more error-prone logic twice.
-  async function handleRestore() {
-    if (!isOnline) { notifyOffline(); return; }
-    setRestoring(true);
-    setRestoreError('');
-    const result = await restorePurchases();
-    if (result.success) await refreshSubscription();
-    else setRestoreError(result.error || 'Could not restore purchases.');
-    setRestoring(false);
-  }
-
   function closeFeedbackModal() {
     setModal(null);
     setFeedbackText('');
@@ -832,35 +801,8 @@ export default function AccountPage() {
           <View>
             <SectionLabel>Subscription</SectionLabel>
             <Card>
-              <Row label="Current Plan" right={<Pill tone={planTone}>{planLabel}</Pill>} />
-              {canManage && (
-                <>
-                  <Divider />
-                  <Row
-                    label="Manage Subscription"
-                    onPress={() => (isOnline ? openManageSubscription() : notifyOffline())}
-                  />
-                </>
-              )}
+              <Row label="Current Plan" value={planLabel} onPress={() => router.push('/(app)/subscription')} />
             </Card>
-
-            {!canManage && (
-              <View style={{ marginTop: 10 }}>
-                <Pressable
-                  onPress={() => router.push('/(app)/subscription')}
-                  className="w-full py-[13px] rounded-2xl items-center"
-                  style={{ backgroundColor: 'rgba(74,222,128,0.25)' }}
-                >
-                  <Text className="text-base font-semibold" style={{ color: '#4ade80' }}>Subscribe to Okana Plus</Text>
-                </Pressable>
-                <Pressable onPress={handleRestore} disabled={restoring} className="w-full py-2 items-center mt-1">
-                  <Text className="text-white/40 text-base">{restoring ? 'Restoring…' : 'Restore purchases'}</Text>
-                </Pressable>
-                {!!restoreError && (
-                  <Text className="text-red-400 text-sm text-center px-1">{restoreError}</Text>
-                )}
-              </View>
-            )}
           </View>
 
           <View>
