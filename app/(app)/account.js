@@ -837,9 +837,9 @@ export default function AccountPage() {
               <Divider />
               <Row label="Refunds & Cancellations" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Refund-Cancellation-Policy-3c58f887c3c980c48cb6ded1520897ed?source=copy_link')} />
               <Divider />
-              <Row label="Support" onPress={() => setModal('feedback')} />
-              <Divider />
               <Row label="Developer" onPress={() => setModal('developer')} />
+              <Divider />
+              <Row label="Support" onPress={() => setModal('feedback')} />
             </Card>
             {!!exportError && (
               <Text className="text-red-400 text-sm mt-2 px-1">{exportError}</Text>
