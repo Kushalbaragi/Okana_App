@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Platform, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, Platform, ActivityIndicator, StyleSheet, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
@@ -278,6 +278,35 @@ export default function SubscriptionPage() {
               </Card>
             </View>
           )}
+
+          <View>
+            <SectionLabel>Legal</SectionLabel>
+            <Card>
+              <Pressable
+                onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Privacy-Policy-3c58f887c3c9806180c1ed51844d872e?source=copy_link')}
+                className="flex-row items-center justify-between px-4 py-[14px]"
+              >
+                <Text className="text-white text-base">Privacy Policy</Text>
+                <ChevronRight />
+              </Pressable>
+              <Divider />
+              <Pressable
+                onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Terms-and-Condition-3c58f887c3c9806d86eae7473775949c?source=copy_link')}
+                className="flex-row items-center justify-between px-4 py-[14px]"
+              >
+                <Text className="text-white text-base">Terms & Conditions</Text>
+                <ChevronRight />
+              </Pressable>
+              <Divider />
+              <Pressable
+                onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Refund-Cancellation-Policy-3c58f887c3c980c48cb6ded1520897ed?source=copy_link')}
+                className="flex-row items-center justify-between px-4 py-[14px]"
+              >
+                <Text className="text-white text-base">Refunds & Cancellations</Text>
+                <ChevronRight />
+              </Pressable>
+            </Card>
+          </View>
         </View>
         )}
       </ScrollView>
