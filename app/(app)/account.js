@@ -28,15 +28,6 @@ const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const APP_VERSION = '1.0.0';
 
-function MailIcon() {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 16 16" fill="none">
-      <Rect x="1" y="3" width="14" height="10" rx="2" stroke="rgba(255,255,255,0.5)" strokeWidth="1.2" />
-      <Path d="M1 5l7 5 7-5" stroke="rgba(255,255,255,0.5)" strokeWidth="1.2" strokeLinecap="round" />
-    </Svg>
-  );
-}
-
 function InstagramIcon() {
   return (
     <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
@@ -770,7 +761,6 @@ export default function AccountPage() {
 
         <View className="px-4" style={{ gap: 12 }}>
           <View>
-            <SectionLabel>Account</SectionLabel>
             <Card>
               <View className="px-4 py-4">
                 <Text className="text-white/40 text-xs font-medium mb-1">Name</Text>
@@ -816,9 +806,7 @@ export default function AccountPage() {
               <Row label="Current Plan" right={<Pill tone={planTone}>{planLabel}</Pill>} />
               <Divider />
               <Row
-                label={canManage
-                  ? `Change plan, cancel, or update payment in ${Platform.OS === 'ios' ? 'the App Store' : 'Play Store'}`
-                  : 'Subscribe to Okana Plus'}
+                label={canManage ? 'Manage Subscription' : 'Subscribe to Okana Plus'}
                 onPress={canManage
                   ? () => (isOnline ? openManageSubscription() : notifyOffline())
                   : () => router.push('/(app)/subscription')}
@@ -849,24 +837,15 @@ export default function AccountPage() {
           </View>
 
           <View>
-            <SectionLabel>Legal</SectionLabel>
+            <SectionLabel>Legal & Support</SectionLabel>
             <Card>
               <Row label="Privacy Policy" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Privacy-Policy-3c58f887c3c9806180c1ed51844d872e?source=copy_link')} />
               <Divider />
               <Row label="Terms & Conditions" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Terms-and-Condition-3c58f887c3c9806d86eae7473775949c?source=copy_link')} />
               <Divider />
               <Row label="Refund & Cancellation Policy" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Refund-Cancellation-Policy-3c58f887c3c980c48cb6ded1520897ed?source=copy_link')} />
-            </Card>
-          </View>
-
-          <View>
-            <SectionLabel>Support</SectionLabel>
-            <Card>
-              <Row label="Contact" onPress={() => setModal('contact')} />
               <Divider />
-              <Row label="Feedback" onPress={() => setModal('feedback')} />
-              <Divider />
-              <Row label="Rate Us" value="Coming soon" />
+              <Row label="Support" onPress={() => setModal('feedback')} />
             </Card>
           </View>
 
@@ -879,48 +858,32 @@ export default function AccountPage() {
             </Card>
           </View>
 
-          <View>
-            <SectionLabel>Account Actions</SectionLabel>
-            <Card>
-              <Pressable onPress={handleLogout} className="flex-row items-center justify-between px-4 py-4">
-                <Text className="text-red-400 text-base">Log Out</Text>
-                <ChevronRight />
-              </Pressable>
-              <Divider />
-              <Pressable
-                onPress={() => (isOnline ? setShowEraseConfirm(true) : notifyOffline())}
-                className="flex-row items-center justify-between px-4 py-4"
-              >
-                <Text className="text-red-400 text-base">Erase Data</Text>
-                <ChevronRight />
-              </Pressable>
-              <Divider />
-              <Pressable
-                onPress={() => (isOnline ? setShowDeleteConfirm(true) : notifyOffline())}
-                className="flex-row items-center justify-between px-4 py-4"
-              >
-                <Text className="text-red-400 text-base">Delete Account</Text>
-                <ChevronRight />
-              </Pressable>
-            </Card>
-          </View>
+          <Card>
+            <Pressable onPress={handleLogout} className="flex-row items-center justify-between px-4 py-4">
+              <Text className="text-red-400 text-base">Log Out</Text>
+              <ChevronRight />
+            </Pressable>
+            <Divider />
+            <Pressable
+              onPress={() => (isOnline ? setShowEraseConfirm(true) : notifyOffline())}
+              className="flex-row items-center justify-between px-4 py-4"
+            >
+              <Text className="text-red-400 text-base">Erase Data</Text>
+              <ChevronRight />
+            </Pressable>
+            <Divider />
+            <Pressable
+              onPress={() => (isOnline ? setShowDeleteConfirm(true) : notifyOffline())}
+              className="flex-row items-center justify-between px-4 py-4"
+            >
+              <Text className="text-red-400 text-base">Delete Account</Text>
+              <ChevronRight />
+            </Pressable>
+          </Card>
 
           <View className="mb-8" />
         </View>
       </ScrollView>
-
-      <InfoModal open={modal === 'contact'} title="Contact" onClose={() => setModal(null)}>
-        <Text className="text-white/45 text-base mb-3">Have a question or need help? Reach out directly.</Text>
-        <Pressable
-          onPress={() => Linking.openURL('mailto:kushalbaragi@gmail.com')}
-          className="flex-row items-center py-3 px-4 rounded-xl"
-          style={{ gap: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
-        >
-          <MailIcon />
-          <Text className="text-white/60 text-base">kushalbaragi@gmail.com</Text>
-        </Pressable>
-        <Text className="text-white/20 mt-3" style={{ fontSize: 12 }}>We typically respond within 1–2 business days.</Text>
-      </InfoModal>
 
       <InfoModal open={modal === 'feedback'} title={feedbackSent ? '✓ Feedback sent!' : 'Send Feedback'} onClose={closeFeedbackModal}>
         {!feedbackSent && (
