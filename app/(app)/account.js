@@ -815,7 +815,7 @@ export default function AccountPage() {
           </View>
 
           <View>
-            <SectionLabel>Data</SectionLabel>
+            <SectionLabel>More</SectionLabel>
             <Card>
               <Row
                 label="Export Data"
@@ -830,15 +830,7 @@ export default function AccountPage() {
                 onPress={pickImportFile}
                 right={<Text className="text-white/35 text-xs">XLSX</Text>}
               />
-            </Card>
-            {!!exportError && (
-              <Text className="text-red-400 text-sm mt-2 px-1">{exportError}</Text>
-            )}
-          </View>
-
-          <View>
-            <SectionLabel>Legal & Support</SectionLabel>
-            <Card>
+              <Divider />
               <Row label="Privacy Policy" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Privacy-Policy-3c58f887c3c9806180c1ed51844d872e?source=copy_link')} />
               <Divider />
               <Row label="Terms & Conditions" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Terms-and-Condition-3c58f887c3c9806d86eae7473775949c?source=copy_link')} />
@@ -849,6 +841,9 @@ export default function AccountPage() {
               <Divider />
               <Row label="Developer" onPress={() => setModal('developer')} />
             </Card>
+            {!!exportError && (
+              <Text className="text-red-400 text-sm mt-2 px-1">{exportError}</Text>
+            )}
           </View>
 
           <View>
