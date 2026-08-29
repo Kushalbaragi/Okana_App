@@ -843,7 +843,7 @@ export default function AccountPage() {
               <Divider />
               <Row label="Terms & Conditions" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Terms-and-Condition-3c58f887c3c9806d86eae7473775949c?source=copy_link')} />
               <Divider />
-              <Row label="Refund & Cancellation Policy" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Refund-Cancellation-Policy-3c58f887c3c980c48cb6ded1520897ed?source=copy_link')} />
+              <Row label="Refunds & Cancellations" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Refund-Cancellation-Policy-3c58f887c3c980c48cb6ded1520897ed?source=copy_link')} />
               <Divider />
               <Row label="Support" onPress={() => setModal('feedback')} />
               <Divider />
