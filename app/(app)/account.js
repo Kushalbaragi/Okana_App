@@ -847,18 +847,18 @@ export default function AccountPage() {
           </View>
 
           <View>
-            <Pressable onPress={handleLogout} className="px-4 py-[14px]">
+            <Pressable onPress={handleLogout} className="self-start px-4 py-[14px]">
               <Text className="text-red-400 text-base">Log Out</Text>
             </Pressable>
             <Pressable
               onPress={() => (isOnline ? setShowEraseConfirm(true) : notifyOffline())}
-              className="px-4 py-[14px]"
+              className="self-start px-4 py-[14px]"
             >
               <Text className="text-red-400 text-base">Erase Data</Text>
             </Pressable>
             <Pressable
               onPress={() => (isOnline ? setShowDeleteConfirm(true) : notifyOffline())}
-              className="px-4 py-[14px]"
+              className="self-start px-4 py-[14px]"
             >
               <Text className="text-red-400 text-base">Delete Account</Text>
             </Pressable>
