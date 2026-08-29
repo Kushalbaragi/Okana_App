@@ -846,15 +846,8 @@ export default function AccountPage() {
               <Row label="Refund & Cancellation Policy" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Refund-Cancellation-Policy-3c58f887c3c980c48cb6ded1520897ed?source=copy_link')} />
               <Divider />
               <Row label="Support" onPress={() => setModal('feedback')} />
-            </Card>
-          </View>
-
-          <View>
-            <SectionLabel>About</SectionLabel>
-            <Card>
-              <Row label="Developer" onPress={() => setModal('developer')} />
               <Divider />
-              <Row label="App Version" value={APP_VERSION} />
+              <Row label="Developer" onPress={() => setModal('developer')} />
             </Card>
           </View>
 
@@ -881,20 +874,20 @@ export default function AccountPage() {
             </Pressable>
           </Card>
 
-          <View className="mb-8" />
+          <Text className="text-white/25 text-xs text-center mt-2 mb-8">v{APP_VERSION}</Text>
         </View>
       </ScrollView>
 
-      <InfoModal open={modal === 'feedback'} title={feedbackSent ? '✓ Feedback sent!' : 'Send Feedback'} onClose={closeFeedbackModal}>
+      <InfoModal open={modal === 'feedback'} title={feedbackSent ? '✓ Message sent!' : 'Support'} onClose={closeFeedbackModal}>
         {!feedbackSent && (
           <>
             <Text className="text-white/40 text-base mb-4" style={{ lineHeight: 22 }}>
-              Tell us what you love, what's broken, or what you'd like to see next.
+              Need help, found a bug, or have a question? Let us know and we'll get back to you.
             </Text>
             <TextInput
               value={feedbackText}
               onChangeText={setFeedbackText}
-              placeholder="Your feedback…"
+              placeholder="How can we help?"
               placeholderTextColor="#4d4d4d"
               multiline
               numberOfLines={4}
@@ -911,6 +904,7 @@ export default function AccountPage() {
             >
               <Text className="text-black text-base font-semibold">{feedbackSending ? 'Sending…' : 'Send'}</Text>
             </Pressable>
+            <Text className="text-white/20 mt-3 text-center" style={{ fontSize: 12 }}>We typically respond within 1–2 business days.</Text>
           </>
         )}
       </InfoModal>
