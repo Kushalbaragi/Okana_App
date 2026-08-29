@@ -151,9 +151,21 @@ export default function SubscriptionPage() {
           <View>
             <SectionLabel>Current Plan</SectionLabel>
             <Card>
-              <View className="px-4 py-[14px]">
-                <Text className="text-white text-base">
-                  You are <Text style={{ color: needsAction ? 'rgba(255,255,255,0.5)' : '#4ade80', fontWeight: '600' }}>{needsAction ? 'Free' : 'Plus'}</Text> user of Okana
+              <View className="px-4 py-[18px] items-center">
+                <Text className="text-white text-base" style={{ textAlign: 'center' }}>
+                  You are{' '}
+                  <Text
+                    style={{
+                      color: needsAction ? 'rgba(255,255,255,0.5)' : '#4ade80',
+                      fontWeight: '600',
+                      backgroundColor: needsAction ? 'rgba(255,255,255,0.08)' : 'rgba(74,222,128,0.14)',
+                      paddingHorizontal: 6,
+                      borderRadius: 6,
+                    }}
+                  >
+                    {needsAction ? 'Free' : 'Plus'}
+                  </Text>
+                  {' '}user of Okana
                 </Text>
               </View>
 
