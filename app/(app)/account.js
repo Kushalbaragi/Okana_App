@@ -350,7 +350,9 @@ export default function AccountPage() {
   const trialInfo = subscription ? getSubscriptionDisplayStatus(subscription, today()) : { status: 'not_started' };
   const status = trialInfo.status;
   const isEnding = trialInfo.cancelAtPeriodEnd && (status === 'trial' || status === 'subscribed');
-  const planLabel = isEnding ? 'Ending' : status === 'subscribed' ? 'Plus' : status === 'trial' ? 'Trial' : 'Free';
+  // 'trial' is a billing-mechanics detail, not something shown to the user —
+  // Plus covers it the same as a fully paid subscription.
+  const planLabel = isEnding ? 'Ending' : (status === 'subscribed' || status === 'trial') ? 'Plus' : 'Free';
   const hasActivePlus = status === 'trial' || status === 'subscribed';
 
   const [editingName, setEditingName] = useState(false);

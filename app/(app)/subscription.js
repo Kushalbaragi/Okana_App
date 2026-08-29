@@ -40,9 +40,11 @@ function Pill({ children, tone = 'green' }) {
   );
 }
 
+// 'trial' is a billing-mechanics detail, not something shown to the user —
+// Active covers it the same as a fully paid subscription.
 const PLAN_PILL = {
   not_started: { label: 'Free', tone: 'grey' },
-  trial: { label: 'Trial', tone: 'green' },
+  trial: { label: 'Active', tone: 'green' },
   subscribed: { label: 'Active', tone: 'green' },
   expired: { label: 'Free', tone: 'grey' },
 };
@@ -175,19 +177,7 @@ export default function SubscriptionPage() {
                 <Pill tone={pill.tone}>{pill.label}</Pill>
               </View>
 
-              {status === 'trial' && (
-                <>
-                  <Divider />
-                  <View className="px-4 py-[14px]">
-                    <Text className="text-white/40 text-base">
-                      {trialInfo.cancelAtPeriodEnd
-                        ? `Plus access ends ${formatChargeDate(trialInfo.chargeDate)} — you won't be charged`
-                        : `Your free trial converts to a paid plan on ${formatChargeDate(trialInfo.chargeDate)}`}
-                    </Text>
-                  </View>
-                </>
-              )}
-              {status === 'subscribed' && trialInfo.cancelAtPeriodEnd && (
+              {(status === 'trial' || status === 'subscribed') && trialInfo.cancelAtPeriodEnd && (
                 <>
                   <Divider />
                   <View className="px-4 py-[14px]">
