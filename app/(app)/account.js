@@ -15,7 +15,7 @@ import { useNetwork } from '../../context/NetworkContext';
 import { isConnectivityError } from '../../utils/errors';
 import { useSubscription } from '../../hooks/useSubscription';
 import { useTransactions } from '../../hooks/useTransactions';
-import { openManageSubscription } from '../../hooks/usePurchases';
+import { usePurchases, openManageSubscription } from '../../hooks/usePurchases';
 import { getSubscriptionDisplayStatus } from '../../utils/trial';
 import { today } from '../../utils/format';
 import { supabase } from '../../lib/supabase';
@@ -354,7 +354,8 @@ export default function AccountPage() {
   const router = useRouter();
   const { user, profile, logout } = useAuth();
   const { isOnline, isOnlineRef, notifyOffline } = useNetwork();
-  const { subscription } = useSubscription(user);
+  const { subscription, refresh: refreshSubscription } = useSubscription(user);
+  const { restorePurchases } = usePurchases(user?.id);
   const { transactions, importTransactions } = useTransactions();
 
   const trialInfo = subscription ? getSubscriptionDisplayStatus(subscription, today()) : { status: 'not_started' };
@@ -369,6 +370,9 @@ export default function AccountPage() {
   const [nameInput, setNameInput] = useState(profile?.name || '');
   const [savingName, setSavingName] = useState(false);
   const [avatarPhase, setAvatarPhase] = useState('idle'); // 'idle' | 'uploading' | 'success'
+
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState('');
 
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showEraseConfirm, setShowEraseConfirm] = useState(false);
@@ -623,6 +627,21 @@ export default function AccountPage() {
     router.replace('/(auth)/login');
   }
 
+  // Same restore-and-refresh pattern as subscription.js's own handleRestore
+  // — kept here too (rather than only linking to that page) since it's a
+  // simple, self-contained action, unlike the full purchase flow (offering
+  // fetch, purchase, confirm-poll, success animation) that stays exclusive
+  // to that page to avoid duplicating that more error-prone logic twice.
+  async function handleRestore() {
+    if (!isOnline) { notifyOffline(); return; }
+    setRestoring(true);
+    setRestoreError('');
+    const result = await restorePurchases();
+    if (result.success) await refreshSubscription();
+    else setRestoreError(result.error || 'Could not restore purchases.');
+    setRestoring(false);
+  }
+
   function closeFeedbackModal() {
     setModal(null);
     setFeedbackText('');
@@ -814,14 +833,34 @@ export default function AccountPage() {
             <SectionLabel>Subscription</SectionLabel>
             <Card>
               <Row label="Current Plan" right={<Pill tone={planTone}>{planLabel}</Pill>} />
-              <Divider />
-              <Row
-                label={canManage ? 'Manage Subscription' : 'Subscribe to Okana Plus'}
-                onPress={canManage
-                  ? () => (isOnline ? openManageSubscription() : notifyOffline())
-                  : () => router.push('/(app)/subscription')}
-              />
+              {canManage && (
+                <>
+                  <Divider />
+                  <Row
+                    label="Manage Subscription"
+                    onPress={() => (isOnline ? openManageSubscription() : notifyOffline())}
+                  />
+                </>
+              )}
             </Card>
+
+            {!canManage && (
+              <View style={{ marginTop: 10 }}>
+                <Pressable
+                  onPress={() => router.push('/(app)/subscription')}
+                  className="w-full py-[13px] rounded-2xl items-center"
+                  style={{ backgroundColor: 'rgba(74,222,128,0.25)' }}
+                >
+                  <Text className="text-base font-semibold" style={{ color: '#4ade80' }}>Subscribe to Okana Plus</Text>
+                </Pressable>
+                <Pressable onPress={handleRestore} disabled={restoring} className="w-full py-2 items-center mt-1">
+                  <Text className="text-white/40 text-base">{restoring ? 'Restoring…' : 'Restore purchases'}</Text>
+                </Pressable>
+                {!!restoreError && (
+                  <Text className="text-red-400 text-sm text-center px-1">{restoreError}</Text>
+                )}
+              </View>
+            )}
           </View>
 
           <View>
