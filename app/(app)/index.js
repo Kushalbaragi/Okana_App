@@ -13,7 +13,6 @@ import Header from '../../components/Header';
 import SummaryCard from '../../components/SummaryCard';
 import TransactionList from '../../components/TransactionList';
 import AddModal from '../../components/AddModal';
-import Drawer from '../../components/Drawer';
 import SpendCalendarModal from '../../components/SpendCalendarModal';
 import MonthlyRecapModal from '../../components/MonthlyRecapModal';
 import BudgetSetupModal from '../../components/BudgetSetupModal';
@@ -79,7 +78,6 @@ export default function Dashboard() {
     }, [refreshTransactions, budget.refresh, refreshSubscription])
   );
 
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
 
   const { month: currMonth, year: currYear } = currentMonthYear();
@@ -297,10 +295,10 @@ export default function Dashboard() {
     else if (pending === 'budget') setBudgetSetupOpen(true);
   }, []);
 
-  // Memoized — SpendCalendarModal is always mounted (unlike Drawer, which
-  // just returns null when closed) and memo()-wrapped, so a fresh object
-  // reference here on every unrelated Dashboard re-render (switching chart
-  // tabs, adding a transaction, etc.) would defeat that memo every time.
+  // Memoized — SpendCalendarModal stays mounted and memo()-wrapped even
+  // while closed, so a fresh object reference here on every unrelated
+  // Dashboard re-render (switching chart tabs, adding a transaction, etc.)
+  // would defeat that memo every time.
   const recapForCalendar = useMemo(() => (
     recapAvailable
       ? { available: true, monthName: recapMonthName, onOpen: openRecapFromCalendar }
@@ -361,12 +359,11 @@ export default function Dashboard() {
 
   // Stable no-arg toggles for the modal props below — each was previously
   // an inline arrow function created fresh every render, which defeated
-  // memo() on Header/AddModal/SpendCalendarModal/Drawer:
+  // memo() on Header/AddModal/SpendCalendarModal:
   // any unrelated Dashboard state change (e.g. switching chart tabs) handed
   // them a "new" onClose/onMenuOpen prop and forced a full re-render of
   // each of those subtrees, AddModal being the heaviest of them.
-  const openDrawer = useCallback(() => setDrawerOpen(true), []);
-  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+  const openMenu = useCallback(() => router.push('/(app)/account'), [router]);
 
   const openCalendar = useCallback(() => setCalendarOpen(true), []);
   const closeCalendar = useCallback(() => setCalendarOpen(false), []);
@@ -386,7 +383,7 @@ export default function Dashboard() {
       }}
     >
       <Header
-        onMenuOpen={openDrawer}
+        onMenuOpen={openMenu}
         chartTab={chartTab}
         onChartTabChange={setChartTab}
         onCalendarOpen={openCalendar}
@@ -445,8 +442,6 @@ export default function Dashboard() {
         recap={recapForCalendar}
         budget={budgetForCalendar}
       />
-
-      <Drawer open={drawerOpen} onClose={closeDrawer} />
 
       <MonthlyRecapModal
         open={recapOpen}

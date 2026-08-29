@@ -1,26 +1,119 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, Platform } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, Platform, Linking, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import Svg, { Circle } from 'react-native-svg';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
+import Svg, { Circle, Rect, Path } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedStyle, useAnimatedProps, withDelay, withSequence, withTiming, Easing } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
 import { isConnectivityError } from '../../utils/errors';
 import { useSubscription } from '../../hooks/useSubscription';
+import { useTransactions } from '../../hooks/useTransactions';
 import { openManageSubscription } from '../../hooks/usePurchases';
 import { getSubscriptionDisplayStatus } from '../../utils/trial';
 import { today } from '../../utils/format';
 import { supabase } from '../../lib/supabase';
+import { buildTransactionsWorkbook, parseTransactionsWorkbook } from '../../utils/exportImport';
 import { BackIcon, EditIcon, ChevronRight, CheckIcon, CameraIcon } from '../../components/icons';
 import { ONBOARDING_SEEN_KEY } from '../onboarding';
 import { AnimatedModal } from '../../components/AnimatedModal';
 import { ActionOverlay } from '../../components/ActionOverlay';
 
+const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const APP_VERSION = '1.0.0';
+
+function MailIcon() {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 16 16" fill="none">
+      <Rect x="1" y="3" width="14" height="10" rx="2" stroke="rgba(255,255,255,0.5)" strokeWidth="1.2" />
+      <Path d="M1 5l7 5 7-5" stroke="rgba(255,255,255,0.5)" strokeWidth="1.2" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+function InstagramIcon() {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+      <Rect x="2" y="2" width="20" height="20" rx="6" stroke="rgba(255,255,255,0.5)" strokeWidth="1.5" />
+      <Circle cx="12" cy="12" r="4" stroke="rgba(255,255,255,0.5)" strokeWidth="1.5" />
+      <Circle cx="17.5" cy="6.5" r="1" fill="rgba(255,255,255,0.5)" />
+    </Svg>
+  );
+}
+
+function YouTubeIcon() {
+  return (
+    <Svg width={16} height={14} viewBox="0 0 24 17" fill="none">
+      <Rect x="0.5" y="0.5" width="23" height="16" rx="4" stroke="rgba(255,255,255,0.5)" strokeWidth="1.3" />
+      <Path d="M10 5.5l6 3-6 3v-6z" fill="rgba(255,255,255,0.5)" />
+    </Svg>
+  );
+}
+
 function Divider() {
   return <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.07)', marginHorizontal: 16 }} />;
+}
+
+function SectionLabel({ children }) {
+  return (
+    <Text
+      className="text-white/30 text-[11px] font-medium uppercase tracking-widest px-1 pt-2 mb-2">{children}</Text>
+  );
+}
+
+function Card({ children }) {
+  return (
+    <View className="rounded-2xl overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' }}>
+      {children}
+    </View>
+  );
+}
+
+function Row({ label, value, onPress, right }) {
+  const content = (
+    <View className="flex-row items-center justify-between px-4 py-[14px]">
+      <Text className="text-white text-base">{label}</Text>
+      <View className="flex-row items-center" style={{ gap: 8 }}>
+        {!!value && <Text className="text-white/35 text-xs">{value}</Text>}
+        {right || (onPress && !right && <ChevronRight />)}
+      </View>
+    </View>
+  );
+  return onPress ? <Pressable onPress={onPress}>{content}</Pressable> : content;
+}
+
+function Pill({ children, tone = 'green' }) {
+  const bg = tone === 'green' ? 'rgba(74,222,128,0.14)' : 'rgba(255,255,255,0.08)';
+  const color = tone === 'green' ? '#4ade80' : 'rgba(255,255,255,0.5)';
+  return (
+    <View className="px-2.5 py-1 rounded-full" style={{ backgroundColor: bg }}>
+      <Text className="text-[11px] font-semibold uppercase tracking-wide" style={{ color }}>{children}</Text>
+    </View>
+  );
+}
+
+function InfoModal({ open, title, onClose, children }) {
+  const { height: windowHeight } = useWindowDimensions();
+  return (
+    <AnimatedModal open={open} onClose={onClose} variant="bottom">
+      <View
+        className="px-6 pt-5 pb-10"
+        style={{ maxHeight: windowHeight * 0.8, backgroundColor: 'rgba(14,14,14,0.97)', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+      >
+        <View className="w-8 h-1 rounded-full mx-auto mb-5" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }} />
+        <Text className="text-white font-semibold text-base mb-4">{title}</Text>
+        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          {children}
+        </ScrollView>
+      </View>
+    </AnimatedModal>
+  );
 }
 
 function minDelay(ms) {
@@ -217,7 +310,7 @@ function ConfirmModal({ open, title, message, confirmLabel, onConfirm, onCancel,
 const SUCCESS_HOLD_MS = 3000;
 // Longer hold specifically for a delete that leaves an active native
 // subscription behind — long enough to actually read the warning and tap
-// through to Settings before this auto-advances to logout.
+// through to the App/Play Store before this auto-advances to logout.
 const SUBSCRIPTION_WARNING_HOLD_MS = 10000;
 
 const ACTION_COPY = {
@@ -225,8 +318,8 @@ const ACTION_COPY = {
   delete: { working: 'Deleting your account', success: 'Account deleted' },
 };
 
-// `subscriptionWarning` (delete only) shows a reminder + deep link to
-// Settings, since deleting the account never cancels an active native
+// `subscriptionWarning` (delete only) shows a reminder + deep link to the
+// store, since deleting the account never cancels an active native
 // subscription — see runDelete's comment for why that's not possible here.
 function DeleteAccountOverlay({ type, phase, onDone, subscriptionWarning }) {
   const { isOnline, notifyOffline } = useNetwork();
@@ -260,9 +353,17 @@ function DeleteAccountOverlay({ type, phase, onDone, subscriptionWarning }) {
 export default function AccountPage() {
   const router = useRouter();
   const { user, profile, logout } = useAuth();
-  const { isOnline, notifyOffline } = useNetwork();
+  const { isOnline, isOnlineRef, notifyOffline } = useNetwork();
   const { subscription } = useSubscription(user);
-  const hasActivePlus = ['trial', 'subscribed'].includes(getSubscriptionDisplayStatus(subscription, today()).status);
+  const { transactions, importTransactions } = useTransactions();
+
+  const trialInfo = subscription ? getSubscriptionDisplayStatus(subscription, today()) : { status: 'not_started' };
+  const status = trialInfo.status;
+  const isEnding = trialInfo.cancelAtPeriodEnd && (status === 'trial' || status === 'subscribed');
+  const planLabel = isEnding ? 'Ending' : status === 'subscribed' ? 'Plus' : status === 'trial' ? 'Trial' : 'Free';
+  const planTone = (status === 'trial' || status === 'subscribed') && !isEnding ? 'green' : 'grey';
+  const canManage = status === 'trial' || status === 'subscribed';
+  const hasActivePlus = status === 'trial' || status === 'subscribed';
 
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(profile?.name || '');
@@ -275,6 +376,30 @@ export default function AccountPage() {
   // flow at a time, since only one of Erase/Delete can be in progress.
   const [actionFlow, setActionFlow] = useState(null);
   const [actionError, setActionError] = useState('');
+
+  const [modal, setModal] = useState(null);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [feedbackSent, setFeedbackSent] = useState(false);
+  const [feedbackSending, setFeedbackSending] = useState(false);
+  const [feedbackError, setFeedbackError] = useState('');
+
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+
+  // idle | reading | importing | done | error
+  const [importStage, setImportStage] = useState('idle');
+  const [importMessage, setImportMessage] = useState('');
+  const [importErrorMsg, setImportErrorMsg] = useState('');
+  const importProgress = useSharedValue(0);
+  const progressBarStyle = useAnimatedStyle(() => ({ width: `${importProgress.value * 100}%` }));
+
+  // Cleared on unmount so a completed import's delayed redirect can't fire
+  // after the user has already navigated elsewhere (e.g. tapped back right
+  // after seeing "Imported N transactions") and force them back to Home.
+  const importRedirectTimeoutRef = useRef(null);
+  useEffect(() => () => {
+    if (importRedirectTimeoutRef.current) clearTimeout(importRedirectTimeoutRef.current);
+  }, []);
 
   // Opening ActionOverlay before its ConfirmModal has actually finished
   // closing means two native <Modal>s mounted at once — broken on Android
@@ -487,6 +612,148 @@ export default function AccountPage() {
     }
   }, [router, logout]);
 
+  async function handleLogout() {
+    try {
+      await logout();
+    } catch {
+      // Sign-out failing (e.g. offline) shouldn't trap the user on this
+      // page with no way forward — still navigate away.
+    }
+    router.replace('/(auth)/login');
+  }
+
+  function closeFeedbackModal() {
+    setModal(null);
+    setFeedbackText('');
+    setFeedbackError('');
+  }
+
+  async function sendFeedback() {
+    if (!feedbackText.trim()) return;
+    if (!isOnline) { notifyOffline(); return; }
+    setFeedbackSending(true);
+    setFeedbackError('');
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) throw new Error('Not signed in');
+      const res = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/send-feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ message: feedbackText.trim() }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Failed to send feedback');
+      setFeedbackSent(true);
+      setTimeout(() => { setFeedbackSent(false); setFeedbackText(''); setModal(null); }, 1500);
+    } catch (err) {
+      if (isConnectivityError(err, isOnlineRef.current)) { notifyOffline(); }
+      else { setFeedbackError(err.message || 'Failed to send feedback. Please try again.'); }
+    } finally {
+      setFeedbackSending(false);
+    }
+  }
+
+  async function exportData() {
+    if (!transactions.length || exporting) return;
+    setExporting(true);
+    setExportError('');
+    try {
+      const base64 = buildTransactionsWorkbook(transactions);
+      const fileUri = `${FileSystem.cacheDirectory}okana-transactions-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: FileSystem.EncodingType.Base64 });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, { mimeType: XLSX_MIME, dialogTitle: 'Export transactions' });
+      } else {
+        setExportError('Sharing is not available on this device.');
+      }
+    } catch (err) {
+      setExportError(err.message || 'Failed to export. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  // One continuous flow, no intermediate confirm step: pick a file, read
+  // it, import it, then drop the user onto Home where they can see the
+  // result for themselves — with a full-screen green progress bar the
+  // whole way through instead of leaving this page looking unresponsive.
+  async function pickImportFile() {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [XLSX_MIME, 'application/vnd.ms-excel'],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+
+      if (!isOnline) { notifyOffline(); return; }
+
+      setImportErrorMsg('');
+      setImportStage('reading');
+      // A small kick so the bar visibly moves even during the read/parse
+      // step, which has no real sub-progress to report.
+      importProgress.value = withTiming(0.08, { duration: 400, easing: SETTLE_EASING });
+      // Yields so "Reading file…" actually paints before the synchronous,
+      // CPU-heavy XLSX parse below blocks the JS thread — RN has no worker
+      // thread to offload it to, so without this the UI would look frozen
+      // with zero feedback for however long the parse takes.
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      const base64 = await FileSystem.readAsStringAsync(result.assets[0].uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const { parsed, skipped } = parseTransactionsWorkbook(base64);
+      if (!parsed.length) {
+        setImportErrorMsg(skipped.length
+          ? "Couldn't read any valid rows — check the Date, Type, and Amount columns."
+          : 'That file has no transaction rows.');
+        setImportStage('error');
+        return;
+      }
+
+      setImportStage('importing');
+      importProgress.value = withTiming(0.15, { duration: 600, easing: SETTLE_EASING });
+
+      const importStartedAt = Date.now();
+      const res = await importTransactions(parsed, (done, total) => {
+        importProgress.value = withTiming(done / total, { duration: 500, easing: SETTLE_EASING });
+      });
+
+      if (!res.success) {
+        if (res.offline) { notifyOffline(); setImportStage('idle'); return; }
+        setImportErrorMsg(res.error || 'Import failed. Please try again.');
+        setImportStage('error');
+        return;
+      }
+
+      // A fast, small import (the common case — one chunk, one quick
+      // network round-trip) could otherwise jump from a sliver of progress
+      // straight to done in well under a second, reading as rushed rather
+      // than a real, deliberate progress bar.
+      const MIN_IMPORTING_MS = 1000;
+      const elapsed = Date.now() - importStartedAt;
+      if (elapsed < MIN_IMPORTING_MS) {
+        await new Promise(resolve => setTimeout(resolve, MIN_IMPORTING_MS - elapsed));
+      }
+
+      importProgress.value = withTiming(1, { duration: 400, easing: SETTLE_EASING });
+      setImportMessage(
+        `Imported ${res.imported} transaction${res.imported === 1 ? '' : 's'}`
+        + (skipped.length ? ` — ${skipped.length} row${skipped.length === 1 ? '' : 's'} skipped` : '')
+      );
+      setImportStage('done');
+
+      importRedirectTimeoutRef.current = setTimeout(() => {
+        setImportStage('idle');
+        router.replace('/(app)');
+      }, 1700);
+    } catch (err) {
+      if (isConnectivityError(err, isOnlineRef.current)) { notifyOffline(); setImportStage('idle'); return; }
+      setImportErrorMsg(err.message || 'Something went wrong. Please try again.');
+      setImportStage('error');
+    }
+  }
+
   return (
     <View className="flex-1 bg-bg">
       <ScrollView>
@@ -494,71 +761,239 @@ export default function AccountPage() {
           <Pressable onPress={() => router.back()} className="w-9 h-9 items-center justify-center rounded-xl">
             <BackIcon />
           </Pressable>
-          <Text className="text-white text-base font-semibold">Account</Text>
+          <Text className="text-white text-base font-semibold">Settings</Text>
         </View>
 
         <View className="items-center py-6">
           <AvatarPhoto uri={profile?.avatar} phase={avatarPhase} onPress={pickAndUploadAvatar} />
         </View>
 
-        <View className="mx-4 rounded-2xl overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' }}>
-          <View className="px-4 py-4">
-            <Text className="text-white/40 text-xs font-medium mb-1">Name</Text>
-            {editingName ? (
-              <View className="flex-row items-center" style={{ gap: 8 }}>
-                <TextInput
-                  autoFocus
-                  value={nameInput}
-                  onChangeText={setNameInput}
-                  onSubmitEditing={saveName}
-                  className="flex-1 text-white text-base"
-                  style={{ borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.2)', paddingBottom: 4 }}
-                />
-                <Pressable onPress={saveName} disabled={savingName}>
-                  <Text className="text-base text-white/60">{savingName ? 'Saving…' : 'Save'}</Text>
-                </Pressable>
+        <View className="px-4" style={{ gap: 12 }}>
+          <View>
+            <SectionLabel>Account</SectionLabel>
+            <Card>
+              <View className="px-4 py-4">
+                <Text className="text-white/40 text-xs font-medium mb-1">Name</Text>
+                {editingName ? (
+                  <View className="flex-row items-center" style={{ gap: 8 }}>
+                    <TextInput
+                      autoFocus
+                      value={nameInput}
+                      onChangeText={setNameInput}
+                      onSubmitEditing={saveName}
+                      className="flex-1 text-white text-base"
+                      style={{ borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.2)', paddingBottom: 4 }}
+                    />
+                    <Pressable onPress={saveName} disabled={savingName}>
+                      <Text className="text-base text-white/60">{savingName ? 'Saving…' : 'Save'}</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-white text-base">{profile?.name || '—'}</Text>
+                    <Pressable onPress={() => { setNameInput(profile?.name || ''); setEditingName(true); }} className="w-7 h-7 items-center justify-center rounded-lg">
+                      <EditIcon />
+                    </Pressable>
+                  </View>
+                )}
               </View>
-            ) : (
-              <View className="flex-row items-center justify-between">
-                <Text className="text-white text-base">{profile?.name || '—'}</Text>
-                <Pressable onPress={() => { setNameInput(profile?.name || ''); setEditingName(true); }} className="w-7 h-7 items-center justify-center rounded-lg">
-                  <EditIcon />
-                </Pressable>
+
+              <Divider />
+
+              <View className="px-4 py-4">
+                <Text className="text-white/40 text-xs font-medium mb-1">Email</Text>
+                <Text className="text-white/60 text-base">{profile?.email || '—'}</Text>
               </View>
+            </Card>
+            {!!actionError && (
+              <Text className="text-red-400 text-sm mt-2 px-1">{actionError}</Text>
             )}
           </View>
 
-          <Divider />
-
-          <View className="px-4 py-4">
-            <Text className="text-white/40 text-xs font-medium mb-1">Email</Text>
-            <Text className="text-white/60 text-base">{profile?.email || '—'}</Text>
+          <View>
+            <SectionLabel>Subscription</SectionLabel>
+            <Card>
+              <Row label="Current Plan" right={<Pill tone={planTone}>{planLabel}</Pill>} />
+              <Divider />
+              <Row
+                label={canManage
+                  ? `Change plan, cancel, or update payment in ${Platform.OS === 'ios' ? 'the App Store' : 'Play Store'}`
+                  : 'Subscribe to Okana Plus'}
+                onPress={canManage
+                  ? () => (isOnline ? openManageSubscription() : notifyOffline())
+                  : () => router.push('/(app)/subscription')}
+              />
+            </Card>
           </View>
-        </View>
 
-        <View className="mx-4 mt-4 rounded-2xl overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' }}>
-          <Pressable
-            onPress={() => (isOnline ? setShowEraseConfirm(true) : notifyOffline())}
-            className="flex-row items-center justify-between px-4 py-4"
-          >
-            <Text className="text-red-400 text-base">Erase Data</Text>
-            <ChevronRight />
-          </Pressable>
-          <Divider />
-          <Pressable
-            onPress={() => (isOnline ? setShowDeleteConfirm(true) : notifyOffline())}
-            className="flex-row items-center justify-between px-4 py-4"
-          >
-            <Text className="text-red-400 text-base">Delete Account</Text>
-            <ChevronRight />
-          </Pressable>
-        </View>
+          <View>
+            <SectionLabel>Data</SectionLabel>
+            <Card>
+              <Row
+                label="Export Data"
+                onPress={exportData}
+                right={exporting
+                  ? <Text className="text-white/35 text-xs">Exporting…</Text>
+                  : <Text className="text-white/35 text-xs">XLSX</Text>}
+              />
+              <Divider />
+              <Row
+                label="Import Data"
+                onPress={pickImportFile}
+                right={<Text className="text-white/35 text-xs">XLSX</Text>}
+              />
+            </Card>
+            {!!exportError && (
+              <Text className="text-red-400 text-sm mt-2 px-1">{exportError}</Text>
+            )}
+          </View>
 
-        {!!actionError && (
-          <Text className="text-red-400 text-base text-center mx-4 mt-3 mb-8">{actionError}</Text>
-        )}
-        {!actionError && <View className="mb-8" />}
+          <View>
+            <SectionLabel>Legal</SectionLabel>
+            <Card>
+              <Row label="Privacy Policy" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Privacy-Policy-3c58f887c3c9806180c1ed51844d872e?source=copy_link')} />
+              <Divider />
+              <Row label="Terms & Conditions" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Terms-and-Condition-3c58f887c3c9806d86eae7473775949c?source=copy_link')} />
+              <Divider />
+              <Row label="Refund & Cancellation Policy" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Refund-Cancellation-Policy-3c58f887c3c980c48cb6ded1520897ed?source=copy_link')} />
+            </Card>
+          </View>
+
+          <View>
+            <SectionLabel>Support</SectionLabel>
+            <Card>
+              <Row label="Contact" onPress={() => setModal('contact')} />
+              <Divider />
+              <Row label="Feedback" onPress={() => setModal('feedback')} />
+              <Divider />
+              <Row label="Rate Us" value="Coming soon" />
+            </Card>
+          </View>
+
+          <View>
+            <SectionLabel>About</SectionLabel>
+            <Card>
+              <Row label="Developer" onPress={() => setModal('developer')} />
+              <Divider />
+              <Row label="App Version" value={APP_VERSION} />
+            </Card>
+          </View>
+
+          <View>
+            <SectionLabel>Account Actions</SectionLabel>
+            <Card>
+              <Pressable onPress={handleLogout} className="flex-row items-center justify-between px-4 py-4">
+                <Text className="text-red-400 text-base">Log Out</Text>
+                <ChevronRight />
+              </Pressable>
+              <Divider />
+              <Pressable
+                onPress={() => (isOnline ? setShowEraseConfirm(true) : notifyOffline())}
+                className="flex-row items-center justify-between px-4 py-4"
+              >
+                <Text className="text-red-400 text-base">Erase Data</Text>
+                <ChevronRight />
+              </Pressable>
+              <Divider />
+              <Pressable
+                onPress={() => (isOnline ? setShowDeleteConfirm(true) : notifyOffline())}
+                className="flex-row items-center justify-between px-4 py-4"
+              >
+                <Text className="text-red-400 text-base">Delete Account</Text>
+                <ChevronRight />
+              </Pressable>
+            </Card>
+          </View>
+
+          <View className="mb-8" />
+        </View>
       </ScrollView>
+
+      <InfoModal open={modal === 'contact'} title="Contact" onClose={() => setModal(null)}>
+        <Text className="text-white/45 text-base mb-3">Have a question or need help? Reach out directly.</Text>
+        <Pressable
+          onPress={() => Linking.openURL('mailto:kushalbaragi@gmail.com')}
+          className="flex-row items-center py-3 px-4 rounded-xl"
+          style={{ gap: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+        >
+          <MailIcon />
+          <Text className="text-white/60 text-base">kushalbaragi@gmail.com</Text>
+        </Pressable>
+        <Text className="text-white/20 mt-3" style={{ fontSize: 12 }}>We typically respond within 1–2 business days.</Text>
+      </InfoModal>
+
+      <InfoModal open={modal === 'feedback'} title={feedbackSent ? '✓ Feedback sent!' : 'Send Feedback'} onClose={closeFeedbackModal}>
+        {!feedbackSent && (
+          <>
+            <Text className="text-white/40 text-base mb-4" style={{ lineHeight: 22 }}>
+              Tell us what you love, what's broken, or what you'd like to see next.
+            </Text>
+            <TextInput
+              value={feedbackText}
+              onChangeText={setFeedbackText}
+              placeholder="Your feedback…"
+              placeholderTextColor="#4d4d4d"
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+              className="text-white text-base px-4 py-3 mb-4"
+              style={{ minHeight: 100, borderRadius: 12, backgroundColor: 'transparent', borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)' }}
+            />
+            {!!feedbackError && <Text className="text-red-400 text-base mb-4">{feedbackError}</Text>}
+            <Pressable
+              onPress={sendFeedback}
+              disabled={!feedbackText.trim() || feedbackSending}
+              className="w-full py-[14px] rounded-2xl items-center"
+              style={{ backgroundColor: '#ffffff', opacity: !feedbackText.trim() || feedbackSending ? 0.3 : 1 }}
+            >
+              <Text className="text-black text-base font-semibold">{feedbackSending ? 'Sending…' : 'Send'}</Text>
+            </Pressable>
+          </>
+        )}
+      </InfoModal>
+
+      <InfoModal open={modal === 'developer'} title="Developer" onClose={() => setModal(null)}>
+        <View style={{ paddingVertical: 4 }}>
+          <Image
+            source={require('../../assets/developer-photo.jpg')}
+            style={{ width: 84, height: 84, borderRadius: 16, marginBottom: 16 }}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={150}
+          />
+          <Text className="text-white font-semibold text-lg mb-3">Hi, I'm Kushal</Text>
+          <Text className="text-white/50 text-base mb-3" style={{ lineHeight: 22 }}>
+            I'm a software developer and creator from Karnataka. I build digital products, work mainly on the frontend, and enjoy turning simple ideas into useful things.
+          </Text>
+          <Text className="text-white/50 text-base mb-3" style={{ lineHeight: 22 }}>
+            I also make YouTube videos about personal finance, technology, productivity, and minimal living. I like learning by building, sharing what I learn, and documenting the journey along the way.
+          </Text>
+          <Text className="text-white/50 text-base mb-5" style={{ lineHeight: 22 }}>
+            I'm interested in technology, money, and creating a simpler life — and I'm always working on something new.
+          </Text>
+
+          <View className="flex-row" style={{ gap: 12 }}>
+            <Pressable
+              onPress={() => Linking.openURL('https://instagram.com/kushalbaragi')}
+              className="flex-row items-center px-4 py-2 rounded-xl"
+              style={{ gap: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+            >
+              <InstagramIcon />
+              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>Instagram</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => Linking.openURL('https://www.youtube.com/@kushalbaragi')}
+              className="flex-row items-center px-4 py-2 rounded-xl"
+              style={{ gap: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+            >
+              <YouTubeIcon />
+              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>YouTube</Text>
+            </Pressable>
+          </View>
+
+          <Text className="text-white/20 mt-5" style={{ fontSize: 12 }}>Okana v{APP_VERSION} · Made with ♥ in India</Text>
+        </View>
+      </InfoModal>
 
       <ConfirmModal
         open={showEraseConfirm}
@@ -591,6 +1026,47 @@ export default function AccountPage() {
           onDone={actionFlow.type === 'erase' ? handleEraseDone : handleDeleteDone}
           subscriptionWarning={actionFlow.type === 'delete' && hasActivePlus}
         />
+      )}
+
+      {importStage !== 'idle' && (
+        <View
+          pointerEvents="auto"
+          style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.85)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32,
+          }}
+        >
+          <View style={{ width: '100%', maxWidth: 300 }}>
+            {importStage === 'error' ? (
+              <>
+                <Text className="text-white text-base font-semibold mb-2 text-center">
+                  Import failed
+                </Text>
+                <Text className="text-white/50 text-sm mb-5 text-center" style={{ lineHeight: 20 }}>
+                  {importErrorMsg}
+                </Text>
+                <Pressable
+                  onPress={() => setImportStage('idle')}
+                  className="py-[13px] rounded-2xl items-center"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+                >
+                  <Text className="text-white text-base font-medium">Dismiss</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <Text className="text-white text-base font-medium mb-4 text-center">
+                  {importStage === 'reading' && 'Reading file…'}
+                  {importStage === 'importing' && 'Importing transactions…'}
+                  {importStage === 'done' && importMessage}
+                </Text>
+                <View style={{ height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden', width: '100%' }}>
+                  <Animated.View style={[{ height: 8, borderRadius: 4, backgroundColor: '#4ade80' }, progressBarStyle]} />
+                </View>
+              </>
+            )}
+          </View>
+        </View>
       )}
     </View>
   );
