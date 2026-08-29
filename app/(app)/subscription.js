@@ -30,26 +30,6 @@ function Card({ children }) {
   );
 }
 
-function Pill({ children, tone = 'green' }) {
-  const style = tone === 'green'
-    ? { backgroundColor: 'rgba(74,222,128,0.14)', color: '#4ade80' }
-    : { backgroundColor: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' };
-  return (
-    <View className="px-2.5 py-1 rounded-full" style={{ backgroundColor: style.backgroundColor }}>
-      <Text className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: style.color }}>{children}</Text>
-    </View>
-  );
-}
-
-// 'trial' is a billing-mechanics detail, not something shown to the user —
-// Active covers it the same as a fully paid subscription.
-const PLAN_PILL = {
-  not_started: { label: 'Free', tone: 'grey' },
-  trial: { label: 'Active', tone: 'green' },
-  subscribed: { label: 'Active', tone: 'green' },
-  expired: { label: 'Free', tone: 'grey' },
-};
-
 export default function SubscriptionPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -61,8 +41,6 @@ export default function SubscriptionPage() {
 
   const trialInfo = subscription ? getSubscriptionDisplayStatus(subscription, today()) : { status: 'not_started' };
   const status = trialInfo.status;
-  const isEnding = trialInfo.cancelAtPeriodEnd && (status === 'trial' || status === 'subscribed');
-  const pill = isEnding ? { label: 'Ending', tone: 'grey' } : PLAN_PILL[status];
   const canManage = status === 'trial' || status === 'subscribed';
   const needsAction = status === 'not_started' || status === 'expired';
 
@@ -173,9 +151,10 @@ export default function SubscriptionPage() {
           <View>
             <SectionLabel>Current Plan</SectionLabel>
             <Card>
-              <View className="flex-row items-center justify-between px-4 py-[14px]">
-                <Text className="text-white text-base">{needsAction ? 'Okana' : 'Okana Plus'}</Text>
-                <Pill tone={pill.tone}>{pill.label}</Pill>
+              <View className="px-4 py-[14px]">
+                <Text className="text-white text-base">
+                  You are <Text style={{ color: needsAction ? 'rgba(255,255,255,0.5)' : '#4ade80', fontWeight: '600' }}>{needsAction ? 'Free' : 'Plus'}</Text> user of Okana
+                </Text>
               </View>
 
               {needsAction && (
