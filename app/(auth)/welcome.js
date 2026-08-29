@@ -10,7 +10,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
-import { PRICE_PER_YEAR } from '../../utils/trial';
+import { PRICE_PER_YEAR, WHY_ITEMS } from '../../utils/trial';
 import { CheckIcon } from '../../components/icons';
 import { SuccessBadge } from '../../components/SuccessBadge';
 
@@ -22,16 +22,6 @@ const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 const ITEM_STAGGER_MS = 1000;
 const ITEM_DURATION_MS = 650;
 const HOLD_MS = 6000; // dwell time on a popup/reveal page before auto-advancing
-
-// Exported — subscription.js reuses this exact content for its pre-conversion
-// pitch, rather than keeping a second copy that could drift out of sync.
-export const WHY_ITEMS = [
-  { title: 'Keeping it simple', description: 'No distractions, unnecessary features, or colourful clutter. Just what you need to track your money.' },
-  { title: 'Built for consistency', description: 'I removed as much friction as possible, so you can keep tracking without giving up after a week.' },
-  { title: 'Make tracking a habit', description: 'Just add your income and expenses every day. Okana takes care of the rest.' },
-  { title: 'Track every rupee', description: 'Every rupee matters. The more you track, the better you understand your money.' },
-  { title: 'Spend with awareness', description: 'Set a budget, watch your spending calendar, and try to create more green days.' },
-];
 
 const TRIAL_ITEMS = [
   { title: '30 days, completely free', description: "You'll have full access to Okana Plus for 30 days, starting today." },

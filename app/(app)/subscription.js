@@ -5,11 +5,10 @@ import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
 import { useSubscription } from '../../hooks/useSubscription';
 import { usePurchases, openManageSubscription } from '../../hooks/usePurchases';
-import { formatChargeDate, getSubscriptionDisplayStatus, PRICE_PER_YEAR } from '../../utils/trial';
+import { formatChargeDate, getSubscriptionDisplayStatus, PRICE_PER_YEAR, WHY_ITEMS } from '../../utils/trial';
 import { today } from '../../utils/format';
 import { BackIcon, ChevronRight, CheckIcon } from '../../components/icons';
 import { PaymentProcessing } from '../../components/PaymentProcessing';
-import { WHY_ITEMS } from '../(auth)/welcome';
 
 function Divider() {
   return <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.07)', marginHorizontal: 16 }} />;
@@ -217,7 +216,7 @@ export default function SubscriptionPage() {
               actual paying subscriber; see the thank-you card below instead. */}
           {(needsAction || status === 'trial') && (
             <View>
-              <SectionLabel>Why Okana</SectionLabel>
+              <Text className="text-white/30 text-[15px] font-medium uppercase tracking-widest px-1 pt-2 mb-2">Why Okana</Text>
               <Card>
                 {WHY_ITEMS.map((item, i) => (
                   <View key={item.title}>
@@ -233,7 +232,66 @@ export default function SubscriptionPage() {
                     </View>
                   </View>
                 ))}
+
+                {needsAction && Platform.OS !== 'web' && (
+                  <>
+                    <Divider />
+                    <View className="px-4 py-[14px]" style={{ gap: 8 }}>
+                      {!!purchaseError && (
+                        <View className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderWidth: 1, borderColor: 'rgba(248,113,113,0.2)' }}>
+                          <Text className="text-red-300 text-base">{purchaseError}</Text>
+                        </View>
+                      )}
+
+                      {offeringLoading ? (
+                        <View className="w-full py-[13px] rounded-2xl items-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                          <ActivityIndicator color="rgba(255,255,255,0.5)" />
+                        </View>
+                      ) : pkg ? (
+                        <Pressable
+                          onPress={handleSubscribe}
+                          disabled={purchasing}
+                          className="w-full py-[13px] rounded-2xl items-center"
+                          style={{ backgroundColor: 'rgba(74,222,128,0.25)', opacity: purchasing ? 0.6 : 1 }}
+                        >
+                          <Text className="text-base font-semibold" style={{ color: '#4ade80' }}>
+                            Subscribe — {pkg.product.priceString}/year
+                          </Text>
+                        </Pressable>
+                      ) : (
+                        <View
+                          className="w-full py-[13px] rounded-2xl items-center"
+                          style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+                        >
+                          <Text className="text-base font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                            {offeringError || 'Subscription options unavailable'}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </>
+                )}
               </Card>
+
+              {needsAction && Platform.OS !== 'web' && (
+                <Pressable onPress={handleRestore} disabled={restoring} className="w-full py-2 items-center mt-1">
+                  <Text className="text-white/40 text-base">{restoring ? 'Restoring…' : 'Restore purchases'}</Text>
+                </Pressable>
+              )}
+
+              {needsAction && Platform.OS === 'web' && (
+                <View style={{ gap: 8, marginTop: 10 }}>
+                  <View
+                    className="w-full py-[13px] rounded-2xl items-center"
+                    style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+                  >
+                    <Text className="text-base font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>Not available on web</Text>
+                  </View>
+                  <Text className="w-full text-center text-white/25 text-base">
+                    Subscribing is only available from the iOS or Android app.
+                  </Text>
+                </View>
+              )}
             </View>
           )}
 
@@ -257,60 +315,6 @@ export default function SubscriptionPage() {
                   </Text>
                 </View>
               </Card>
-            </View>
-          )}
-
-          {needsAction && Platform.OS !== 'web' && (
-            <View style={{ gap: 8 }}>
-              {!!purchaseError && (
-                <View className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderWidth: 1, borderColor: 'rgba(248,113,113,0.2)' }}>
-                  <Text className="text-red-300 text-base">{purchaseError}</Text>
-                </View>
-              )}
-
-              {offeringLoading ? (
-                <View className="w-full py-[13px] rounded-2xl items-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <ActivityIndicator color="rgba(255,255,255,0.5)" />
-                </View>
-              ) : pkg ? (
-                <Pressable
-                  onPress={handleSubscribe}
-                  disabled={purchasing}
-                  className="w-full py-[13px] rounded-2xl items-center"
-                  style={{ backgroundColor: 'rgba(74,222,128,0.25)', opacity: purchasing ? 0.6 : 1 }}
-                >
-                  <Text className="text-base font-semibold" style={{ color: '#4ade80' }}>
-                    Subscribe — {pkg.product.priceString}/year
-                  </Text>
-                </Pressable>
-              ) : (
-                <View
-                  className="w-full py-[13px] rounded-2xl items-center"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
-                >
-                  <Text className="text-base font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                    {offeringError || 'Subscription options unavailable'}
-                  </Text>
-                </View>
-              )}
-
-              <Pressable onPress={handleRestore} disabled={restoring} className="w-full py-2 items-center">
-                <Text className="text-white/40 text-base">{restoring ? 'Restoring…' : 'Restore purchases'}</Text>
-              </Pressable>
-            </View>
-          )}
-
-          {needsAction && Platform.OS === 'web' && (
-            <View style={{ gap: 8 }}>
-              <View
-                className="w-full py-[13px] rounded-2xl items-center"
-                style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
-              >
-                <Text className="text-base font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>Not available on web</Text>
-              </View>
-              <Text className="w-full text-center text-white/25 text-base">
-                Subscribing is only available from the iOS or Android app.
-              </Text>
             </View>
           )}
 
