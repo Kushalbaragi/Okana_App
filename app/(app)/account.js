@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, Platform, Linking, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -26,7 +27,10 @@ import { ActionOverlay } from '../../components/ActionOverlay';
 
 const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-const APP_VERSION = '1.0.0';
+// Reads the real version from app.json (via Expo's config, not a second
+// hardcoded copy that silently drifts from the real one — it already had,
+// showing 1.0.0 while the actual shipped version was 1.0.2).
+const APP_VERSION = Constants.expoConfig?.version ?? '—';
 
 function InstagramIcon() {
   return (
@@ -276,7 +280,12 @@ function AvatarPhoto({ uri, phase, onPress }) {
   );
 }
 
-function ConfirmModal({ open, title, message, confirmLabel, onConfirm, onCancel, onClosed }) {
+// tone 'danger' (default) is for irreversible actions (erase/delete);
+// 'neutral' is for a reversible one (logout) that still deserves a
+// confirm tap but shouldn't visually read as equally dangerous.
+function ConfirmModal({ open, title, message, confirmLabel, tone = 'danger', onConfirm, onCancel, onClosed }) {
+  const confirmBg = tone === 'danger' ? 'rgba(248,113,113,0.14)' : 'rgba(255,255,255,0.1)';
+  const confirmColor = tone === 'danger' ? 'rgba(248,113,113,0.9)' : '#ffffff';
   return (
     <AnimatedModal open={open} onClose={onCancel} onClosed={onClosed} variant="center">
       <View
@@ -289,8 +298,8 @@ function ConfirmModal({ open, title, message, confirmLabel, onConfirm, onCancel,
           <Pressable onPress={onCancel} className="flex-1 py-3 rounded-xl items-center" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
             <Text className="text-white/60 text-base font-medium">Cancel</Text>
           </Pressable>
-          <Pressable onPress={onConfirm} className="flex-1 py-3 rounded-xl items-center" style={{ backgroundColor: 'rgba(248,113,113,0.14)' }}>
-            <Text className="text-base font-semibold" style={{ color: 'rgba(248,113,113,0.9)' }}>{confirmLabel}</Text>
+          <Pressable onPress={onConfirm} className="flex-1 py-3 rounded-xl items-center" style={{ backgroundColor: confirmBg }}>
+            <Text className="text-base font-semibold" style={{ color: confirmColor }}>{confirmLabel}</Text>
           </Pressable>
         </View>
       </View>
@@ -361,6 +370,7 @@ export default function AccountPage() {
   const [savingName, setSavingName] = useState(false);
   const [avatarPhase, setAvatarPhase] = useState('idle'); // 'idle' | 'uploading' | 'success'
 
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showEraseConfirm, setShowEraseConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   // { type: 'erase' | 'delete', phase: 'working' | 'success' } | null — one
@@ -840,6 +850,8 @@ export default function AccountPage() {
               <Row label="Developer" onPress={() => setModal('developer')} />
               <Divider />
               <Row label="Support" onPress={() => setModal('feedback')} />
+              <Divider />
+              <Row label="Rate Us" value="Coming soon" />
             </Card>
             {!!exportError && (
               <Text className="text-red-400 text-sm mt-2 px-1">{exportError}</Text>
@@ -847,8 +859,8 @@ export default function AccountPage() {
           </View>
 
           <View>
-            <Pressable onPress={handleLogout} className="self-start px-4 py-[14px]">
-              <Text className="text-red-400 text-base">Log Out</Text>
+            <Pressable onPress={() => setShowLogoutConfirm(true)} className="self-start px-4 py-[14px]">
+              <Text className="text-white/70 text-base">Log Out</Text>
             </Pressable>
             <Pressable
               onPress={() => (isOnline ? setShowEraseConfirm(true) : notifyOffline())}
@@ -941,6 +953,16 @@ export default function AccountPage() {
           <Text className="text-white/20 mt-5" style={{ fontSize: 12 }}>Okana v{APP_VERSION} · Made with ♥ in India</Text>
         </View>
       </InfoModal>
+
+      <ConfirmModal
+        open={showLogoutConfirm}
+        title="Log Out?"
+        message="You can sign back in anytime with your email — nothing is deleted."
+        confirmLabel="Log Out"
+        tone="neutral"
+        onConfirm={() => { setShowLogoutConfirm(false); handleLogout(); }}
+        onCancel={() => setShowLogoutConfirm(false)}
+      />
 
       <ConfirmModal
         open={showEraseConfirm}
