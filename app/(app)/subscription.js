@@ -216,7 +216,7 @@ export default function SubscriptionPage() {
               actual paying subscriber; see the thank-you card below instead. */}
           {(needsAction || status === 'trial') && (
             <View>
-              <Text className="text-white/30 text-[15px] font-medium uppercase tracking-widest px-1 pt-2 mb-2">Why Okana</Text>
+              <Text className="text-white/30 text-[11px] font-medium uppercase tracking-widest px-1 pt-2 mb-2">Features</Text>
               <Card>
                 {WHY_ITEMS.map((item, i) => (
                   <View key={item.title}>
@@ -296,7 +296,7 @@ export default function SubscriptionPage() {
           )}
 
           {/* Only for someone actually paying — a genuine subscriber gets no
-              further pitch (that's what Why Okana above is for), just a
+              further pitch (that's what Features above is for), just a
               short, honest thank-you. Deliberately doesn't repeat feature
               claims that aren't actually exclusive to Plus. */}
           {status === 'subscribed' && (
