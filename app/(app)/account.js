@@ -757,7 +757,7 @@ export default function AccountPage() {
 
   return (
     <View className="flex-1 bg-bg">
-      <ScrollView>
+      <ScrollView showsVerticalScrollIndicator={false}>
         <View className="flex-row items-center gap-2 px-4 pt-14 pb-4">
           <Pressable onPress={() => router.back()} className="w-9 h-9 items-center justify-center rounded-xl">
             <BackIcon />
