@@ -74,7 +74,9 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
   useEffect(() => {
     if (open) {
       setVisible(true);
-      setSelectedDate(null);
+      // Defaults to today so its transactions are visible right away
+      // instead of an empty grid the user has to tap into first.
+      setSelectedDate(today());
       // Otherwise browsing to a past/future month, closing, and reopening
       // later (even a different day) leaves the calendar stuck wherever it
       // was last left instead of back on the actual current month — this
