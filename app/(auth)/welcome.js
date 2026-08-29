@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, {
@@ -10,14 +10,8 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
-import { useNetwork } from '../../context/NetworkContext';
-import { usePurchases } from '../../hooks/usePurchases';
-import { supabase } from '../../lib/supabase';
-import { PRICE_PER_YEAR, getSubscriptionDisplayStatus } from '../../utils/trial';
-import { today } from '../../utils/format';
+import { PRICE_PER_YEAR } from '../../utils/trial';
 import { CheckIcon } from '../../components/icons';
-import { PaymentProcessing } from '../../components/PaymentProcessing';
-import { SuccessBadge } from '../../components/SuccessBadge';
 
 // Shared "settle" ease-out-expo feel used for every reveal in this flow —
 // keeps the whole sequence reading as one calm motion language rather than
@@ -25,7 +19,6 @@ import { SuccessBadge } from '../../components/SuccessBadge';
 const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 
 const ITEM_STAGGER_MS = 1000;
-const LINE_STAGGER_MS = 400;
 const ITEM_DURATION_MS = 650;
 const HOLD_MS = 6000; // dwell time on a popup/reveal page before auto-advancing
 
@@ -77,7 +70,7 @@ function ChecklistItem({ title, description, delay }) {
 
 // Shared layout for "Why Okana" and "Take your time" — same one-by-one
 // reveal, same trailing CTA, differing only in copy and button color.
-function ChecklistPage({ title, items, buttonLabel, buttonColor, buttonTextColor, onContinue, error }) {
+function ChecklistPage({ title, items, buttonLabel, buttonColor, buttonTextColor, onContinue }) {
   const buttonDelay = 400 + items.length * ITEM_STAGGER_MS;
 
   return (
@@ -92,10 +85,6 @@ function ChecklistPage({ title, items, buttonLabel, buttonColor, buttonTextColor
         ))}
       </View>
 
-      {!!error && (
-        <Text style={{ color: 'rgba(248,113,113,0.9)', fontSize: 13, textAlign: 'center', marginBottom: 10 }}>{error}</Text>
-      )}
-
       <FadeIn delay={buttonDelay} duration={500}>
         <Pressable
           onPress={onContinue}
@@ -104,32 +93,6 @@ function ChecklistPage({ title, items, buttonLabel, buttonColor, buttonTextColor
           <Text style={{ color: buttonTextColor, fontSize: 16, fontWeight: '600' }}>{buttonLabel}</Text>
         </Pressable>
       </FadeIn>
-    </View>
-  );
-}
-
-// Green tick "pop" + short message, held on screen for HOLD_MS before
-// auto-advancing — used for both the "account created" and "trial started"
-// confirmations, which only differ in copy. Each line gets its own FadeIn
-// (same bottom-to-center settle used for the checklist items) staggered by
-// LINE_STAGGER_MS, rather than the whole block fading in as one unit.
-function TickPopup({ lines, onDone, playSound }) {
-  useEffect(() => {
-    const t = setTimeout(onDone, HOLD_MS);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
-      <SuccessBadge style={{ marginBottom: 22 }} playSound={playSound} />
-      <View style={{ alignItems: 'center' }}>
-        {lines.map((line, i) => (
-          <FadeIn key={i} delay={500 + i * LINE_STAGGER_MS} distance={20}>
-            <Text style={[{ textAlign: 'center' }, line.style]}>{line.text}</Text>
-          </FadeIn>
-        ))}
-      </View>
     </View>
   );
 }
@@ -229,7 +192,7 @@ function IntroQuotePage({ onFinish }) {
   );
 }
 
-const STEPS = ['created', 'why', 'trial-info', 'trial-started', 'welcome', 'intro'];
+const STEPS = ['welcome', 'why', 'trial-info', 'intro'];
 
 // Set only once the carousel is actually finished (not on mount, unlike
 // onboarding.js's pre-signup ONBOARDING_SEEN_KEY) — app/index.js redirects
@@ -244,12 +207,7 @@ export function welcomeSeenKey(userId) {
 export default function WelcomeScreen() {
   const router = useRouter();
   const { profile, user } = useAuth();
-  const { isOnline, notifyOffline } = useNetwork();
-  const { getOfferings, purchasePackage } = usePurchases(user?.id);
   const [step, setStep] = useState(STEPS[0]);
-  const [processingVisible, setProcessingVisible] = useState(false);
-  const [purchaseSucceeded, setPurchaseSucceeded] = useState(false);
-  const [purchaseError, setPurchaseError] = useState(null);
   const firstName = (profile?.name || 'there').split(' ')[0];
 
   function next() {
@@ -264,69 +222,9 @@ export default function WelcomeScreen() {
     router.replace('/(app)');
   }
 
-  // Real native purchase, triggered from the "Start Free Trial" button —
-  // same purchase + webhook-confirmation pattern as subscription.js's
-  // handleSubscribe, just self-contained here since this screen lives in
-  // the pre-app (auth) route group and can't reach into app/(app)/subscription.js.
-  async function handleStartTrial() {
-    if (!user) return;
-    if (!isOnline) { notifyOffline(); return; }
-    setPurchaseError(null);
-    setProcessingVisible(true);
-
-    const offeringResult = await getOfferings();
-    const pkg = offeringResult.success ? offeringResult.offering?.availablePackages?.[0] : null;
-    if (!pkg) {
-      setProcessingVisible(false);
-      setPurchaseError(offeringResult.error || 'Subscription options aren’t available right now.');
-      return;
-    }
-
-    const result = await purchasePackage(pkg);
-    if (!result.success) {
-      setProcessingVisible(false);
-      if (!result.cancelled) setPurchaseError(result.error || 'Purchase failed. Please try again.');
-      return;
-    }
-
-    // Same widened window as subscription.js's handleSubscribe — a normal
-    // (non-error) webhook delivery can still take several seconds to land.
-    let confirmed = false;
-    for (let i = 0; i < 15; i++) {
-      const { data } = await supabase.from('subscriptions').select('*').eq('user_id', user.id).maybeSingle();
-      if (data && ['trial', 'subscribed'].includes(getSubscriptionDisplayStatus(data, today()).status)) {
-        confirmed = true;
-        break;
-      }
-      await new Promise(r => setTimeout(r, 1000));
-    }
-
-    if (confirmed) {
-      setPurchaseSucceeded(true);
-    } else {
-      setProcessingVisible(false);
-      setPurchaseError('Purchase is taking longer than expected to confirm. Please try again.');
-    }
-  }
-
-  // Success plays out on its own inside PaymentProcessing — once it's done,
-  // move on to the existing "trial started" step instead of the standalone
-  // Subscription page, since this purchase happened inside onboarding.
-  function handleProcessingDone() {
-    setProcessingVisible(false);
-    setPurchaseSucceeded(false);
-    next();
-  }
-
   return (
     <View style={{ flex: 1, backgroundColor: '#000000' }}>
-      {step === 'created' && (
-        <TickPopup
-          lines={[{ text: 'Account has been created successfully', style: { color: 'rgba(255,255,255,0.85)', fontSize: 16, fontWeight: '500' } }]}
-          onDone={next}
-          playSound
-        />
-      )}
+      {step === 'welcome' && <WelcomeGreetingPage name={firstName} onDone={next} />}
 
       {step === 'why' && (
         <ChecklistPage
@@ -343,34 +241,14 @@ export default function WelcomeScreen() {
         <ChecklistPage
           title="Take your time"
           items={TRIAL_ITEMS}
-          buttonLabel="Start Free Trial"
+          buttonLabel="Continue"
           buttonColor="#22c55e"
           buttonTextColor="#ffffff"
-          onContinue={handleStartTrial}
-          error={purchaseError}
+          onContinue={next}
         />
       )}
-
-      {step === 'trial-started' && (
-        <TickPopup
-          lines={[
-            { text: "You're all set", style: { color: '#ffffff', fontSize: 19, fontWeight: '700' } },
-            { text: 'Your 30-day free trial has started', style: { color: 'rgba(255,255,255,0.6)', fontSize: 15, marginTop: 8 } },
-            { text: 'We will notify you one day before trial period ends', style: { color: 'rgba(255,255,255,0.3)', fontSize: 13, marginTop: 6 } },
-          ]}
-          onDone={next}
-        />
-      )}
-
-      {step === 'welcome' && <WelcomeGreetingPage name={firstName} onDone={next} />}
 
       {step === 'intro' && <IntroQuotePage onFinish={finish} />}
-
-      {processingVisible && (
-        <View style={StyleSheet.absoluteFill}>
-          <PaymentProcessing succeeded={purchaseSucceeded} onDone={handleProcessingDone} />
-        </View>
-      )}
     </View>
   );
 }
