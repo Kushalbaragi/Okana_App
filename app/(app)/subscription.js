@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Platform, ActivityIndicator, StyleSheet, Alert, AppState } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, Pressable, ScrollView, Platform, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
@@ -9,7 +9,6 @@ import { formatChargeDate, getSubscriptionDisplayStatus } from '../../utils/tria
 import { today } from '../../utils/format';
 import { BackIcon, ChevronRight } from '../../components/icons';
 import { PaymentProcessing } from '../../components/PaymentProcessing';
-import { ActionOverlay } from '../../components/ActionOverlay';
 
 function Divider() {
   return <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.07)', marginHorizontal: 16 }} />;
@@ -62,64 +61,7 @@ export default function SubscriptionPage() {
   const isEnding = trialInfo.cancelAtPeriodEnd && (status === 'trial' || status === 'subscribed');
   const pill = isEnding ? { label: 'Ending', tone: 'grey' } : PLAN_PILL[status];
   const canManage = status === 'trial' || status === 'subscribed';
-  const canCancel = canManage && !trialInfo.cancelAtPeriodEnd;
   const needsAction = status === 'not_started' || status === 'expired';
-
-  // { phase: 'working' | 'success' } | null. Cancellation happens entirely
-  // outside the app (Settings/Play Store), so there's no moment we can call
-  // "success" ourselves — this only shows once the webhook-confirmed
-  // cancel_at_period_end actually flips, detected via the poll in
-  // runCancelCheck below, triggered when the app returns to the foreground
-  // after openManageSubscription backgrounded it.
-  const [cancelFlow, setCancelFlow] = useState(null);
-  const pendingCancelCheckRef = useRef(false);
-
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', state => {
-      if (state === 'active' && pendingCancelCheckRef.current) {
-        pendingCancelCheckRef.current = false;
-        runCancelCheck();
-      }
-    });
-    return () => sub.remove();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function runCancelCheck() {
-    setCancelFlow({ phase: 'working' });
-    for (let i = 0; i < 5; i++) {
-      await new Promise(r => setTimeout(r, 1500));
-      const data = await refresh();
-      if (data?.cancel_at_period_end) {
-        setCancelFlow({ phase: 'success' });
-        return;
-      }
-    }
-    // Not detected within the window — they may have backed out of Settings
-    // without actually cancelling. Say so plainly rather than claim a
-    // success that was never confirmed, or silently vanish with no
-    // explanation; the page already reflects whatever the real current
-    // state is from the polling refreshes above.
-    setCancelFlow({ phase: 'notConfirmed' });
-  }
-
-  function handleCancelPress() {
-    if (!isOnline) { notifyOffline(); return; }
-    Alert.alert(
-      'Cancel Subscription?',
-      `You'll be taken to ${Platform.OS === 'ios' ? 'the App Store' : 'Play Store'} to cancel — you'll keep access until the end of the period you've already paid for.`,
-      [
-        { text: 'Not now', style: 'cancel' },
-        {
-          text: 'Continue',
-          onPress: () => {
-            pendingCancelCheckRef.current = true;
-            openManageSubscription();
-          },
-        },
-      ],
-    );
-  }
 
   const [pkg, setPkg] = useState(null);
   const [offeringLoading, setOfferingLoading] = useState(false);
@@ -329,30 +271,10 @@ export default function SubscriptionPage() {
                   className="flex-row items-center justify-between gap-3 px-4 py-[14px]"
                 >
                   <Text className="text-white/70 text-base flex-1" style={{ lineHeight: 20 }}>
-                    Change plan or update payment in {Platform.OS === 'ios' ? 'the App Store' : 'Play Store'}
+                    Change plan, cancel, or update payment in {Platform.OS === 'ios' ? 'the App Store' : 'Play Store'}
                   </Text>
                   <ChevronRight />
                 </Pressable>
-              </Card>
-            </View>
-          )}
-
-          {canCancel && Platform.OS !== 'web' && (
-            <View>
-              <SectionLabel>Cancel Plan</SectionLabel>
-              <Card>
-                <View className="flex-row items-center justify-between gap-3 px-4 py-[14px]">
-                  <Text className="text-white/40 text-base flex-1" style={{ lineHeight: 20 }}>
-                    You'll keep full access until the end of your current billing period.
-                  </Text>
-                  <Pressable
-                    onPress={handleCancelPress}
-                    className="px-3 py-[7px] rounded-full"
-                    style={{ borderWidth: 1, borderColor: 'rgba(248,113,113,0.35)' }}
-                  >
-                    <Text className="text-base font-medium" style={{ color: 'rgba(248,113,113,0.85)' }}>Cancel</Text>
-                  </Pressable>
-                </View>
               </Card>
             </View>
           )}
@@ -364,18 +286,6 @@ export default function SubscriptionPage() {
         <View style={StyleSheet.absoluteFill}>
           <PaymentProcessing succeeded={purchaseSucceeded} onDone={handleProcessingDone} />
         </View>
-      )}
-
-      {cancelFlow && (
-        <ActionOverlay
-          phase={cancelFlow.phase}
-          workingText="Checking subscription status"
-          workingSubtext="Hold on"
-          successText="Plan has been cancelled successfully"
-          notConfirmedText="Still confirming with the App Store"
-          notConfirmedSubtext="We'll update your subscription automatically, usually within a few minutes — you'll get a notification once it's confirmed."
-          onDone={() => setCancelFlow(null)}
-        />
       )}
     </View>
   );
