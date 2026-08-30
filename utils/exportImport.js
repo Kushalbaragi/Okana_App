@@ -75,7 +75,15 @@ function normalizeAmount(raw) {
 // aborting the whole import, since one bad row shouldn't block the rest.
 export function parseTransactionsWorkbook(base64) {
   const XLSX = require('xlsx');
-  const wb = XLSX.read(base64, { type: 'base64', cellDates: true });
+  let wb;
+  try {
+    wb = XLSX.read(base64, { type: 'base64', cellDates: true });
+  } catch {
+    // Not a valid xlsx/xls at all (corrupted, wrong format, mislabeled
+    // file) — XLSX.read throws its own internal parser error here, which
+    // reads as gibberish to a user. A clear, actionable message instead.
+    throw new Error("That file couldn't be read — make sure it's a valid Excel file (.xlsx).");
+  }
   const ws = wb.Sheets[wb.SheetNames[0]];
   if (!ws) return { parsed: [], skipped: [] };
 

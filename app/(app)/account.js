@@ -393,10 +393,18 @@ export default function AccountPage() {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
 
+  const [importOptionsOpen, setImportOptionsOpen] = useState(false);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+
   // idle | reading | importing | done | error
   const [importStage, setImportStage] = useState('idle');
   const [importMessage, setImportMessage] = useState('');
   const [importErrorMsg, setImportErrorMsg] = useState('');
+  // True when the failure happened before any real import attempt — an
+  // unreadable file or a template that doesn't match the expected columns
+  // — as opposed to a genuine network/server error partway through
+  // importing. Only this case offers "Download Template" as a way out.
+  const [importFormatError, setImportFormatError] = useState(false);
   const importProgress = useSharedValue(0);
   const progressBarStyle = useAnimatedStyle(() => ({ width: `${importProgress.value * 100}%` }));
 
@@ -681,11 +689,33 @@ export default function AccountPage() {
     }
   }
 
+  // Empty version of the same workbook exportData produces — just the
+  // header row, so a user unsure of the expected columns can grab a file
+  // already in the right shape instead of guessing.
+  async function downloadTemplate() {
+    if (downloadingTemplate) return;
+    setDownloadingTemplate(true);
+    try {
+      const base64 = buildTransactionsWorkbook([]);
+      const fileUri = `${FileSystem.cacheDirectory}okana-import-template.xlsx`;
+      await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: FileSystem.EncodingType.Base64 });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, { mimeType: XLSX_MIME, dialogTitle: 'Okana import template' });
+      }
+    } catch {
+      // Best-effort — worst case the user just doesn't get the template
+      // this time and can retry from the same Import Data entry point.
+    } finally {
+      setDownloadingTemplate(false);
+    }
+  }
+
   // One continuous flow, no intermediate confirm step: pick a file, read
   // it, import it, then drop the user onto Home where they can see the
   // result for themselves — with a full-screen green progress bar the
   // whole way through instead of leaving this page looking unresponsive.
   async function pickImportFile() {
+    setImportOptionsOpen(false);
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: [XLSX_MIME, 'application/vnd.ms-excel'],
@@ -696,6 +726,7 @@ export default function AccountPage() {
       if (!isOnline) { notifyOffline(); return; }
 
       setImportErrorMsg('');
+      setImportFormatError(false);
       setImportStage('reading');
       // A small kick so the bar visibly moves even during the read/parse
       // step, which has no real sub-progress to report.
@@ -714,6 +745,7 @@ export default function AccountPage() {
         setImportErrorMsg(skipped.length
           ? "Couldn't read any valid rows — check the Date, Type, and Amount columns."
           : 'That file has no transaction rows.');
+        setImportFormatError(true);
         setImportStage('error');
         return;
       }
@@ -756,7 +788,11 @@ export default function AccountPage() {
       }, 1700);
     } catch (err) {
       if (isConnectivityError(err, isOnlineRef.current)) { notifyOffline(); setImportStage('idle'); return; }
+      // Reaching here almost always means parseTransactionsWorkbook rejected
+      // the file itself (not a real xlsx) rather than some other failure —
+      // treat it the same as a format mismatch.
       setImportErrorMsg(err.message || 'Something went wrong. Please try again.');
+      setImportFormatError(true);
       setImportStage('error');
     }
   }
@@ -845,7 +881,7 @@ export default function AccountPage() {
               <Divider />
               <Row
                 label="Import Data"
-                onPress={pickImportFile}
+                onPress={() => setImportOptionsOpen(true)}
                 right={<Text className="text-white/35 text-xs">XLSX</Text>}
               />
               <Divider />
@@ -892,6 +928,32 @@ export default function AccountPage() {
           <Text className="text-white/25 text-xs text-center mt-2 mb-8">v{APP_VERSION}</Text>
         </View>
       </ScrollView>
+
+      <InfoModal open={importOptionsOpen} title="Import Data" onClose={() => setImportOptionsOpen(false)}>
+        <Pressable
+          onPress={downloadTemplate}
+          disabled={downloadingTemplate}
+          className="w-full px-4 py-4 rounded-2xl mb-3"
+          style={{ backgroundColor: 'rgba(255,255,255,0.06)', opacity: downloadingTemplate ? 0.6 : 1 }}
+        >
+          <Text className="text-white text-base font-semibold mb-1">
+            {downloadingTemplate ? 'Preparing…' : 'Get template'}
+          </Text>
+          <Text className="text-white/40 text-sm" style={{ lineHeight: 18 }}>
+            Download an empty Excel file with the right columns.
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={pickImportFile}
+          className="w-full px-4 py-4 rounded-2xl"
+          style={{ backgroundColor: '#ffffff' }}
+        >
+          <Text className="text-black text-base font-semibold mb-1">Import file</Text>
+          <Text style={{ color: 'rgba(0,0,0,0.5)', fontSize: 14, lineHeight: 18 }}>
+            Choose a file from your device to import.
+          </Text>
+        </Pressable>
+      </InfoModal>
 
       <InfoModal open={modal === 'feedback'} title={feedbackSent ? '✓ Message sent!' : 'Support'} onClose={closeFeedbackModal}>
         {!feedbackSent && (
@@ -1022,18 +1084,42 @@ export default function AccountPage() {
             {importStage === 'error' ? (
               <>
                 <Text className="text-white text-base font-semibold mb-2 text-center">
-                  Import failed
+                  {importFormatError ? "Template doesn't match" : 'Import failed'}
                 </Text>
                 <Text className="text-white/50 text-sm mb-5 text-center" style={{ lineHeight: 20 }}>
-                  {importErrorMsg}
+                  {importFormatError
+                    ? 'Make sure your file matches the required Excel format.'
+                    : importErrorMsg}
                 </Text>
-                <Pressable
-                  onPress={() => setImportStage('idle')}
-                  className="py-[13px] rounded-2xl items-center"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
-                >
-                  <Text className="text-white text-base font-medium">Dismiss</Text>
-                </Pressable>
+                {importFormatError ? (
+                  <View style={{ gap: 8 }}>
+                    <Pressable
+                      onPress={downloadTemplate}
+                      disabled={downloadingTemplate}
+                      className="py-[13px] rounded-2xl items-center"
+                      style={{ backgroundColor: '#ffffff', opacity: downloadingTemplate ? 0.6 : 1 }}
+                    >
+                      <Text className="text-black text-base font-semibold">
+                        {downloadingTemplate ? 'Preparing…' : 'Download template'}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setImportStage('idle')}
+                      className="py-[13px] rounded-2xl items-center"
+                      style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+                    >
+                      <Text className="text-white text-base font-medium">Cancel</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <Pressable
+                    onPress={() => setImportStage('idle')}
+                    className="py-[13px] rounded-2xl items-center"
+                    style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+                  >
+                    <Text className="text-white text-base font-medium">Dismiss</Text>
+                  </Pressable>
+                )}
               </>
             ) : (
               <>
