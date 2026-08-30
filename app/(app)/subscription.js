@@ -29,11 +29,6 @@ function Card({ children }) {
   );
 }
 
-// Matches the "Identifier" column for the Okana Pro entitlement in the
-// RevenueCat dashboard (Product catalog -> Entitlements) — not a slug, the
-// literal display name is the identifier for this project.
-const ENTITLEMENT_ID = 'Okana Pro';
-
 export default function SubscriptionPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -84,21 +79,6 @@ export default function SubscriptionPage() {
     // on "unavailable" until they leave and revisit this screen.
   }, [needsAction, getOfferings, loading, isOnline]);
 
-  // Best-effort sync of our own `subscriptions` table after RevenueCat has
-  // already confirmed the purchase client-side — other screens (Settings,
-  // the Dashboard's Pro gate) read from Supabase, not RevenueCat directly,
-  // so this is what actually unlocks the rest of the app. Runs in the
-  // background and never surfaces an error — the purchase already
-  // succeeded by the time this is called, so there's nothing for the user
-  // to react to even if the webhook is slow.
-  async function syncSubscriptionInBackground() {
-    for (let i = 0; i < 15; i++) {
-      const data = await refresh();
-      if (['trial', 'subscribed'].includes(getSubscriptionDisplayStatus(data, today()).status)) return;
-      await new Promise(r => setTimeout(r, 1000));
-    }
-  }
-
   async function handleSubscribe() {
     if (!pkg) return;
     if (!isOnline) { notifyOffline(); return; }
@@ -116,23 +96,14 @@ export default function SubscriptionPage() {
       return;
     }
 
-    // RevenueCat's own customerInfo already reflects the purchase the
-    // instant the store confirms it — independent of revenuecat-webhook
-    // actually landing in our own `subscriptions` table. Trusting this
-    // first means the success screen never has to sit waiting on our own
-    // DB write for a purchase that, per RevenueCat, has already gone
-    // through.
-    if (result.customerInfo?.entitlements?.active?.[ENTITLEMENT_ID]) {
-      setPurchasing(false);
-      setPurchaseSucceeded(true);
-      syncSubscriptionInBackground();
-      return;
-    }
-
-    // Fallback — RevenueCat didn't hand back an active entitlement for some
-    // reason (rare). Poll our own table like before, but treat a timeout as
-    // "still confirming," not a failure: the store already charged the
-    // user at this point, so an error banner here would be misleading.
+    // Deliberately does NOT trust result.customerInfo's entitlement here —
+    // RevenueCat can report an entitlement as active from a transferred or
+    // otherwise stale purchase (e.g. a sandbox Apple ID that already had an
+    // active subscription under a different app_user_id) without a new
+    // purchase actually completing for this user. Our own `subscriptions`
+    // row, written by revenuecat-webhook off a real purchase event, is the
+    // only thing "successful" should ever be shown against — worth the
+    // extra wait for a payment confirmation to actually be correct.
     let confirmed = false;
     for (let i = 0; i < 15; i++) {
       const data = await refresh();
@@ -185,40 +156,24 @@ export default function SubscriptionPage() {
           <View>
             <SectionLabel>Current Plan</SectionLabel>
             <Card>
-              <View className="px-4 py-[18px] items-center">
-                <Text className="text-white text-base" style={{ textAlign: 'center' }}>
-                  You are{' '}
-                  <Text
-                    style={
-                      status === 'expired'
-                        ? {
-                            color: '#f87171',
-                            fontWeight: '600',
-                            backgroundColor: 'rgba(248,113,113,0.14)',
-                            paddingHorizontal: 10,
-                            paddingVertical: 3,
-                            borderRadius: 999,
-                            overflow: 'hidden',
-                          }
-                        : { color: '#4ade80', fontWeight: '600' }
-                    }
-                  >
-                    {status === 'expired' ? 'Expired' : needsAction ? 'Free' : 'Plus'}
+              {status === 'expired' ? (
+                <View className="px-4 py-[18px] items-center">
+                  <Text className="text-base text-center" style={{ color: 'rgba(248,113,113,0.85)' }}>
+                    Your plan has expired
                   </Text>
-                  {' '}user of Okana
-                </Text>
-              </View>
-
-              {status === 'expired' && (
-                <>
-                  <Divider />
-                  <View className="px-4 py-[14px]">
-                    <Text className="text-base" style={{ color: 'rgba(248,113,113,0.85)' }}>
-                      Your plan has expired
+                </View>
+              ) : (
+                <View className="px-4 py-[18px] items-center">
+                  <Text className="text-white text-base" style={{ textAlign: 'center' }}>
+                    You are{' '}
+                    <Text style={{ color: '#4ade80', fontWeight: '600' }}>
+                      {needsAction ? 'Free' : 'Plus'}
                     </Text>
-                  </View>
-                </>
+                    {' '}user of Okana
+                  </Text>
+                </View>
               )}
+
               {status === 'subscribed' && trialInfo.paymentFailed && (
                 <>
                   <Divider />
