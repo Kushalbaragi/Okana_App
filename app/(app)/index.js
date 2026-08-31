@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -59,6 +60,19 @@ export default function Dashboard() {
   const { subscription, loading: subLoading, refresh: refreshSubscription } = useSubscription(user);
   const trialInfo = useMemo(() => getSubscriptionDisplayStatus(subscription, today()), [subscription]);
   const transactionListRef = useRef(null);
+
+  // Scale-in-and-fade on mount — Dashboard only ever mounts once per app
+  // session (it stays mounted underneath Settings/Subscription when
+  // navigating there and back, standard stack behavior), so this plays on
+  // the actual app-open moment only, not on every visit here.
+  const entranceProgress = useSharedValue(0);
+  useEffect(() => {
+    entranceProgress.value = withTiming(1, { duration: 480, easing: Easing.bezier(0.16, 1, 0.3, 1) });
+  }, []);
+  const entranceStyle = useAnimatedStyle(() => ({
+    opacity: entranceProgress.value,
+    transform: [{ scale: 0.94 + entranceProgress.value * 0.06 }],
+  }));
 
   // Erase Data / other changes made from Account (a separate stacked screen)
   // update Supabase directly without touching this screen's own useTransactions/
@@ -371,8 +385,9 @@ export default function Dashboard() {
   const handleAddModalClosed = useCallback(() => setAddModalClosed(true), []);
 
   return (
-    <View
+    <Animated.View
       className="flex-1 bg-bg"
+      style={entranceStyle}
       // Passively observes every touch-down anywhere on the screen (header
       // tabs, the month/year/All Time pills, empty space) to close an open
       // transaction swipe — always returns false so it never actually claims
@@ -478,6 +493,6 @@ export default function Dashboard() {
           </View>
         </View>
       </AnimatedModal>
-    </View>
+    </Animated.View>
   );
 }

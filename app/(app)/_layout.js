@@ -15,5 +15,13 @@ export default function AppLayout() {
 
   if (!user) return <Redirect href="/(auth)/login" />;
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      {/* Opened from the hamburger icon, not a forward drill-down — slides
+          in from the left to read as a side menu, unlike every other
+          pushed screen here (subscription, etc.) which keeps the default
+          slide-from-right. */}
+      <Stack.Screen name="account" options={{ animation: 'slide_from_left' }} />
+    </Stack>
+  );
 }

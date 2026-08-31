@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "okana-mobile",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["expo", "start", "--dev-client"],
+      "port": 8081
+    }
+  ]
+}

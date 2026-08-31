@@ -10,7 +10,19 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     // Load initial session — falls back to signed-out rather than hanging
     // on the loading spinner forever if this rejects (e.g. no network).
-    supabase.auth.getSession()
+    //
+    // Raced against a timeout for the same reason as sendOtp below: if the
+    // stored access token has expired (the default is after 1 hour, so any
+    // cold start more than an hour after the last one hits this), getSession
+    // triggers a network refresh before resolving — with no connectivity or
+    // a slow connection, that call has no built-in timeout and can hang the
+    // entire app on the launch spinner indefinitely. Falling back to
+    // signed-out on timeout is the safe direction to fail in: worst case is
+    // an easy re-login, not showing another user's cached data.
+    Promise.race([
+      supabase.auth.getSession(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timed out')), 6000)),
+    ])
       .then(({ data: { session } }) => setUser(session?.user ?? null))
       .catch(() => setUser(null))
       .finally(() => setLoading(false));

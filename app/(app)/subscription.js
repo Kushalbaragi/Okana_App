@@ -147,7 +147,14 @@ export default function SubscriptionPage() {
           <Text className="text-white text-base font-semibold">Subscription</Text>
         </View>
 
-        {loading ? (
+        {/* Gated on having no data at all yet, not on the network fetch
+            itself — useSubscription fills `subscription` from AsyncStorage
+            almost instantly on mount, well before the network round-trip
+            (or its offline timeout) resolves. Waiting on `loading` alone
+            meant this screen sat on a spinner behind a slow/failing
+            request even when perfectly good cached data was already
+            sitting there, unlike the Dashboard's own cache-first render. */}
+        {loading && !subscription ? (
           <View className="items-center" style={{ paddingTop: 80 }}>
             <ActivityIndicator color="rgba(255,255,255,0.4)" />
           </View>

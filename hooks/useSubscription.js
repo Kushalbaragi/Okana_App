@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
+import { useNetwork } from '../context/NetworkContext';
 
 const cacheKey = (userId) => `okana_subscription_cache_${userId}`;
 
@@ -29,6 +30,7 @@ async function saveCachedSubscription(userId, data) {
 // underlying payment method, so those are managed entirely on-device
 // (Settings → subscriptions), not through this app.
 export function useSubscription(user) {
+  const { isOnlineRef } = useNetwork();
   const [subscription, setSubscription] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -60,6 +62,16 @@ export function useSubscription(user) {
   const refresh = useCallback(async () => {
     if (!user) { setSubscription(null); setLoading(false); return null; }
     try {
+      // Known-offline — don't even attempt the request. Supabase's fetch has
+      // no built-in timeout, so with no connectivity this could otherwise
+      // hang for a long while before falling through to the same cache
+      // fallback below, exactly the "offline takes even longer" case this
+      // skips straight past.
+      if (!isOnlineRef.current) {
+        const cached = await loadCachedSubscription(user.id);
+        if (user.id === latestUserIdRef.current && cached) setSubscription(cached);
+        return cached;
+      }
       const { data, error } = await supabase
         .from('subscriptions')
         .select('*')
@@ -82,7 +94,7 @@ export function useSubscription(user) {
     } finally {
       if (user.id === latestUserIdRef.current) setLoading(false);
     }
-  }, [user]);
+  }, [user, isOnlineRef]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
