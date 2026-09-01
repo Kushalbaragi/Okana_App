@@ -139,8 +139,36 @@ export default function SubscriptionPage() {
     setRestoring(true);
     setPurchaseError(null);
     const result = await restorePurchases();
-    if (result.success) await refresh();
-    else setPurchaseError(result.error || 'Could not restore purchases.');
+    if (!result.success) {
+      setPurchaseError(result.error || 'Could not restore purchases.');
+      setRestoring(false);
+      return;
+    }
+
+    // Same reasoning as handleSubscribe above — restorePurchases() only
+    // confirms RevenueCat re-validated the receipt, not that our own
+    // webhook has landed and written the row yet. A single immediate
+    // refresh() here would often just show stale "not subscribed" state
+    // for a restore that genuinely succeeded.
+    let confirmed = false;
+    for (let i = 0; i < 15; i++) {
+      const data = await refresh();
+      if (['trial', 'subscribed'].includes(getSubscriptionDisplayStatus(data, today()).status)) {
+        confirmed = true;
+        break;
+      }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    if (!confirmed) {
+      // Not trusted for granting access (that's still DB-only, above) — only
+      // used here to pick an honest message. An empty active-entitlements
+      // map means there's genuinely nothing on this Apple/Google account to
+      // restore, not that our webhook is merely running behind.
+      const hasActiveEntitlement = Object.keys(result.customerInfo?.entitlements?.active || {}).length > 0;
+      setPurchaseError(hasActiveEntitlement
+        ? "Restored — just finishing up. This can take a minute; pull to refresh if it doesn't update."
+        : 'No previous purchases found on this account.');
+    }
     setRestoring(false);
   }
 

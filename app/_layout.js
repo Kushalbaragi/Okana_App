@@ -18,7 +18,14 @@ function AppShell() {
   return (
     <>
       <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0a0a0a' } }} />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0a0a0a' } }}>
+        {/* Entering the app (cold launch redirect, post-OTP, post-welcome)
+            replaces the default slide-from-right with a plain crossfade —
+            native-stack has no built-in scale/pop transition, so this pairs
+            with Dashboard's own Reanimated scale-in entrance (index.js) to
+            read as a scale/pop rather than two competing slide animations. */}
+        <Stack.Screen name="(app)" options={{ animation: 'fade' }} />
+      </Stack>
       <OfflineBanner />
     </>
   );

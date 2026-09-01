@@ -678,11 +678,19 @@ export default function AccountPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleImportOptionsClosed = useCallback(() => {
+  const handleImportOptionsClosed = useCallback(async () => {
     const pending = pendingAfterImportOptionsClose.current;
     pendingAfterImportOptionsClose.current = null;
+    if (pending !== 'file' && pending !== 'template') return;
+    // `onClosed` fires the instant React flips `visible` to false, but on
+    // iOS the native <Modal>'s own dismissal can still be finishing its
+    // teardown a beat later — presenting DocumentPicker/Sharing's native
+    // sheet right on top of that lands the exact "two native surfaces at
+    // once" collision this whole onClosed dance exists to avoid (matches
+    // the 320ms stagger used the same way in index.js and elsewhere here).
+    await new Promise(r => setTimeout(r, 320));
     if (pending === 'file') pickImportFile();
-    else if (pending === 'template') downloadTemplate();
+    else downloadTemplate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

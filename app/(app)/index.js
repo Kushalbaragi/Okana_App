@@ -136,7 +136,14 @@ export default function Dashboard() {
   // transaction — colliding with AddModal closing right at that exact
   // moment (the "stuck after adding first transaction" bug).
   useEffect(() => {
-    if (!user || txLoading || !addModalClosed) return;
+    // budget.loading is included so this can't build/open the recap before
+    // useBudget's own fetch has settled — budget.lastMonthAmount/hasBudget
+    // start out null/false before that, which would silently omit the
+    // budget slide (or show "no budget set") even when one genuinely
+    // exists, and — like the transactions race this mirrors — this effect
+    // only gets one real shot per day, so a premature pass here means the
+    // recap shows with wrong/missing budget data for the rest of the day.
+    if (!user || txLoading || budget.loading || !addModalClosed) return;
     let cancelled = false;
 
     (async () => {
@@ -205,7 +212,7 @@ export default function Dashboard() {
     })();
 
     return () => { cancelled = true; };
-  }, [user, transactions, txLoading, addModalClosed, budget.lastMonthAmount, budget.lastMonthSpent, budget.hasBudget]);
+  }, [user, transactions, txLoading, budget.loading, addModalClosed, budget.lastMonthAmount, budget.lastMonthSpent, budget.hasBudget]);
 
   // Tapping the "{Month} Monthly Summary" push notification lands here with
   // ?openRecap=1 (see hooks/useNotificationRouting.js) — force-opens the
@@ -214,7 +221,12 @@ export default function Dashboard() {
   // trigger. The param is cleared immediately so it can't re-fire on a
   // later re-render or when navigating back to this screen.
   useEffect(() => {
-    if (params.openRecap !== '1' || !user || txLoading) return;
+    // Same budget.loading wait as the auto-open effect above — without it,
+    // tapping the notification right after a cold launch could build the
+    // recap before budget data has loaded, silently dropping the budget
+    // slide. Deliberately doesn't clear the param until this guard passes,
+    // so it just re-fires once budget catches up rather than losing intent.
+    if (params.openRecap !== '1' || !user || txLoading || budget.loading) return;
     router.setParams({ openRecap: undefined });
 
     const { month, year: cy } = currentMonthYear();
@@ -231,7 +243,7 @@ export default function Dashboard() {
     setRecapOpen(true);
     markRecapAvailableToday(user.id);
     markRecapViewedServerSide(user.id, recapMonthId);
-  }, [params.openRecap, user, txLoading, transactions, budget.lastMonthAmount, budget.lastMonthSpent, budget.hasBudget, router]);
+  }, [params.openRecap, user, txLoading, budget.loading, transactions, budget.lastMonthAmount, budget.lastMonthSpent, budget.hasBudget, router]);
 
   // Budget setup popup: due on the first app-open of a month with no budget
   // set yet. Kept as its OWN effect rather than folded into the once-a-day
