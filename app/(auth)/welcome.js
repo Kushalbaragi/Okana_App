@@ -92,7 +92,7 @@ function TrialStartedPage({ onDone }) {
       </FadeIn>
       <FadeIn delay={900} distance={20}>
         <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 15, marginTop: 8, textAlign: 'center' }}>
-          You have full access to Okana Plus for the next 30 days — no card required
+          You have full access to Okana Plus for the next 30 days — no payment required
         </Text>
       </FadeIn>
     </View>

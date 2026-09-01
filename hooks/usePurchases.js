@@ -74,7 +74,23 @@ export function usePurchases(userId) {
 // happens on-device. This just opens the OS's own subscription management
 // screen instead of pretending to offer an in-app cancel flow. Shared
 // between the Subscription page and the account-deletion warning.
-export function openManageSubscription() {
+//
+// RevenueCat's showManageSubscriptions() opens the native sheet scoped to
+// this specific subscription (App Store's "Edit Subscription" for Okana
+// directly) rather than the generic itms-apps:// URL, which only ever
+// opens the full list of every subscription on the account — there's no
+// public URL scheme that deep-links to one app's page on iOS. Falls back
+// to that generic list if the native call fails for any reason (Expo Go's
+// mocked module, iOS <13, or a device where it's genuinely unsupported),
+// so this still lands somewhere useful either way.
+export async function openManageSubscription() {
+  try {
+    const Purchases = require('react-native-purchases').default;
+    await Purchases.showManageSubscriptions();
+    return;
+  } catch {
+    // fall through to the generic list below
+  }
   if (Platform.OS === 'ios') Linking.openURL('itms-apps://apps.apple.com/account/subscriptions');
   else if (Platform.OS === 'android') Linking.openURL('https://play.google.com/store/account/subscriptions');
 }

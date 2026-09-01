@@ -85,7 +85,13 @@ export function useTransactions() {
   const { user } = useAuth()
   const { isOnline, isOnlineRef, notifyOffline } = useNetwork()
   const [transactions, setTransactions] = useState([])
-  const [loading, setLoading] = useState(false)
+  // Starts true (not false) so consumers that gate a once-a-day decision on
+  // `!loading` (Dashboard's monthly-recap/budget-setup effects) never see a
+  // "not loading, zero transactions" snapshot before the real fetch has even
+  // started — that false signal let those effects run once on the empty
+  // initial array, permanently stamping their once-a-day flag before real
+  // data arrived. Fine for rendering: nothing here gates a spinner on this.
+  const [loading, setLoading] = useState(true)
 
   // Read inside `refresh` without making it depend on `transactions` (which
   // would break its referential stability for memo'd consumers like

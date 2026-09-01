@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Platform, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, RefreshControl, Platform, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
@@ -37,6 +37,13 @@ export default function SubscriptionPage() {
   const { getOfferings, purchasePackage, restorePurchases } = usePurchases(user?.id);
   const [processingVisible, setProcessingVisible] = useState(false);
   const [purchaseSucceeded, setPurchaseSucceeded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await refresh();
+    setRefreshing(false);
+  };
 
   const trialInfo = subscription ? getSubscriptionDisplayStatus(subscription, today()) : { status: 'not_started' };
   const status = trialInfo.status;
@@ -139,7 +146,11 @@ export default function SubscriptionPage() {
 
   return (
     <View className="flex-1 bg-bg">
-      <ScrollView>
+      <ScrollView
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="rgba(255,255,255,0.6)" />
+        }
+      >
         <View className="flex-row items-center gap-2 px-4 pt-14 pb-4">
           <Pressable onPress={() => router.back()} className="w-9 h-9 items-center justify-center rounded-xl">
             <BackIcon />
@@ -165,8 +176,8 @@ export default function SubscriptionPage() {
             <Card>
               {status === 'expired' ? (
                 <View className="px-4 py-[18px] items-center">
-                  <Text className="text-base text-center" style={{ color: 'rgba(248,113,113,0.85)' }}>
-                    Your plan has expired
+                  <Text className="text-base font-semibold text-center" style={{ color: 'rgba(248,113,113,0.85)' }}>
+                    Your Plan has Expired
                   </Text>
                 </View>
               ) : (

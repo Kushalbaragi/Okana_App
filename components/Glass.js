@@ -71,7 +71,8 @@ export function GlassTextInput({ radius = RADIUS.xl, style, className, inputClas
     >
       <TextInput
         placeholderTextColor="#4d4d4d"
-        className={inputClassName || "text-white text-base px-4 py-3"}
+        textAlignVertical="center"
+        className={inputClassName || "text-white text-base px-4 py-3.5"}
         {...props} />
     </View>
   );

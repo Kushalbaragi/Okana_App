@@ -2,12 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, Platform, Linking, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import Svg, { Circle, Rect, Path } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, useAnimatedProps, withDelay, withSequence, withTiming, Easing } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
@@ -93,10 +95,10 @@ function Row({ label, value, onPress, right }) {
   return onPress ? <Pressable onPress={onPress}>{content}</Pressable> : content;
 }
 
-function InfoModal({ open, title, onClose, children }) {
+function InfoModal({ open, title, onClose, onClosed, children }) {
   const { height: windowHeight } = useWindowDimensions();
   return (
-    <AnimatedModal open={open} onClose={onClose} variant="bottom">
+    <AnimatedModal open={open} onClose={onClose} onClosed={onClosed} variant="bottom">
       <View
         className="px-6 pt-5 pb-10"
         style={{ maxHeight: windowHeight * 0.8, backgroundColor: 'rgba(14,14,14,0.97)', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
@@ -350,12 +352,66 @@ function DeleteAccountOverlay({ type, phase, onDone, subscriptionWarning }) {
   );
 }
 
+// Fixed toast anchored above the tab bar, matching OfflineBanner's
+// fade+slide treatment but from the bottom — used for brief, non-blocking
+// feedback (e.g. "nothing to export yet") that doesn't need a modal.
+function BottomBanner({ visible, children }) {
+  const insets = useSafeAreaInsets();
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = withTiming(visible ? 1 : 0, { duration: 220, easing: Easing.out(Easing.quad) });
+  }, [visible]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ translateY: (1 - progress.value) * 16 }],
+  }));
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        {
+          position: 'absolute',
+          left: 16,
+          right: 16,
+          bottom: insets.bottom + 20,
+          alignItems: 'center',
+          paddingVertical: 12,
+          paddingHorizontal: 16,
+          borderRadius: 14,
+          backgroundColor: '#1c1c1c',
+          borderWidth: 1,
+          borderColor: 'rgba(255,255,255,0.08)',
+        },
+        style,
+      ]}
+    >
+      <Text className="text-white/80 text-sm font-medium text-center">{children}</Text>
+    </Animated.View>
+  );
+}
+
 export default function AccountPage() {
   const router = useRouter();
   const { user, profile, logout } = useAuth();
   const { isOnline, isOnlineRef, notifyOffline } = useNetwork();
-  const { subscription } = useSubscription(user);
+  const { subscription, refresh: refreshSubscription } = useSubscription(user);
   const { transactions, importTransactions } = useTransactions();
+
+  // Settings stays mounted underneath Subscription when you navigate there
+  // (standard stack behavior) — useSubscription only fetches once on this
+  // screen's own mount, so completing a purchase on Subscription and coming
+  // back here left this "Current Plan" pill stuck on whatever it was before
+  // the purchase until something else happened to remount this screen.
+  // Refetching on every focus, same as Dashboard already does for the same
+  // reason, means it's current the moment you actually land back here.
+  useFocusEffect(
+    useCallback(() => {
+      refreshSubscription();
+    }, [refreshSubscription])
+  );
 
   const trialInfo = subscription ? getSubscriptionDisplayStatus(subscription, today()) : { status: 'not_started' };
   const status = trialInfo.status;
@@ -392,6 +448,18 @@ export default function AccountPage() {
 
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
+  const [noTransactionsBanner, setNoTransactionsBanner] = useState(false);
+  const noTransactionsBannerTimeoutRef = useRef(null);
+
+  const showNoTransactionsBanner = useCallback(() => {
+    if (noTransactionsBannerTimeoutRef.current) clearTimeout(noTransactionsBannerTimeoutRef.current);
+    setNoTransactionsBanner(true);
+    noTransactionsBannerTimeoutRef.current = setTimeout(() => setNoTransactionsBanner(false), 2000);
+  }, []);
+
+  useEffect(() => {
+    return () => { if (noTransactionsBannerTimeoutRef.current) clearTimeout(noTransactionsBannerTimeoutRef.current); };
+  }, []);
 
   const [importOptionsOpen, setImportOptionsOpen] = useState(false);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
@@ -422,6 +490,17 @@ export default function AccountPage() {
   // which action to run and let ConfirmModal's onClosed — fired only once
   // it's truly gone — trigger it.
   const pendingAfterConfirmClose = useRef(null); // 'erase' | 'delete' | null
+
+  // Same reasoning as pendingAfterConfirmClose above — Import Data's options
+  // sheet is this same InfoModal/AnimatedModal (a native <Modal>), and both
+  // its actions open ANOTHER native surface (the document picker, or the
+  // share sheet for the template download). Firing those the instant the
+  // button is tapped means the sheet is still mid-close when the next
+  // native surface tries to present, which is exactly the "two native
+  // Modals at once" state that hangs the app — not a metaphorical bug, an
+  // actually-broken screen. Stash which action to run and let
+  // InfoModal's onClosed (fired only once it's truly gone) trigger it.
+  const pendingAfterImportOptionsClose = useRef(null); // 'file' | 'template' | null
 
   async function saveName() {
     // Belt-and-suspenders alongside the Save button's own `disabled` prop —
@@ -599,6 +678,14 @@ export default function AccountPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const handleImportOptionsClosed = useCallback(() => {
+    const pending = pendingAfterImportOptionsClose.current;
+    pendingAfterImportOptionsClose.current = null;
+    if (pending === 'file') pickImportFile();
+    else if (pending === 'template') downloadTemplate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleEraseDone = useCallback(() => {
     setActionFlow(null);
     router.back();
@@ -670,7 +757,11 @@ export default function AccountPage() {
   }
 
   async function exportData() {
-    if (!transactions.length || exporting) return;
+    if (exporting) return;
+    if (!transactions.length) {
+      showNoTransactionsBanner();
+      return;
+    }
     setExporting(true);
     setExportError('');
     try {
@@ -715,7 +806,6 @@ export default function AccountPage() {
   // result for themselves — with a full-screen green progress bar the
   // whole way through instead of leaving this page looking unresponsive.
   async function pickImportFile() {
-    setImportOptionsOpen(false);
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: [XLSX_MIME, 'application/vnd.ms-excel'],
@@ -929,9 +1019,14 @@ export default function AccountPage() {
         </View>
       </ScrollView>
 
-      <InfoModal open={importOptionsOpen} title="Import Data" onClose={() => setImportOptionsOpen(false)}>
+      <InfoModal
+        open={importOptionsOpen}
+        title="Import Data"
+        onClose={() => setImportOptionsOpen(false)}
+        onClosed={handleImportOptionsClosed}
+      >
         <Pressable
-          onPress={downloadTemplate}
+          onPress={() => { pendingAfterImportOptionsClose.current = 'template'; setImportOptionsOpen(false); }}
           disabled={downloadingTemplate}
           className="w-full px-4 py-4 rounded-2xl mb-3"
           style={{ backgroundColor: 'rgba(255,255,255,0.06)', opacity: downloadingTemplate ? 0.6 : 1 }}
@@ -944,7 +1039,7 @@ export default function AccountPage() {
           </Text>
         </Pressable>
         <Pressable
-          onPress={pickImportFile}
+          onPress={() => { pendingAfterImportOptionsClose.current = 'file'; setImportOptionsOpen(false); }}
           className="w-full px-4 py-4 rounded-2xl"
           style={{ backgroundColor: '#ffffff' }}
         >
@@ -1136,6 +1231,8 @@ export default function AccountPage() {
           </View>
         </View>
       )}
+
+      <BottomBanner visible={noTransactionsBanner}>No transactions to export yet</BottomBanner>
     </View>
   );
 }
