@@ -15,19 +15,26 @@ const FILL_COLOR = 'rgba(34,197,94,0.9)';
 // — that's what keeps the bar fitting any device width without horizontal
 // scroll, rather than computing a device-specific segment count.
 const SEGMENT_COUNT = 63;
-const WRAPPER_STYLE = {
-  paddingBottom: 10,
-  marginBottom: 16,
-  borderBottomWidth: 1,
-  borderBottomColor: 'rgba(255,255,255,0.08)',
-};
 // Same shape as SpendCalendarModal's card-settle animation: reaches near
 // the target fast, then eases off gradually instead of cubic's milder,
 // more even taper — keeps the initial burst but gives the last stretch a
 // longer, more visible slowdown.
 const GROW_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 
-function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }) {
+// `light` is a one-off experimental prop for trying a light theme on just
+// the Dashboard (and the flows it opens) — see the matching comment in
+// Header.js.
+function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, light = false }) {
+  const wrapperStyle = {
+    paddingBottom: 10,
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
+  };
+  const textColor = light ? '#111111' : '#ffffff';
+  const dimColor = light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
+  const dimmerColor = light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)';
+  const trackColor = light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)';
   // BudgetStatusBar fully unmounts when SpendCalendarModal closes (it
   // returns null rather than just hiding), so this component genuinely
   // remounts on every open — a mount-time animation is all that's needed
@@ -50,9 +57,9 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
 
   if (!hasBudget) {
     return (
-      <Pressable onPress={onSetup} className="flex-row items-center justify-between" style={WRAPPER_STYLE}>
-        <Text className="text-white text-sm font-semibold">Budget</Text>
-        <Text className="text-white/40 text-sm">Set a budget ›</Text>
+      <Pressable onPress={onSetup} className="flex-row items-center justify-between" style={wrapperStyle}>
+        <Text className="text-sm font-semibold" style={{ color: textColor }}>Budget</Text>
+        <Text className="text-sm" style={{ color: dimmerColor }}>Set a budget ›</Text>
       </Pressable>
     );
   }
@@ -60,10 +67,10 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
   const statusLabel = `${Math.round(percent)}% used`;
 
   return (
-    <View style={WRAPPER_STYLE}>
+    <View style={wrapperStyle}>
       <View className="flex-row items-center justify-between mb-2.5">
-        <Text className="text-white text-sm font-semibold">Budget</Text>
-        <Text className="text-white/50 text-sm">{formatCurrency(spent)} / {formatCurrency(amount)}</Text>
+        <Text className="text-sm font-semibold" style={{ color: textColor }}>Budget</Text>
+        <Text className="text-sm" style={{ color: dimColor }}>{formatCurrency(spent)} / {formatCurrency(amount)}</Text>
       </View>
 
       <View style={{ height: 18 }}>
@@ -73,7 +80,7 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
           onLayout={e => setBarWidth(e.nativeEvent.layout.width)}
         >
           {Array.from({ length: SEGMENT_COUNT }).map((_, i) => (
-            <View key={i} style={{ flex: 1, height: 18,backgroundColor: 'rgba(255,255,255,0.08)' }} />
+            <View key={i} style={{ flex: 1, height: 18, backgroundColor: trackColor }} />
           ))}
         </View>
 
@@ -92,7 +99,7 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup }
         </Animated.View>
       </View>
 
-      <Text className="text-white/40 text-sm text-right mt-1.5">{statusLabel}</Text>
+      <Text className="text-sm text-right mt-1.5" style={{ color: dimmerColor }}>{statusLabel}</Text>
     </View>
   );
 }

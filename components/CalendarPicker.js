@@ -11,7 +11,7 @@ function parseLocal(str) {
   return new Date(y, m - 1, d);
 }
 
-function CalendarPicker({ value, onChange, onClose }) {
+function CalendarPicker({ value, onChange, onClose, light = false }) {
   const selected = parseLocal(value);
   const [view, setView] = useState(new Date(selected.getFullYear(), selected.getMonth(), 1));
 
@@ -48,28 +48,31 @@ function CalendarPicker({ value, onChange, onClose }) {
   const weeks = [];
   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
 
+  const dim = (opacity) => light ? `rgba(0,0,0,${opacity})` : `rgba(255,255,255,${opacity})`;
+
   return (
-    <GlassView variant="glass" radius={16} className="p-4 w-full">
+    <GlassView variant="glass" radius={16} className="p-4 w-full" style={light ? { backgroundColor: '#F0F0EE' } : null}>
       <View className="flex-row items-center justify-between mb-4">
-        <GlassPressable variant="glass" radius={9999} onPress={prev} className="w-8 h-8 items-center justify-center">
-          <Text className="text-white/60 text-lg">‹</Text>
+        <GlassPressable variant="glass" radius={9999} onPress={prev} className="w-8 h-8 items-center justify-center" style={light ? { backgroundColor: 'rgba(0,0,0,0.05)' } : null}>
+          <Text className="text-lg" style={{ color: dim(0.6) }}>‹</Text>
         </GlassPressable>
-        <Text className="text-white text-base font-semibold">{MONTHS[month]} {year}</Text>
+        <Text className="text-base font-semibold" style={{ color: light ? '#111111' : '#ffffff' }}>{MONTHS[month]} {year}</Text>
         <GlassPressable
           variant="glass"
           radius={9999}
           onPress={next}
           disabled={isCurrentMonth}
           className="w-8 h-8 items-center justify-center"
+          style={light ? { backgroundColor: 'rgba(0,0,0,0.05)' } : null}
         >
-          <Text className={isCurrentMonth ? "text-white/20 text-lg" : "text-white/60 text-lg"}>›</Text>
+          <Text className="text-lg" style={{ color: isCurrentMonth ? dim(0.2) : dim(0.6) }}>›</Text>
         </GlassPressable>
       </View>
 
       <View className="flex-row mb-1">
         {DAYS.map(d => (
           <View key={d} className="flex-1 items-center py-1">
-            <Text className="text-white/30 text-xs font-medium">{d}</Text>
+            <Text className="text-xs font-medium" style={{ color: dim(0.3) }}>{d}</Text>
           </View>
         ))}
       </View>
@@ -111,8 +114,12 @@ function CalendarPicker({ value, onChange, onClose }) {
                     style={isToday ? { borderWidth: 1, borderColor: '#ff3b30' } : null}
                   >
                     <Text
-                      className={isFuture ? "text-white/15 text-base" : isToday ? "text-base font-medium" : "text-white/60 text-base"}
-                      style={!isFuture && isToday ? { color: '#ff3b30' } : null}
+                      className="text-base"
+                      style={
+                        isFuture ? { color: dim(0.15) }
+                        : isToday ? { color: '#ff3b30', fontWeight: '500' }
+                        : { color: dim(0.6) }
+                      }
                     >
                       {d}
                     </Text>

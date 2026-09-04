@@ -60,10 +60,10 @@ function WelcomeGreetingPage({ name, onDone }) {
 
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
-      <Animated.Text style={[{ color: '#ffffff', fontSize: 20, fontWeight: '500', marginBottom: 8 }, helloStyle]}>
-        Hello <Text style={{ color: '#4ade80', fontWeight: '700' }}>{name}</Text>👋
+      <Animated.Text style={[{ color: '#ffffff', fontSize: 15, fontWeight: '400', marginBottom: 6 }, helloStyle]}>
+        Hello <Text style={{ color: '#4ade80', fontWeight: '600' }}>{name}</Text>👋
       </Animated.Text>
-      <Animated.Text style={[{ color: '#ffffff', fontSize: 24, fontWeight: '700' }, titleStyle]}>
+      <Animated.Text style={[{ color: '#ffffff', fontSize: 18, fontWeight: '600' }, titleStyle]}>
         Welcome to Okana
       </Animated.Text>
     </View>

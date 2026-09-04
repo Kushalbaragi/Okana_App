@@ -5,12 +5,15 @@ import TransactionItem from './TransactionItem';
 import { monthLabel } from '../utils/format';
 import { SETTLE_EASING } from './AmountField';
 
-const ListHeader = (
-  <Text
-    className="text-white/25 text-sm font-medium uppercase tracking-wide mt-4 mb-3 px-1">
-    Transactions
-  </Text>
-);
+function ListHeaderFor(light) {
+  return (
+    <Text
+      className="text-sm font-medium uppercase tracking-wide mt-4 mb-3 px-1"
+      style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.25)' }}>
+      Transactions
+    </Text>
+  );
+}
 // Per-row stagger, capped so a long list doesn't take forever to finish
 // revealing — rows past the cap all settle together at the tail instead of
 // queuing further out.
@@ -41,6 +44,8 @@ function RevealRow({ index, children }) {
   return <Animated.View style={style}>{children}</Animated.View>;
 }
 
+// `light` is a one-off experimental prop for trying a light theme on just
+// the Dashboard — see the matching comment in Header.js.
 function TransactionList({
   transactions,
   activeTab,
@@ -52,7 +57,9 @@ function TransactionList({
   selectedDay,
   onEdit,
   onDelete,
+  light = false,
 }, ref) {
+  const bgColor = light ? '#FAFAF8' : '#0a0a0a';
   const isOverview = chartTab === 'overview';
   const isIncome   = activeTab === 'income';
 
@@ -154,12 +161,12 @@ function TransactionList({
   if (filtered.length === 0) {
     return (
       <View className="px-4 pb-28">
-        {ListHeader}
+        {ListHeaderFor(light)}
         <View className="items-center justify-center py-14 px-4">
-          <Text className="text-white/25 text-base text-center">
+          <Text className="text-base text-center" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.25)' }}>
             No {isOverview ? 'transactions' : `${activeTab}s`} for this period
           </Text>
-          <Text className="text-white/15 text-base mt-1">Tap + to add one</Text>
+          <Text className="text-base mt-1" style={{ color: light ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.15)' }}>Tap + to add one</Text>
         </View>
       </View>
     );
@@ -182,8 +189,8 @@ function TransactionList({
         renderItem={({ item, index, section }) => {
           const card = (
             <View
-              className="bg-bg"
               style={{
+                backgroundColor: bgColor,
                 overflow: 'hidden',
                 borderTopLeftRadius: index === 0 ? 12 : 0,
                 borderTopRightRadius: index === 0 ? 12 : 0,
@@ -199,6 +206,7 @@ function TransactionList({
                 registerSwipeable={registerSwipeable}
                 onSwipeOpen={onSwipeOpen}
                 onCardPress={onCardPress}
+                light={light}
               />
             </View>
           );
@@ -210,14 +218,17 @@ function TransactionList({
         }}
         renderSectionHeader={({ section }) =>
           section.title ? (
-            <View className={`flex-row items-center justify-between mb-2 bg-bg ${section.key === sections[0]?.key ? 'mt-0' : 'mt-6'}`}>
-              <Text className="text-white/35 text-sm font-medium uppercase tracking-wider">
+            <View
+              className={`flex-row items-center justify-between mb-2 ${section.key === sections[0]?.key ? 'mt-0' : 'mt-6'}`}
+              style={{ backgroundColor: bgColor }}
+            >
+              <Text className="text-sm font-medium uppercase tracking-wider" style={{ color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.35)' }}>
                 {section.title}
               </Text>
             </View>
           ) : null
         }
-        ListHeaderComponent={ListHeader}
+        ListHeaderComponent={ListHeaderFor(light)}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 112 }}
         showsVerticalScrollIndicator={false}
         style={{ flex: 1 }}

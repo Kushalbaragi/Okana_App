@@ -28,6 +28,7 @@ export function ActionOverlay({
   holdMs = DEFAULT_HOLD_MS,
   onDone,
   children,
+  light = false,
 }) {
   const fillProgress = useSharedValue(0);
 
@@ -48,27 +49,30 @@ export function ActionOverlay({
   const fillStyle = useAnimatedStyle(() => ({ width: `${fillProgress.value * 100}%` }));
 
   return (
-    <AnimatedModal open onClose={() => {}} variant="center">
+    // A dimmer, light-mode scrim (same value AddModal already uses behind
+    // its own light-mode sheet) so recolored dark-ink text stays readable —
+    // the default dim=1 solid-black backdrop would swallow it otherwise.
+    <AnimatedModal open onClose={() => {}} variant="center" dim={light ? 0.4 : 1}>
       <View className="items-center" style={{ maxWidth: 320 }}>
         {phase === 'working' ? (
           <>
-            <View style={{ width: 200, height: 8, borderRadius: 4, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 20 }}>
+            <View style={{ width: 200, height: 8, borderRadius: 4, overflow: 'hidden', backgroundColor: light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)', marginBottom: 20 }}>
               <Animated.View style={[{ height: '100%', borderRadius: 4, backgroundColor: '#4ade80' }, fillStyle]} />
             </View>
-            <Text className="text-white font-semibold text-base text-center">{workingText}</Text>
-            <Text className="text-white/40 text-base mt-1 text-center">{workingSubtext}</Text>
+            <Text className="font-semibold text-base text-center" style={{ color: light ? '#111111' : '#ffffff' }}>{workingText}</Text>
+            <Text className="text-base mt-1 text-center" style={{ color: light ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.40)' }}>{workingSubtext}</Text>
           </>
         ) : phase === 'notConfirmed' ? (
           <>
-            <Text className="text-white font-semibold text-base text-center">{notConfirmedText}</Text>
+            <Text className="font-semibold text-base text-center" style={{ color: light ? '#111111' : '#ffffff' }}>{notConfirmedText}</Text>
             {!!notConfirmedSubtext && (
-              <Text className="text-white/40 text-base mt-1 text-center">{notConfirmedSubtext}</Text>
+              <Text className="text-base mt-1 text-center" style={{ color: light ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.40)' }}>{notConfirmedSubtext}</Text>
             )}
           </>
         ) : (
           <>
             <SuccessBadge style={{ marginBottom: 20 }} />
-            <Text className="text-white font-semibold text-base text-center">{successText}</Text>
+            <Text className="font-semibold text-base text-center" style={{ color: light ? '#111111' : '#ffffff' }}>{successText}</Text>
             {children}
           </>
         )}

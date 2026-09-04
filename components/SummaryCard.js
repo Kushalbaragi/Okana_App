@@ -80,7 +80,7 @@ function AnimatedDelta({ text, style }) {
   );
 }
 
-function RangeSelector({ value, onChange, currentYear, currentMonth }) {
+function RangeSelector({ value, onChange, currentYear, currentMonth, light }) {
   const options = [
     { id: 'month', label: MONTH_NAMES[currentMonth] },
     { id: 'year',  label: String(currentYear) },
@@ -105,7 +105,7 @@ function RangeSelector({ value, onChange, currentYear, currentMonth }) {
             onPress={() => onChange(opt.id)}
             className="px-3 py-1 rounded-full"
           >
-            <Text className="text-white/30 text-base font-medium">{opt.label}</Text>
+            <Text className="text-base font-medium" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>{opt.label}</Text>
           </Pressable>
         )
       ))}
@@ -113,6 +113,8 @@ function RangeSelector({ value, onChange, currentYear, currentMonth }) {
   );
 }
 
+// `light` is a one-off experimental prop for trying a light theme on just
+// the Dashboard — see the matching comment in Header.js.
 function SummaryCard({
   transactions,
   chartTab,
@@ -125,6 +127,7 @@ function SummaryCard({
   onPeriodChange,
   selectedDay,
   onDayChange,
+  light = false,
 }) {
   const { month: currMonth, year: currYear } = currentMonthYear();
 
@@ -266,10 +269,10 @@ function SummaryCard({
 
   return (
     <View className="mx-4 mb-3 p-5">
-      <Text className="text-white/40 text-base text-center mb-1">{periodLabel}</Text>
+      <Text className="text-base text-center mb-1" style={{ color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.40)' }}>{periodLabel}</Text>
 
       <View className="items-center justify-center mb-2">
-        <AnimatedAmount value={Math.abs(displayAmount)} color={isOverview ? (netPositive ? '#4ade80' : '#f87171') : '#ffffff'} />
+        <AnimatedAmount value={Math.abs(displayAmount)} color={isOverview ? (netPositive ? '#4ade80' : '#f87171') : (light ? '#111111' : '#ffffff')} />
       </View>
 
       <View className="items-center justify-center mb-5" style={{ minHeight: 16 }}>
@@ -279,7 +282,7 @@ function SummaryCard({
             {arrow && <Text className="text-base font-medium" style={{ color: deltaColor }}>{arrow}</Text>}
           </View>
         ) : (
-          <Text className="text-base" style={{ color: 'rgba(255,255,255,0.2)' }}>—</Text>
+          <Text className="text-base" style={{ color: light ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)' }}>—</Text>
         )}
       </View>
 
@@ -290,6 +293,7 @@ function SummaryCard({
           expenseData={lineChartData.expense}
           labels={lineChartData.labels}
           animKey={animKey}
+          light={light}
         />
       ) : (
         <BarChart
@@ -308,10 +312,11 @@ function SummaryCard({
           animKey={animKey}
           labelStep={labelStep}
           useSqrtScale={timeRange === 'month'}
+          light={light}
         />
       )}
 
-      <RangeSelector value={timeRange} onChange={onTimeRangeChange} currentYear={currYear} currentMonth={currMonth} />
+      <RangeSelector value={timeRange} onChange={onTimeRangeChange} currentYear={currYear} currentMonth={currMonth} light={light} />
     </View>
   );
 }

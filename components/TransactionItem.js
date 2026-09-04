@@ -8,12 +8,15 @@ import { EditIcon, TrashIcon } from './icons';
 
 const ACTION_WIDTH = 68;
 
-function DateBox({ dateStr }) {
+function DateBox({ dateStr, light }) {
   const { day, month } = dateBoxParts(dateStr);
   return (
-    <View className="items-center justify-center w-8 h-8 rounded bg-white/5 shrink-0 mr-2.5">
-      <Text className="text-white/70 text-[11px] font-semibold leading-none">{day}</Text>
-      <Text className="text-white/30 text-[8px] font-medium leading-none mt-0.5 tracking-tight">{month}</Text>
+    <View
+      className="items-center justify-center w-8 h-8 rounded shrink-0 mr-2.5"
+      style={{ backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)' }}
+    >
+      <Text className="text-[11px] font-semibold leading-none" style={{ color: light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)' }}>{day}</Text>
+      <Text className="text-[8px] font-medium leading-none mt-0.5 tracking-tight" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>{month}</Text>
     </View>
   );
 }
@@ -21,7 +24,7 @@ function DateBox({ dateStr }) {
 // Fades + scales the two action buttons in as the row is dragged open,
 // rather than having them sit fully-opaque under the card the whole time —
 // reads as a much cleaner reveal than a static layer just being uncovered.
-function RightActions({ drag, onEdit, onDelete }) {
+function RightActions({ drag, onEdit, onDelete, light }) {
   const style = useAnimatedStyle(() => {
     const progress = Math.min(1, Math.max(0, -drag.value / ACTION_WIDTH));
     return { opacity: progress, transform: [{ scale: 0.7 + progress * 0.3 }] };
@@ -32,9 +35,9 @@ function RightActions({ drag, onEdit, onDelete }) {
       <Animated.View style={[{ flexDirection: 'row' }, style]}>
         <Pressable
           onPress={onEdit}
-          style={{ width: ACTION_WIDTH, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)' }}
+          style={{ width: ACTION_WIDTH, alignItems: 'center', justifyContent: 'center', backgroundColor: light ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)' }}
         >
-          <EditIcon size={19} color="rgba(255,255,255,0.85)" />
+          <EditIcon size={19} color={light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.85)'} />
         </Pressable>
         <Pressable
           onPress={onDelete}
@@ -47,7 +50,9 @@ function RightActions({ drag, onEdit, onDelete }) {
   );
 }
 
-function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, onSwipeOpen, onCardPress }) {
+// `light` is a one-off experimental prop for trying a light theme on just
+// the Dashboard — see the matching comment in Header.js.
+function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, onSwipeOpen, onCardPress, light = false }) {
   const swipeableRef = useRef(null);
 
   const setSwipeableRef = useCallback(r => {
@@ -78,18 +83,18 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
       rightThreshold={32}
       overshootRight={false}
       renderRightActions={(_progress, drag) => (
-        <RightActions drag={drag} onEdit={handleEdit} onDelete={handleDelete} />
+        <RightActions drag={drag} onEdit={handleEdit} onDelete={handleDelete} light={light} />
       )}
       onSwipeableWillOpen={() => onSwipeOpen?.(tx.id)}
     >
       <Pressable
         onPress={handleCardPress}
         className="flex-row items-center justify-between py-3 px-4"
-        style={{ backgroundColor: '#0a0a0a' }}
+        style={{ backgroundColor: light ? '#FAFAF8' : '#0a0a0a' }}
       >
         <View className="flex-row items-center flex-1 pr-3">
-          <DateBox dateStr={tx.date} />
-          <Text numberOfLines={1} className="text-white text-base flex-shrink">
+          <DateBox dateStr={tx.date} light={light} />
+          <Text numberOfLines={1} className="text-base flex-shrink" style={{ color: light ? '#111111' : '#ffffff' }}>
             {tx.description || (isIncome ? 'Income' : 'Expense')}
           </Text>
         </View>
@@ -98,11 +103,11 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
           {/* Not yet synced to the server — sitting in the offline queue,
               or an insert/update still in flight. */}
           {tx._pending && (
-            <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: 'rgba(255,255,255,0.3)' }} />
+            <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: light ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }} />
           )}
           <Text
             className="text-base font-medium"
-            style={{ color: isIncome ? 'rgba(74,222,128,0.8)' : 'rgba(255,255,255,0.45)' }}
+            style={{ color: isIncome ? 'rgba(74,222,128,0.8)' : light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}
           >
             {isIncome ? '+' : '-'}{formatCurrencyFull(tx.amount)}
           </Text>

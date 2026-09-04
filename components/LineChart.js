@@ -25,7 +25,7 @@ function areaPath(pts, bottom) {
   return `${line} L${pts[pts.length - 1].x.toFixed(1)},${bottom} L${pts[0].x.toFixed(1)},${bottom} Z`;
 }
 
-function LineChart({ incomeData, expenseData, labels, animKey }) {
+function LineChart({ incomeData, expenseData, labels, animKey, light = false }) {
   const progress = useSharedValue(0);
   // The reveal-width animation needs a real pixel target, not a percentage —
   // Reanimated interpolates numbers reliably; measured once via onLayout
@@ -121,7 +121,7 @@ function LineChart({ incomeData, expenseData, labels, animKey }) {
               <Circle cx={expensePts[n - 1].x} cy={expensePts[n - 1].y} r="2.5" fill="#f87171" />
             </G>
 
-            <Line x1={0} y1={bottom} x2={CHART_W} y2={bottom} stroke="rgba(255,255,255,0.18)" strokeWidth="1" strokeDasharray="2 3" />
+            <Line x1={0} y1={bottom} x2={CHART_W} y2={bottom} stroke={light ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.18)'} strokeWidth="1" strokeDasharray="2 3" />
 
             {labels.map((lbl, i) => showLabel(i) && lbl && (
               <SvgText
@@ -130,7 +130,7 @@ function LineChart({ incomeData, expenseData, labels, animKey }) {
                 y={svgH - 2}
                 textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}
                 fontSize="8.5"
-                fill="rgba(255,255,255,0.22)"
+                fill={light ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.22)'}
               >
                 {lbl}
               </SvgText>

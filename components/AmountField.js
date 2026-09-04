@@ -66,13 +66,14 @@ export function AmountDigit({ char, animateIn, color = '#ffffff', fontSize = 48,
 // group slides together as digits are added/removed — or the dimmed "0"
 // placeholder when the field is empty. Used anywhere an amount is entered
 // via NumericKeypad (Add Transaction, Set Budget).
-export function AmountRow({ amount, prevAmountLength, skipDigitAnim, symbolFontSize = 44, digitFontSize = 48, lineHeight = 56 }) {
+export function AmountRow({ amount, prevAmountLength, skipDigitAnim, symbolFontSize = 44, digitFontSize = 48, lineHeight = 56, light = false }) {
+  const digitColor = light ? '#111111' : '#ffffff';
   return (
     <Animated.View layout={AMOUNT_LAYOUT_TRANSITION} className="flex-row items-center justify-center">
       <Animated.Text
         layout={AMOUNT_LAYOUT_TRANSITION}
-        className="font-light text-white/35"
-        style={{ fontSize: symbolFontSize, lineHeight, marginRight: 4 }}
+        className="font-light"
+        style={{ fontSize: symbolFontSize, lineHeight, marginRight: 4, color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}
       >
         ₹
       </Animated.Text>
@@ -84,10 +85,11 @@ export function AmountRow({ amount, prevAmountLength, skipDigitAnim, symbolFontS
             animateIn={i >= prevAmountLength && !skipDigitAnim}
             fontSize={digitFontSize}
             lineHeight={lineHeight}
+            color={digitColor}
           />
         ))
       ) : (
-        <Text className="font-semibold" style={{ fontSize: digitFontSize, lineHeight, color: '#333333' }}>0</Text>
+        <Text className="font-semibold" style={{ fontSize: digitFontSize, lineHeight, color: light ? '#cccccc' : '#333333' }}>0</Text>
       )}
     </Animated.View>
   );

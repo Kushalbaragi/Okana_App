@@ -62,20 +62,20 @@ export function TrashIcon({ size = 18, color = '#ffffff' }) {
   );
 }
 
-export function ChevronRight({ size = 14 }) {
+export function ChevronRight({ size = 14, color = 'rgba(255,255,255,0.25)' }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 14 14" fill="none">
-      <Path d="M5 3l4 4-4 4" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M5 3l4 4-4 4" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
 
-export function HamburgerIcon() {
+export function HamburgerIcon({ color = 'rgba(255,255,255,0.7)' }) {
   return (
     <Svg width={20} height={14} viewBox="0 0 20 14" fill="none">
-      <Line x1="0" y1="1" x2="20" y2="1" stroke="rgba(255,255,255,0.7)" strokeWidth="1.6" strokeLinecap="round" />
-      <Line x1="0" y1="7" x2="14" y2="7" stroke="rgba(255,255,255,0.7)" strokeWidth="1.6" strokeLinecap="round" />
-      <Line x1="0" y1="13" x2="17" y2="13" stroke="rgba(255,255,255,0.7)" strokeWidth="1.6" strokeLinecap="round" />
+      <Line x1="0" y1="1" x2="20" y2="1" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+      <Line x1="0" y1="7" x2="14" y2="7" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+      <Line x1="0" y1="13" x2="17" y2="13" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
     </Svg>
   );
 }
@@ -98,13 +98,13 @@ export function CameraIcon({ size = 22, color = 'rgba(255,255,255,0.5)' }) {
   );
 }
 
-export function CalendarIcon({ size = 18 }) {
+export function CalendarIcon({ size = 18, color = 'rgba(255,255,255,0.7)' }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 18 18" fill="none">
-      <Rect x="1.5" y="3" width="15" height="13" rx="2.5" stroke="rgba(255,255,255,0.7)" strokeWidth="1.4" />
-      <Line x1="1.5" y1="7" x2="16.5" y2="7" stroke="rgba(255,255,255,0.7)" strokeWidth="1.4" />
-      <Line x1="5" y1="1" x2="5" y2="4.5" stroke="rgba(255,255,255,0.7)" strokeWidth="1.4" strokeLinecap="round" />
-      <Line x1="13" y1="1" x2="13" y2="4.5" stroke="rgba(255,255,255,0.7)" strokeWidth="1.4" strokeLinecap="round" />
+      <Rect x="1.5" y="3" width="15" height="13" rx="2.5" stroke={color} strokeWidth="1.4" />
+      <Line x1="1.5" y1="7" x2="16.5" y2="7" stroke={color} strokeWidth="1.4" />
+      <Line x1="5" y1="1" x2="5" y2="4.5" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+      <Line x1="13" y1="1" x2="13" y2="4.5" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
     </Svg>
   );
 }

@@ -22,22 +22,31 @@ const OFF_SCREEN_Y = 1200;
 
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatDisplay(dateStr) {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  return `${d} ${MONTHS_SHORT[m - 1]} ${y}`;
+  const todayStr = today();
+  if (dateStr === todayStr) return 'Today';
+  const [ty, tm, td] = todayStr.split('-').map(Number);
+  const y = new Date(ty, tm - 1, td - 1);
+  const yesterdayStr = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
+  if (dateStr === yesterdayStr) return 'Yesterday';
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return `${day} ${MONTHS_SHORT[month - 1]} ${year}`;
 }
 
-function CalIcon() {
+function CalIcon({ color = 'rgba(255,255,255,0.35)' }) {
   return (
     <Svg width={14} height={14} viewBox="0 0 14 14" fill="none">
-      <Rect x="1" y="2.5" width="12" height="10.5" rx="2" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" />
-      <Line x1="1" y1="5.5" x2="13" y2="5.5" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" />
-      <Line x1="4.5" y1="1" x2="4.5" y2="4" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" strokeLinecap="round" />
-      <Line x1="9.5" y1="1" x2="9.5" y2="4" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" strokeLinecap="round" />
+      <Rect x="1" y="2.5" width="12" height="10.5" rx="2" stroke={color} strokeWidth="1.2" />
+      <Line x1="1" y1="5.5" x2="13" y2="5.5" stroke={color} strokeWidth="1.2" />
+      <Line x1="4.5" y1="1" x2="4.5" y2="4" stroke={color} strokeWidth="1.2" strokeLinecap="round" />
+      <Line x1="9.5" y1="1" x2="9.5" y2="4" stroke={color} strokeWidth="1.2" strokeLinecap="round" />
     </Svg>
   );
 }
 
-function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
+// `light` is a one-off experimental prop for trying a light theme on just
+// the Dashboard (and the flows it opens) — see the matching comment in
+// Header.js. Callers outside the Dashboard keep passing nothing.
+function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = false }) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
 
@@ -273,11 +282,11 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
           content is sliding off-screen, even though it's already invisible.
           `open` (not `visible`) flips to false the instant a close starts,
           so touches fall through immediately instead of at the end. */}
-      <Animated.View className="flex-1 bg-bg" style={pageStyle} pointerEvents={open ? 'auto' : 'none'}>
+      <Animated.View className="flex-1" style={[{ backgroundColor: light ? '#FAFAF8' : '#0a0a0a' }, pageStyle]} pointerEvents={open ? 'auto' : 'none'}>
       <GestureDetector gesture={pan}>
       <View style={{ flex: 1 }}>
         <View style={{ paddingTop: insets.top + 10, paddingBottom: 24, alignItems: 'center' }}>
-          <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.2)' }} />
+          <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: light ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.2)' }} />
         </View>
 
         {/* No flex:1 here deliberately — this content (toggle/amount/date/
@@ -293,7 +302,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
         >
           <View
             className="flex-row rounded-full p-[3px] mb-8"
-            style={{ backgroundColor: '#161616' }}
+            style={{ backgroundColor: light ? '#EFEFED' : '#161616' }}
             onLayout={e => setTypeToggleWidth(e.nativeEvent.layout.width)}
           >
             {typeToggleWidth > 0 && (
@@ -311,7 +320,8 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
                 className="flex-1 py-[6px] rounded-full items-center"
               >
                 <Text
-                  className={type === t ? 'text-white text-base font-medium' : 'text-white/35 text-base font-medium'}>
+                  className="text-base font-medium"
+                  style={{ color: type === t ? '#ffffff' : light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.35)' }}>
                   {t.charAt(0).toUpperCase() + t.slice(1)}
                 </Text>
               </Pressable>
@@ -319,31 +329,31 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
           </View>
 
           <View className="mb-8 items-center">
-            <AmountRow amount={amount} prevAmountLength={prevAmountLength} skipDigitAnim={skipDigitAnimRef.current} />
+            <AmountRow amount={amount} prevAmountLength={prevAmountLength} skipDigitAnim={skipDigitAnimRef.current} light={light} />
           </View>
 
           <View className="mb-6">
-            <Text className="text-white text-[15px] font-medium mb-2">Date</Text>
+            <Text className="text-[15px] font-medium mb-2" style={{ color: light ? '#111111' : '#ffffff' }}>Date</Text>
             <GlassPressable
               variant="field"
               onPress={() => setCalOpen(true)}
               className="w-full px-4 py-3 flex-row items-center justify-between"
-              style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)' }}
+              style={{ borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.14)' }}
             >
-              <Text className="text-white text-base">{formatDisplay(date)}</Text>
-              <CalIcon />
+              <Text className="text-base" style={{ color: light ? '#111111' : '#ffffff' }}>{formatDisplay(date)}</Text>
+              <CalIcon color={light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)'} />
             </GlassPressable>
           </View>
 
           <View className="mb-6">
-            <Text className="text-white text-[15px] font-medium mb-4">Description</Text>
+            <Text className="text-[15px] font-medium mb-4" style={{ color: light ? '#111111' : '#ffffff' }}>Description</Text>
             <TextInput
               value={description}
               onChangeText={setDescription}
               placeholder="What was this for?"
-              placeholderTextColor="#4d4d4d"
-              className="w-full rounded-xl px-4 py-3 text-white text-base"
-              style={{ backgroundColor: 'transparent', borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)' }}
+              placeholderTextColor={light ? '#b0b0b0' : '#4d4d4d'}
+              className="w-full rounded-xl px-4 py-3 text-base"
+              style={{ backgroundColor: 'transparent', borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.14)', color: light ? '#111111' : '#ffffff' }}
             />
           </View>
         </ScrollView>
@@ -369,7 +379,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
         {/* Fixed, always-present keypad for Amount — same permanent-layout
             idea as the reference recording this was modeled on: no keyboard
             lifecycle to sync with because there's no real keyboard involved. */}
-        <NumericKeypad onKeyPress={handleKeypadPress} insetBottom={insets.bottom} />
+        <NumericKeypad onKeyPress={handleKeypadPress} insetBottom={insets.bottom} light={light} />
       </View>
       </GestureDetector>
       </Animated.View>
@@ -381,9 +391,9 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData }) {
           style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'flex-start', paddingHorizontal: 24, paddingTop: insets.top + 70 }]}
           onPress={closeCalendar}
         >
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000000' }]} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: light ? 'rgba(0,0,0,0.4)' : '#000000' }]} />
           <View style={{ width: '100%', maxWidth: 360 }}>
-            <CalendarPicker value={date} onChange={setDate} onClose={closeCalendar} />
+            <CalendarPicker value={date} onChange={setDate} onClose={closeCalendar} light={light} />
           </View>
         </Pressable>
       )}

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, Platform, Linking, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
+import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -27,6 +28,14 @@ import { ONBOARDING_SEEN_KEY } from '../onboarding';
 import { AnimatedModal } from '../../components/AnimatedModal';
 import { ActionOverlay } from '../../components/ActionOverlay';
 
+// One-flag experiment: a light theme for just this screen. Flip back to
+// false to fully revert. Mirrors the same LIGHT_HOME flag in app/(app)/index.js.
+const LIGHT_SETTINGS = false;
+const SETTINGS_BG = LIGHT_SETTINGS ? '#FAFAF8' : '#0a0a0a';
+// Same lighter-scrim value AddModal/SpendCalendarModal already use behind a
+// light-mode sheet, so a modal here doesn't dim the light page to solid black.
+const MODAL_DIM = LIGHT_SETTINGS ? 0.4 : 1;
+
 const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 // Reads the real version from app.json (via Expo's config, not a second
@@ -35,38 +44,48 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 const APP_VERSION = Constants.expoConfig?.version ?? '—';
 
 function InstagramIcon() {
+  const c = LIGHT_SETTINGS ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
   return (
     <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
-      <Rect x="2" y="2" width="20" height="20" rx="6" stroke="rgba(255,255,255,0.5)" strokeWidth="1.5" />
-      <Circle cx="12" cy="12" r="4" stroke="rgba(255,255,255,0.5)" strokeWidth="1.5" />
-      <Circle cx="17.5" cy="6.5" r="1" fill="rgba(255,255,255,0.5)" />
+      <Rect x="2" y="2" width="20" height="20" rx="6" stroke={c} strokeWidth="1.5" />
+      <Circle cx="12" cy="12" r="4" stroke={c} strokeWidth="1.5" />
+      <Circle cx="17.5" cy="6.5" r="1" fill={c} />
     </Svg>
   );
 }
 
 function YouTubeIcon() {
+  const c = LIGHT_SETTINGS ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
   return (
     <Svg width={16} height={14} viewBox="0 0 24 17" fill="none">
-      <Rect x="0.5" y="0.5" width="23" height="16" rx="4" stroke="rgba(255,255,255,0.5)" strokeWidth="1.3" />
-      <Path d="M10 5.5l6 3-6 3v-6z" fill="rgba(255,255,255,0.5)" />
+      <Rect x="0.5" y="0.5" width="23" height="16" rx="4" stroke={c} strokeWidth="1.3" />
+      <Path d="M10 5.5l6 3-6 3v-6z" fill={c} />
     </Svg>
   );
 }
 
 function Divider() {
-  return <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.07)', marginHorizontal: 16 }} />;
+  return <View style={{ height: 1, backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)', marginHorizontal: 16 }} />;
 }
 
 function SectionLabel({ children }) {
   return (
     <Text
-      className="text-white/30 text-[11px] font-medium uppercase tracking-widest px-1 pt-2 mb-2">{children}</Text>
+      className="text-[11px] font-medium uppercase tracking-widest px-1 pt-2 mb-2"
+      style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.30)' }}>{children}</Text>
   );
 }
 
 function Card({ children }) {
   return (
-    <View className="rounded-2xl overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' }}>
+    <View
+      className="rounded-2xl overflow-hidden"
+      style={{
+        backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)',
+        borderWidth: 1,
+        borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)',
+      }}
+    >
       {children}
     </View>
   );
@@ -85,10 +104,10 @@ function Pill({ label, tone = 'green' }) {
 function Row({ label, value, onPress, right }) {
   const content = (
     <View className="flex-row items-center justify-between px-4 py-[14px]">
-      <Text className="text-white text-base">{label}</Text>
+      <Text className="text-base" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>{label}</Text>
       <View className="flex-row items-center" style={{ gap: 8 }}>
-        {!!value && <Text className="text-white/35 text-xs">{value}</Text>}
-        {right || (onPress && !right && <ChevronRight />)}
+        {!!value && <Text className="text-xs" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}>{value}</Text>}
+        {right || (onPress && !right && <ChevronRight color={LIGHT_SETTINGS ? 'rgba(0,0,0,0.25)' : undefined} />)}
       </View>
     </View>
   );
@@ -98,13 +117,20 @@ function Row({ label, value, onPress, right }) {
 function InfoModal({ open, title, onClose, onClosed, children }) {
   const { height: windowHeight } = useWindowDimensions();
   return (
-    <AnimatedModal open={open} onClose={onClose} onClosed={onClosed} variant="bottom">
+    <AnimatedModal open={open} onClose={onClose} onClosed={onClosed} variant="bottom" dim={MODAL_DIM}>
       <View
         className="px-6 pt-5 pb-10"
-        style={{ maxHeight: windowHeight * 0.8, backgroundColor: 'rgba(14,14,14,0.97)', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+        style={{
+          maxHeight: windowHeight * 0.8,
+          backgroundColor: LIGHT_SETTINGS ? 'rgba(250,250,248,0.97)' : 'rgba(14,14,14,0.97)',
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+          borderTopWidth: 1,
+          borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
+        }}
       >
-        <View className="w-8 h-1 rounded-full mx-auto mb-5" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }} />
-        <Text className="text-white font-semibold text-base mb-4">{title}</Text>
+        <View className="w-8 h-1 rounded-full mx-auto mb-5" style={{ backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.12)' }} />
+        <Text className="font-semibold text-base mb-4" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>{title}</Text>
         <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {children}
         </ScrollView>
@@ -218,16 +244,16 @@ function AvatarPhoto({ uri, phase, onPress }) {
       {uri ? (
         <Image
           source={{ uri }}
-          style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 1, borderColor: 'rgba(255,255,255,0.13)' }}
+          style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 1, borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.13)' : 'rgba(255,255,255,0.13)' }}
           cachePolicy="memory-disk"
           transition={150}
         />
       ) : (
         <View
           className="w-20 h-20 rounded-full items-center justify-center"
-          style={{ backgroundColor: 'rgba(255,255,255,0.10)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.13)' }}
+          style={{ backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)', borderWidth: 1, borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.13)' : 'rgba(255,255,255,0.13)' }}
         >
-          <CameraIcon size={28} />
+          <CameraIcon size={28} color={LIGHT_SETTINGS ? 'rgba(0,0,0,0.5)' : undefined} />
         </View>
       )}
 
@@ -286,19 +312,24 @@ function AvatarPhoto({ uri, phase, onPress }) {
 // 'neutral' is for a reversible one (logout) that still deserves a
 // confirm tap but shouldn't visually read as equally dangerous.
 function ConfirmModal({ open, title, message, confirmLabel, tone = 'danger', onConfirm, onCancel, onClosed }) {
-  const confirmBg = tone === 'danger' ? 'rgba(248,113,113,0.14)' : 'rgba(255,255,255,0.1)';
-  const confirmColor = tone === 'danger' ? 'rgba(248,113,113,0.9)' : '#ffffff';
+  const confirmBg = tone === 'danger' ? 'rgba(248,113,113,0.14)' : (LIGHT_SETTINGS ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)');
+  const confirmColor = tone === 'danger' ? 'rgba(248,113,113,0.9)' : (LIGHT_SETTINGS ? '#111111' : '#ffffff');
   return (
-    <AnimatedModal open={open} onClose={onCancel} onClosed={onClosed} variant="center">
+    <AnimatedModal open={open} onClose={onCancel} onClosed={onClosed} variant="center" dim={MODAL_DIM}>
       <View
         className="w-full rounded-2xl p-6"
-        style={{ maxWidth: 360, backgroundColor: 'rgba(20,20,20,0.98)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
+        style={{
+          maxWidth: 360,
+          backgroundColor: LIGHT_SETTINGS ? 'rgba(250,250,248,0.98)' : 'rgba(20,20,20,0.98)',
+          borderWidth: 1,
+          borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)',
+        }}
       >
-        <Text className="text-white font-semibold text-base mb-2">{title}</Text>
-        <Text className="text-white/45 text-base mb-6" style={{ lineHeight: 22 }}>{message}</Text>
+        <Text className="font-semibold text-base mb-2" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>{title}</Text>
+        <Text className="text-base mb-6" style={{ lineHeight: 22, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{message}</Text>
         <View className="flex-row" style={{ gap: 12 }}>
-          <Pressable onPress={onCancel} className="flex-1 py-3 rounded-xl items-center" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
-            <Text className="text-white/60 text-base font-medium">Cancel</Text>
+          <Pressable onPress={onCancel} className="flex-1 py-3 rounded-xl items-center" style={{ backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)' }}>
+            <Text className="text-base font-medium" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.60)' : 'rgba(255,255,255,0.60)' }}>Cancel</Text>
           </Pressable>
           <Pressable onPress={onConfirm} className="flex-1 py-3 rounded-xl items-center" style={{ backgroundColor: confirmBg }}>
             <Text className="text-base font-semibold" style={{ color: confirmColor }}>{confirmLabel}</Text>
@@ -333,10 +364,11 @@ function DeleteAccountOverlay({ type, phase, onDone, subscriptionWarning }) {
       successText={copy.success}
       holdMs={subscriptionWarning ? SUBSCRIPTION_WARNING_HOLD_MS : SUCCESS_HOLD_MS}
       onDone={onDone}
+      light={LIGHT_SETTINGS}
     >
       {subscriptionWarning && (
         <>
-          <Text className="text-white/45 text-sm text-center mt-3" style={{ lineHeight: 19 }}>
+          <Text className="text-sm text-center mt-3" style={{ lineHeight: 19, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>
             Your {Platform.OS === 'ios' ? 'App Store' : 'Play Store'} subscription is still active — cancel it to stop future charges.
           </Text>
           <Pressable
@@ -381,14 +413,14 @@ function BottomBanner({ visible, children }) {
           paddingVertical: 12,
           paddingHorizontal: 16,
           borderRadius: 14,
-          backgroundColor: '#1c1c1c',
+          backgroundColor: LIGHT_SETTINGS ? '#F0F0EE' : '#1c1c1c',
           borderWidth: 1,
-          borderColor: 'rgba(255,255,255,0.08)',
+          borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
         },
         style,
       ]}
     >
-      <Text className="text-white/80 text-sm font-medium text-center">{children}</Text>
+      <Text className="text-sm font-medium text-center" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.80)' }}>{children}</Text>
     </Animated.View>
   );
 }
@@ -858,7 +890,15 @@ export default function AccountPage() {
 
       if (!res.success) {
         if (res.offline) { notifyOffline(); setImportStage('idle'); return; }
-        setImportErrorMsg(res.error || 'Import failed. Please try again.');
+        // A raw Postgres RLS-violation message here always means the same
+        // thing for this table (see transactions_insert_own's has_active_
+        // access check) — trial/subscription lapsed, not a real import
+        // problem — so it gets a message someone can actually act on
+        // instead of "row-level security policy" being shown verbatim.
+        const isAccessExpired = /row-level security/i.test(res.error || '');
+        setImportErrorMsg(isAccessExpired
+          ? 'Your Okana Plus trial or subscription has expired — resubscribe to import transactions.'
+          : (res.error || 'Import failed. Please try again.'));
         setImportStage('error');
         return;
       }
@@ -895,14 +935,20 @@ export default function AccountPage() {
     }
   }
 
+  const isFocused = useIsFocused();
+
   return (
-    <View className="flex-1 bg-bg">
+    <View className="flex-1" style={{ backgroundColor: SETTINGS_BG }}>
+      {/* Only forces a dark status bar while this (experimentally light)
+          screen is actually focused — see the same pattern in
+          app/(app)/index.js for why this doesn't leak into other screens. */}
+      {LIGHT_SETTINGS && isFocused && <StatusBar style="dark" />}
       <ScrollView showsVerticalScrollIndicator={false}>
         <View className="flex-row items-center gap-2 px-4 pt-14 pb-4">
           <Pressable onPress={() => router.back()} className="w-9 h-9 items-center justify-center rounded-xl">
-            <BackIcon />
+            <BackIcon color={LIGHT_SETTINGS ? 'rgba(0,0,0,0.7)' : undefined} />
           </Pressable>
-          <Text className="text-white text-base font-semibold">Settings</Text>
+          <Text className="text-base font-semibold" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>Settings</Text>
         </View>
 
         <View className="items-center py-6">
@@ -913,7 +959,7 @@ export default function AccountPage() {
           <View>
             <Card>
               <View className="px-4 py-4">
-                <Text className="text-white/40 text-xs font-medium mb-1">Name</Text>
+                <Text className="text-xs font-medium mb-1" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.40)' }}>Name</Text>
                 {editingName ? (
                   <View className="flex-row items-center" style={{ gap: 8 }}>
                     <TextInput
@@ -921,18 +967,23 @@ export default function AccountPage() {
                       value={nameInput}
                       onChangeText={setNameInput}
                       onSubmitEditing={saveName}
-                      className="flex-1 text-white text-base"
-                      style={{ borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.2)', paddingBottom: 4 }}
+                      className="flex-1 text-base"
+                      style={{
+                        color: LIGHT_SETTINGS ? '#111111' : '#ffffff',
+                        borderBottomWidth: 1,
+                        borderBottomColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)',
+                        paddingBottom: 4,
+                      }}
                     />
                     <Pressable onPress={saveName} disabled={savingName}>
-                      <Text className="text-base text-white/60">{savingName ? 'Saving…' : 'Save'}</Text>
+                      <Text className="text-base" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.60)' : 'rgba(255,255,255,0.60)' }}>{savingName ? 'Saving…' : 'Save'}</Text>
                     </Pressable>
                   </View>
                 ) : (
                   <View className="flex-row items-center justify-between">
-                    <Text className="text-white text-base">{profile?.name || '—'}</Text>
+                    <Text className="text-base" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>{profile?.name || '—'}</Text>
                     <Pressable onPress={() => { setNameInput(profile?.name || ''); setEditingName(true); }} className="w-7 h-7 items-center justify-center rounded-lg">
-                      <EditIcon />
+                      <EditIcon color={LIGHT_SETTINGS ? 'rgba(0,0,0,0.4)' : undefined} />
                     </Pressable>
                   </View>
                 )}
@@ -941,8 +992,8 @@ export default function AccountPage() {
               <Divider />
 
               <View className="px-4 py-4">
-                <Text className="text-white/40 text-xs font-medium mb-1">Email</Text>
-                <Text className="text-white/60 text-base">{profile?.email || '—'}</Text>
+                <Text className="text-xs font-medium mb-1" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.40)' }}>Email</Text>
+                <Text className="text-base" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.60)' : 'rgba(255,255,255,0.60)' }}>{profile?.email || '—'}</Text>
               </View>
             </Card>
             {!!actionError && (
@@ -959,7 +1010,7 @@ export default function AccountPage() {
                 right={
                   <View className="flex-row items-center" style={{ gap: 8 }}>
                     <Pill label={planLabel} tone={planTone} />
-                    <ChevronRight />
+                    <ChevronRight color={LIGHT_SETTINGS ? 'rgba(0,0,0,0.25)' : undefined} />
                   </View>
                 }
               />
@@ -973,14 +1024,14 @@ export default function AccountPage() {
                 label="Export Data"
                 onPress={exportData}
                 right={exporting
-                  ? <Text className="text-white/35 text-xs">Exporting…</Text>
-                  : <Text className="text-white/35 text-xs">XLSX</Text>}
+                  ? <Text className="text-xs" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}>Exporting…</Text>
+                  : <Text className="text-xs" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}>XLSX</Text>}
               />
               <Divider />
               <Row
                 label="Import Data"
                 onPress={() => setImportOptionsOpen(true)}
-                right={<Text className="text-white/35 text-xs">XLSX</Text>}
+                right={<Text className="text-xs" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}>XLSX</Text>}
               />
               <Divider />
               <Row label="Privacy Policy" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Privacy-Policy-3c58f887c3c9806180c1ed51844d872e?source=copy_link')} />
@@ -1007,7 +1058,7 @@ export default function AccountPage() {
 
           <View>
             <Pressable onPress={() => setShowLogoutConfirm(true)} className="self-start px-4 py-[14px]">
-              <Text className="text-white/70 text-base">Log Out</Text>
+              <Text className="text-base" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.70)' : 'rgba(255,255,255,0.70)' }}>Log Out</Text>
             </Pressable>
             <Pressable
               onPress={() => (isOnline ? setShowEraseConfirm(true) : notifyOffline())}
@@ -1023,7 +1074,7 @@ export default function AccountPage() {
             </Pressable>
           </View>
 
-          <Text className="text-white/25 text-xs text-center mt-2 mb-8">v{APP_VERSION}</Text>
+          <Text className="text-xs text-center mt-2 mb-8" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)' }}>v{APP_VERSION}</Text>
         </View>
       </ScrollView>
 
@@ -1037,12 +1088,12 @@ export default function AccountPage() {
           onPress={() => { pendingAfterImportOptionsClose.current = 'template'; setImportOptionsOpen(false); }}
           disabled={downloadingTemplate}
           className="w-full px-4 py-4 rounded-2xl mb-3"
-          style={{ backgroundColor: 'rgba(255,255,255,0.06)', opacity: downloadingTemplate ? 0.6 : 1 }}
+          style={{ backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)', opacity: downloadingTemplate ? 0.6 : 1 }}
         >
-          <Text className="text-white text-base font-semibold mb-1">
+          <Text className="text-base font-semibold mb-1" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>
             {downloadingTemplate ? 'Preparing…' : 'Get template'}
           </Text>
-          <Text className="text-white/40 text-sm" style={{ lineHeight: 18 }}>
+          <Text className="text-sm" style={{ lineHeight: 18, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.40)' }}>
             Download an empty Excel file with the right columns.
           </Text>
         </Pressable>
@@ -1061,19 +1112,26 @@ export default function AccountPage() {
       <InfoModal open={modal === 'feedback'} title={feedbackSent ? '✓ Message sent!' : 'Support'} onClose={closeFeedbackModal}>
         {!feedbackSent && (
           <>
-            <Text className="text-white/40 text-base mb-4" style={{ lineHeight: 22 }}>
+            <Text className="text-base mb-4" style={{ lineHeight: 22, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.40)' }}>
               Need help, found a bug, or have a question? Let us know and we'll get back to you.
             </Text>
             <TextInput
               value={feedbackText}
               onChangeText={setFeedbackText}
               placeholder="How can we help?"
-              placeholderTextColor="#4d4d4d"
+              placeholderTextColor={LIGHT_SETTINGS ? '#b0b0b0' : '#4d4d4d'}
               multiline
               numberOfLines={4}
               textAlignVertical="top"
-              className="text-white text-base px-4 py-3 mb-4"
-              style={{ minHeight: 100, borderRadius: 12, backgroundColor: 'transparent', borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)' }}
+              className="text-base px-4 py-3 mb-4"
+              style={{
+                minHeight: 100,
+                borderRadius: 12,
+                backgroundColor: 'transparent',
+                borderWidth: 1,
+                borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.14)',
+                color: LIGHT_SETTINGS ? '#111111' : '#ffffff',
+              }}
             />
             {!!feedbackError && <Text className="text-red-400 text-base mb-4">{feedbackError}</Text>}
             <Pressable
@@ -1084,7 +1142,7 @@ export default function AccountPage() {
             >
               <Text className="text-black text-base font-semibold">{feedbackSending ? 'Sending…' : 'Send'}</Text>
             </Pressable>
-            <Text className="text-white/20 mt-3 text-center" style={{ fontSize: 12 }}>We typically respond within 1–2 business days.</Text>
+            <Text className="mt-3 text-center" style={{ fontSize: 12, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.20)' : 'rgba(255,255,255,0.20)' }}>We typically respond within 1–2 business days.</Text>
           </>
         )}
       </InfoModal>
@@ -1098,14 +1156,14 @@ export default function AccountPage() {
             cachePolicy="memory-disk"
             transition={150}
           />
-          <Text className="text-white font-semibold text-lg mb-3">Hi, I'm Kushal</Text>
-          <Text className="text-white/50 text-base mb-3" style={{ lineHeight: 22 }}>
+          <Text className="font-semibold text-lg mb-3" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>Hi, I'm Kushal</Text>
+          <Text className="text-base mb-3" style={{ lineHeight: 22, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.50)' : 'rgba(255,255,255,0.50)' }}>
             I'm a software developer and creator from Karnataka. I build digital products, work mainly on the frontend, and enjoy turning simple ideas into useful things.
           </Text>
-          <Text className="text-white/50 text-base mb-3" style={{ lineHeight: 22 }}>
+          <Text className="text-base mb-3" style={{ lineHeight: 22, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.50)' : 'rgba(255,255,255,0.50)' }}>
             I also make YouTube videos about personal finance, technology, productivity, and minimal living. I like learning by building, sharing what I learn, and documenting the journey along the way.
           </Text>
-          <Text className="text-white/50 text-base mb-5" style={{ lineHeight: 22 }}>
+          <Text className="text-base mb-5" style={{ lineHeight: 22, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.50)' : 'rgba(255,255,255,0.50)' }}>
             I'm interested in technology, money, and creating a simpler life — and I'm always working on something new.
           </Text>
 
@@ -1113,22 +1171,22 @@ export default function AccountPage() {
             <Pressable
               onPress={() => Linking.openURL('https://instagram.com/kushalbaragi')}
               className="flex-row items-center px-4 py-2 rounded-xl"
-              style={{ gap: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+              style={{ gap: 8, borderWidth: 1, borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }}
             >
               <InstagramIcon />
-              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>Instagram</Text>
+              <Text style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 12 }}>Instagram</Text>
             </Pressable>
             <Pressable
               onPress={() => Linking.openURL('https://www.youtube.com/@kushalbaragi')}
               className="flex-row items-center px-4 py-2 rounded-xl"
-              style={{ gap: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+              style={{ gap: 8, borderWidth: 1, borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }}
             >
               <YouTubeIcon />
-              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>YouTube</Text>
+              <Text style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 12 }}>YouTube</Text>
             </Pressable>
           </View>
 
-          <Text className="text-white/20 mt-5" style={{ fontSize: 12 }}>Okana v{APP_VERSION} · Made with ♥ in India</Text>
+          <Text className="mt-5" style={{ fontSize: 12, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.20)' : 'rgba(255,255,255,0.20)' }}>Okana v{APP_VERSION} · Made with ♥ in India</Text>
         </View>
       </InfoModal>
 
@@ -1180,16 +1238,16 @@ export default function AccountPage() {
           pointerEvents="auto"
           style={{
             position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.85)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32,
+            backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.85)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32,
           }}
         >
           <View style={{ width: '100%', maxWidth: 300 }}>
             {importStage === 'error' ? (
               <>
-                <Text className="text-white text-base font-semibold mb-2 text-center">
+                <Text className="text-base font-semibold mb-2 text-center" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>
                   {importFormatError ? "Template doesn't match" : 'Import failed'}
                 </Text>
-                <Text className="text-white/50 text-sm mb-5 text-center" style={{ lineHeight: 20 }}>
+                <Text className="text-sm mb-5 text-center" style={{ lineHeight: 20, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.50)' : 'rgba(255,255,255,0.50)' }}>
                   {importFormatError
                     ? 'Make sure your file matches the required Excel format.'
                     : importErrorMsg}
@@ -1209,29 +1267,29 @@ export default function AccountPage() {
                     <Pressable
                       onPress={() => setImportStage('idle')}
                       className="py-[13px] rounded-2xl items-center"
-                      style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+                      style={{ backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)' }}
                     >
-                      <Text className="text-white text-base font-medium">Cancel</Text>
+                      <Text className="text-base font-medium" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>Cancel</Text>
                     </Pressable>
                   </View>
                 ) : (
                   <Pressable
                     onPress={() => setImportStage('idle')}
                     className="py-[13px] rounded-2xl items-center"
-                    style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+                    style={{ backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)' }}
                   >
-                    <Text className="text-white text-base font-medium">Dismiss</Text>
+                    <Text className="text-base font-medium" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>Dismiss</Text>
                   </Pressable>
                 )}
               </>
             ) : (
               <>
-                <Text className="text-white text-base font-medium mb-4 text-center">
+                <Text className="text-base font-medium mb-4 text-center" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>
                   {importStage === 'reading' && 'Reading file…'}
                   {importStage === 'importing' && 'Importing transactions…'}
                   {importStage === 'done' && importMessage}
                 </Text>
-                <View style={{ height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden', width: '100%' }}>
+                <View style={{ height: 8, borderRadius: 4, backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)', overflow: 'hidden', width: '100%' }}>
                   <Animated.View style={[{ height: 8, borderRadius: 4, backgroundColor: '#4ade80' }, progressBarStyle]} />
                 </View>
               </>

@@ -3,6 +3,15 @@ import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
 
+// Apple App Review only — see supabase/functions/review-login (deployed
+// separately, not checked into this repo) for the full reasoning. Okana's
+// passwordless email-OTP login can't be driven by App Store Connect's own
+// "Sign-In Information" fields (Apple types whatever's given directly into
+// the app, never checks an external inbox), so this one hardcoded demo
+// address routes through a server-side bypass with a single fixed code
+// instead of a real emailed OTP. Every other email is untouched.
+const REVIEW_EMAIL = 'okanapreview@gmail.com';
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -47,6 +56,9 @@ export function AuthProvider({ children }) {
   // The timeout only stops the client from waiting — it doesn't cancel
   // whatever Supabase is doing server-side.
   async function sendOtp({ email }) {
+    // The review account never gets a real OTP — verifyOtp below routes it
+    // through the server-side bypass instead, so there's nothing to send.
+    if (email.trim().toLowerCase() === REVIEW_EMAIL) return;
     const { error } = await Promise.race([
       supabase.auth.signInWithOtp({
         email,
@@ -64,6 +76,28 @@ export function AuthProvider({ children }) {
   // through a name-capture step before continuing, since the old signup
   // form (which used to collect it alongside a password) no longer exists.
   async function verifyOtp({ email, token }) {
+    if (email.trim().toLowerCase() === REVIEW_EMAIL) {
+      const res = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/review-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code: token }),
+      });
+      const body = await res.json();
+      // Thrown the same way a real wrong/expired code is — otp.js's catch
+      // block doesn't need to know this path exists at all.
+      if (!res.ok) throw new Error(body.error || 'Incorrect or expired code.');
+      // token_hash (not token+email) — generateLink's hashed_token is only
+      // accepted on the wire as token_hash; confirmed directly against the
+      // REST endpoint, since verifyOtp's token param silently 403s
+      // ("otp_expired") on a hash instead of a plain 6-digit code.
+      const { data, error } = await supabase.auth.verifyOtp({ token_hash: body.hashed_token, type: 'magiclink' });
+      if (error) throw error;
+      // Same check as the real path below — the very first time this
+      // account is used it genuinely has no name yet, and should route
+      // through onboarding exactly like any other new signup so a reviewer
+      // sees the full app, not just a skipped-ahead Dashboard.
+      return { isNewUser: !data.user?.user_metadata?.name };
+    }
     const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
     if (error) throw error;
     const isNewUser = !data.user?.user_metadata?.name;

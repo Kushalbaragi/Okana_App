@@ -26,7 +26,7 @@ const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // Monday-first
 
 // Each row slides up and fades in with a small stagger, rather than the
 // whole day's list appearing at once.
-function DayTransactionRow({ tx, index }) {
+function DayTransactionRow({ tx, index, light }) {
   const progress = useSharedValue(0);
 
   useEffect(() => {
@@ -41,14 +41,14 @@ function DayTransactionRow({ tx, index }) {
 
   return (
     <Animated.View style={[{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, rowStyle]}>
-      <Text className="text-white/70 text-base" numberOfLines={1} style={{ flex: 1 }}>
+      <Text className="text-base" numberOfLines={1} style={{ flex: 1, color: light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)' }}>
         {tx.description || (tx.type === 'income' ? 'Income' : 'Expense')}
       </Text>
       <Text
         className="text-base"
         style={{
           fontWeight: '500',
-          color: tx.type === 'income' ? '#4ade80' : 'rgba(255,255,255,0.5)',
+          color: tx.type === 'income' ? '#4ade80' : light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)',
         }}
       >
         {tx.type === 'income' ? '+' : '-'}{formatCurrencyFull(tx.amount)}
@@ -57,7 +57,10 @@ function DayTransactionRow({ tx, index }) {
   );
 }
 
-function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budget }) {
+// `light` is a one-off experimental prop for trying a light theme on just
+// the Dashboard (and the flows it opens) — see the matching comment in
+// Header.js.
+function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budget, light = false }) {
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const now = new Date();
@@ -176,11 +179,11 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
           `visible`) flips to false the instant a close starts, so touches
           fall through immediately instead of at the end. Same fix as
           AddModal's — see the comment there. */}
-      <Animated.View className="flex-1 bg-bg" style={pageStyle} pointerEvents={open ? 'auto' : 'none'}>
+      <Animated.View className="flex-1" style={[{ backgroundColor: light ? '#FAFAF8' : '#0a0a0a' }, pageStyle]} pointerEvents={open ? 'auto' : 'none'}>
         <GestureDetector gesture={pan}>
           <View style={{ flex: 1 }}>
             <View style={{ paddingTop: insets.top + 10, paddingBottom: 8, alignItems: 'center' }}>
-              <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.2)' }} />
+              <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: light ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.2)' }} />
             </View>
 
             {/* Fixed — not inside any ScrollView, so it never scrolls or
@@ -194,7 +197,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                     style={{ gap: 5, alignSelf: 'center' }}
                   >
                     <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#a855f7' }} />
-                    <Text className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                    <Text className="text-xs font-medium" style={{ color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)' }}>
                       Monthly Summary ›
                     </Text>
                   </Pressable>
@@ -202,33 +205,33 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
 
                 {/* Budget + calendar grouped into one padded surface,
                     rather than sitting loose against the page. */}
-                <View className="rounded-3xl p-4 bg-bg" style={{ maxWidth: 320, alignSelf: 'center', width: '100%' }}>
-                  {budget && <BudgetStatusBar {...budget} />}
+                <View className="rounded-3xl p-4" style={{ maxWidth: 320, alignSelf: 'center', width: '100%', backgroundColor: light ? '#F0F0EE' : '#161616' }}>
+                  {budget && <BudgetStatusBar {...budget} light={light} />}
 
                   <View className="flex-row items-center justify-between mb-4">
                     <Pressable
                       onPress={prevMonth}
                       className="w-7 h-7 rounded-full items-center justify-center"
-                      style={{ backgroundColor: 'rgba(255,255,255,0.07)' }}
+                      style={{ backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.07)' }}
                     >
-                      <Text style={{ color: 'rgba(255,255,255,0.5)' }}>‹</Text>
+                      <Text style={{ color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>‹</Text>
                     </Pressable>
-                    <Text className="text-white/80 text-base font-semibold">
+                    <Text className="text-base font-semibold" style={{ color: light ? 'rgba(0,0,0,0.8)' : 'rgba(255,255,255,0.8)' }}>
                       {MONTHS[month]} {year}
                     </Text>
                     <Pressable
                       onPress={nextMonth}
                       className="w-7 h-7 rounded-full items-center justify-center"
-                      style={{ backgroundColor: 'rgba(255,255,255,0.07)' }}
+                      style={{ backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.07)' }}
                     >
-                      <Text style={{ color: 'rgba(255,255,255,0.5)' }}>›</Text>
+                      <Text style={{ color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>›</Text>
                     </Pressable>
                   </View>
 
                   <View className="flex-row mb-1.5">
                     {DAYS.map((d, i) => (
                       <View key={i} style={{ flex: 1 }}>
-                        <Text className="text-center text-white/25 text-[11px] font-medium">
+                        <Text className="text-center text-[11px] font-medium" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.25)' }}>
                           {d}
                         </Text>
                       </View>
@@ -240,7 +243,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                       {week.map((d, i) => {
                         if (!d) return <View key={i} style={{ flex: 1 }} />;
                         const str = toStr(new Date(year, month, d));
-                        const shade = spendShadeFor(str, { dailyTotals, thresholds, earliest, todayStr });
+                        const shade = spendShadeFor(str, { dailyTotals, thresholds, earliest, todayStr, light });
                         const isToday = str === todayStr;
                         const isSelected = selectedDate === str;
                         return (
@@ -253,7 +256,11 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                               flex: 1,
                               backgroundColor: shade.bg,
                               borderWidth: isSelected ? 1.5 : isToday ? 1 : 0,
-                              borderColor: isSelected ? 'rgba(255,255,255,0.65)' : isToday ? 'rgba(255,255,255,0.3)' : 'transparent',
+                              borderColor: isSelected
+                                ? (light ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.65)')
+                                : isToday
+                                ? (light ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.3)')
+                                : 'transparent',
                             }}
                           >
                             <Text style={{ color: shade.color, fontSize: 12, fontWeight: '500' }}>
@@ -268,11 +275,11 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                   <View className="flex-row items-center justify-center mt-3" style={{ gap: 12 }}>
                     <View className="flex-row items-center" style={{ gap: 4 }}>
                       <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(34,197,94,0.5)' }} />
-                      <Text className="text-white/30" style={{ fontSize: 10 }}>No spend</Text>
+                      <Text style={{ fontSize: 10, color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>No spend</Text>
                     </View>
                     <View className="flex-row items-center" style={{ gap: 4 }}>
                       <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(239,68,68,0.5)' }} />
-                      <Text className="text-white/30" style={{ fontSize: 10 }}>Spent</Text>
+                      <Text style={{ fontSize: 10, color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>Spent</Text>
                     </View>
                   </View>
                 </View>
@@ -285,11 +292,11 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
             {selectedDate && (
               <View style={{ flex: 1, marginTop: 20, paddingHorizontal: 20 }}>
                 <View style={{ maxWidth: 320, alignSelf: 'center', width: '100%', flex: 1 }}>
-                  <Text className="text-white/70 text-base font-semibold mb-3">
+                  <Text className="text-base font-semibold mb-3" style={{ color: light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)' }}>
                     {formatDateFull(selectedDate)}
                   </Text>
                   {dayTxs.length === 0 ? (
-                    <Text className="text-white/30 text-base">
+                    <Text className="text-base" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>
                       No transactions — spend-free day 🎉
                     </Text>
                   ) : (
@@ -301,7 +308,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                       >
                         <View style={{ gap: 12 }}>
                           {dayTxs.map((tx, i) => (
-                            <DayTransactionRow key={tx.id} tx={tx} index={i} />
+                            <DayTransactionRow key={tx.id} tx={tx} index={i} light={light} />
                           ))}
                         </View>
                       </ScrollView>

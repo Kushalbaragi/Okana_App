@@ -57,7 +57,7 @@ export function nextAmountValue(prev, key) {
 // (driven via onPressIn/onPressOut, not the Pressable's own style prop — a
 // function-style prop on Pressable doesn't reliably apply in this
 // NativeWind setup, same issue GlassPressable works around).
-function KeypadKey({ label, onPress }) {
+function KeypadKey({ label, onPress, color = '#ffffff' }) {
   const pressProgress = useSharedValue(0);
 
   if (label == null) {
@@ -84,7 +84,7 @@ function KeypadKey({ label, onPress }) {
       onPressOut={handlePressOut}
       style={{ flex: 1, height: 64, alignItems: 'center', justifyContent: 'center' }}
     >
-      <Animated.Text style={[{ color: '#ffffff', fontSize: label === 'backspace' ? 24 : 30, fontWeight: '400' }, labelStyle]}>
+      <Animated.Text style={[{ color, fontSize: label === 'backspace' ? 24 : 30, fontWeight: '400' }, labelStyle]}>
         {label === 'backspace' ? '⌫' : label}
       </Animated.Text>
     </Pressable>
@@ -97,7 +97,8 @@ function KeypadKey({ label, onPress }) {
 // keyboard's own show/hide animation gets janky. A custom keypad has no
 // native lifecycle to sync with at all: it just renders as a permanent,
 // fixed-height part of the screen's layout from the moment it mounts.
-export const NumericKeypad = memo(function NumericKeypad({ onKeyPress, insetBottom, rows = DECIMAL_KEYPAD_ROWS }) {
+export const NumericKeypad = memo(function NumericKeypad({ onKeyPress, insetBottom, rows = DECIMAL_KEYPAD_ROWS, light = false }) {
+  const keyColor = light ? '#111111' : '#ffffff';
   // Fixed-size pools (see POOL_SIZE comment above) — a fixed number of
   // hook calls per render, same as any other array of hooks.
   const clickPlayers = [
@@ -131,7 +132,7 @@ export const NumericKeypad = memo(function NumericKeypad({ onKeyPress, insetBott
       {rows.map((row, ri) => (
         <View key={ri} className="flex-row" style={{ gap: 0, marginBottom: ri === rows.length - 1 ? 0 : 6 }}>
           {row.map((key, ki) => (
-            <KeypadKey key={key ?? `blank-${ki}`} label={key} onPress={key == null ? undefined : () => handlePress(key)} />
+            <KeypadKey key={key ?? `blank-${ki}`} label={key} onPress={key == null ? undefined : () => handlePress(key)} color={keyColor} />
           ))}
         </View>
       ))}

@@ -57,7 +57,7 @@ function Bar({ x, width, rx, targetHeight, delay, fill, animKey }) {
   );
 }
 
-function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false }) {
+function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false }) {
   const n       = values.length;
   const GROUP_W = CHART_W / n;
   const BAR_W   = Math.min(16, Math.max(6, GROUP_W - 10));
@@ -66,6 +66,9 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
 
   const activeColor = isIncome ? 'rgba(22,163,74,0.95)' : 'rgba(255,59,48,0.92)';
   const dimColor    = isIncome ? 'rgba(22,163,74,0.62)' : 'rgba(255,59,48,0.56)';
+  const gridColor       = light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)';
+  const labelActiveColor = light ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.85)';
+  const labelDimColor    = light ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.22)';
 
   return (
     <Svg viewBox={`0 0 ${CHART_W} ${svgH}`} style={{ width: '100%', aspectRatio: CHART_W / svgH }}>
@@ -73,7 +76,7 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
         <Rect x={0} y={0} width={CHART_W} height={BAR_HEIGHT} fill="transparent" onPress={onDeselect} />
       )}
 
-      <Line x1={0} y1={BAR_HEIGHT + 2} x2={CHART_W} y2={BAR_HEIGHT + 2} stroke="rgba(255,255,255,0.10)" strokeWidth="0.8" strokeDasharray="2 3" />
+      <Line x1={0} y1={BAR_HEIGHT + 2} x2={CHART_W} y2={BAR_HEIGHT + 2} stroke={gridColor} strokeWidth="0.8" strokeDasharray="2 3" />
 
       {values.map((v, i) => {
         const x          = i * GROUP_W + (GROUP_W - BAR_W) / 2;
@@ -131,7 +134,7 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
                 y={BAR_HEIGHT + 15}
                 textAnchor="middle"
                 fontSize="9"
-                fill={isActive ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.22)'}
+                fill={isActive ? labelActiveColor : labelDimColor}
                 fontWeight={isActive ? '600' : '400'}
               >
                 {labels[i]}

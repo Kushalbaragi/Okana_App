@@ -146,7 +146,10 @@ function DailyChartSlide({ month, year, values, labels, highestIndex, highestAmo
       <View className="flex-1 items-center justify-center">
         <View style={{ width: '90%', paddingTop: 22 }}>
           {showCallout && (
-            <FadeIn style={{ position: 'absolute', top: 0, left: `${calloutFraction * 100}%`, marginLeft: -30, width: 60 }}>
+            <FadeIn style={{ position: 'absolute', top: 0, left: `${calloutFraction * 100}%`, marginLeft: -45, width: 90 }}>
+              <Text className="text-white/50 text-[9px] font-semibold uppercase tracking-wide text-center mb-0.5">
+                Highest spent
+              </Text>
               <Text className="text-white/85 text-xs font-semibold text-center">
                 {formatCurrency(highestAmount)}
               </Text>

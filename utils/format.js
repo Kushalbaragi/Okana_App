@@ -54,6 +54,22 @@ const SPEND_SHADES = {
   ],
 }
 
+// Same shape as SPEND_SHADES, tuned for a light background — the dark set's
+// pale pink/near-white text tones were chosen for contrast against a dark
+// cell fill and read as barely-there on white. Only used when spendShadeFor
+// is explicitly asked for it (the light-theme experiment on the Calendar
+// screen); every other caller keeps the dark set unchanged.
+const SPEND_SHADES_LIGHT = {
+  neutral: { bg: 'rgba(0,0,0,0.04)', color: 'rgba(0,0,0,0.25)' },
+  green:   { bg: 'rgba(34,197,94,0.16)', color: '#15803d' },
+  red: [
+    null,
+    { bg: 'rgba(239,68,68,0.14)', color: '#b91c1c' },
+    { bg: 'rgba(239,68,68,0.26)', color: '#991b1b' },
+    { bg: 'rgba(239,68,68,0.45)', color: '#7f1d1d' },
+  ],
+}
+
 export function getDailyExpenseTotals(transactions) {
   const map = {}
   transactions.forEach(tx => {
@@ -84,13 +100,14 @@ export function getEarliestDate(transactions) {
   return transactions.reduce((min, tx) => (tx.date < min ? tx.date : min), transactions[0].date)
 }
 
-export function spendShadeFor(dateStr, { dailyTotals, thresholds, earliest, todayStr }) {
+export function spendShadeFor(dateStr, { dailyTotals, thresholds, earliest, todayStr, light = false }) {
+  const shades = light ? SPEND_SHADES_LIGHT : SPEND_SHADES
   const isFuture = dateStr > todayStr
   const noData = earliest && dateStr < earliest
-  if (isFuture || noData) return { ...SPEND_SHADES.neutral, isKnown: false }
+  if (isFuture || noData) return { ...shades.neutral, isKnown: false }
   const amt = dailyTotals[dateStr] || 0
   const intensity = spendIntensity(amt, thresholds)
-  const shade = intensity === 0 ? SPEND_SHADES.green : SPEND_SHADES.red[intensity]
+  const shade = intensity === 0 ? shades.green : shades.red[intensity]
   return { ...shade, isKnown: true }
 }
 

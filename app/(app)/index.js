@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
+import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
@@ -22,6 +23,12 @@ import { PlusIcon } from '../../components/icons';
 import { PILL_ACTIVE_COLOR } from '../../components/Glass';
 import { currentMonthYear, today } from '../../utils/format';
 import { getMonthlyRecapSlides, hasAnyRecapData, prevMonthYear, MONTH_NAMES } from '../../utils/monthlyRecap';
+
+// One-flag experiment: a light theme for just this screen (Header,
+// SummaryCard, TransactionList). Flip back to false to fully revert —
+// every other screen is untouched regardless of this value.
+const LIGHT_HOME = false;
+const HOME_BG = LIGHT_HOME ? '#FAFAF8' : '#0a0a0a';
 
 // Mirrors the local AsyncStorage "shown" tracking server-side, so the
 // check-monthly-summary cron (which has no access to any device's
@@ -54,6 +61,7 @@ async function markRecapAvailableToday(userId) {
 export default function Dashboard() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const isFocused = useIsFocused();
   const { user } = useAuth();
   const { transactions, loading: txLoading, addTransaction, editTransaction, deleteTransaction, refresh: refreshTransactions } = useTransactions();
   const budget = useBudget(user, transactions);
@@ -398,8 +406,8 @@ export default function Dashboard() {
 
   return (
     <Animated.View
-      className="flex-1 bg-bg"
-      style={entranceStyle}
+      className="flex-1"
+      style={[{ backgroundColor: HOME_BG }, entranceStyle]}
       // Passively observes every touch-down anywhere on the screen (header
       // tabs, the month/year/All Time pills, empty space) to close an open
       // transaction swipe — always returns false so it never actually claims
@@ -409,11 +417,19 @@ export default function Dashboard() {
         return false;
       }}
     >
+      {/* Only forces a dark status bar while this (experimentally light)
+          screen is actually focused — expo-status-bar tracks mounted
+          <StatusBar> elements as a stack, so this cedes back to the root
+          layout's <StatusBar style="light" /> the instant a normal dark
+          screen (Settings, Subscription, …) is pushed on top. */}
+      {LIGHT_HOME && isFocused && <StatusBar style="dark" />}
+
       <Header
         onMenuOpen={openMenu}
         chartTab={chartTab}
         onChartTabChange={setChartTab}
         onCalendarOpen={openCalendar}
+        light={LIGHT_HOME}
       />
 
       <SummaryCard
@@ -428,6 +444,7 @@ export default function Dashboard() {
         onPeriodChange={setSelectedPeriod}
         selectedDay={selectedDay}
         onDayChange={setSelectedDay}
+        light={LIGHT_HOME}
       />
 
       <TransactionList
@@ -442,6 +459,7 @@ export default function Dashboard() {
         selectedDay={selectedDay}
         onEdit={openEdit}
         onDelete={deleteTransaction}
+        light={LIGHT_HOME}
       />
 
       <Pressable
@@ -459,6 +477,7 @@ export default function Dashboard() {
         onAdd={addTransaction}
         onEdit={editTransaction}
         editData={editData}
+        light={LIGHT_HOME}
       />
 
       <SpendCalendarModal
@@ -468,6 +487,7 @@ export default function Dashboard() {
         transactions={transactions}
         recap={recapForCalendar}
         budget={budgetForCalendar}
+        light={LIGHT_HOME}
       />
 
       <MonthlyRecapModal
