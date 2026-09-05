@@ -40,3 +40,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# EAS local build credentials (contains plaintext keystore passwords)
+credentials.json
