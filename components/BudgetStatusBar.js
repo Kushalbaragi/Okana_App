@@ -10,11 +10,6 @@ import { formatCurrency } from '../utils/format';
 // eye against the dark track, not blend into it.
 const FILL_COLOR = 'rgba(34,197,94,0.9)';
 
-// flex:1 segments auto-size to whatever width the calendar card ends up at
-// (capped at maxWidth:340 in SpendCalendarModal, narrower on small screens)
-// — that's what keeps the bar fitting any device width without horizontal
-// scroll, rather than computing a device-specific segment count.
-const SEGMENT_COUNT = 63;
 // Same shape as SpendCalendarModal's card-settle animation: reaches near
 // the target fast, then eases off gradually instead of cubic's milder,
 // more even taper — keeps the initial burst but gives the last stretch a
@@ -64,42 +59,37 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, 
     );
   }
 
-  const statusLabel = `${Math.round(percent)}% used`;
+  const remaining = amount - spent;
+  const isOver = remaining < 0;
+  const heroAmount = formatCurrency(Math.abs(remaining));
+  const heroSuffix = isOver ? 'over' : 'left';
+  const usedLabel = isOver ? `${Math.round(percent - 100)}% over budget` : `${Math.round(percent)}% of budget used`;
 
   return (
     <View style={wrapperStyle}>
-      <View className="flex-row items-center justify-between mb-2.5">
-        <Text className="text-sm font-semibold" style={{ color: textColor }}>Budget</Text>
-        <Text className="text-sm" style={{ color: dimColor }}>{formatCurrency(spent)} / {formatCurrency(amount)}</Text>
+      <Text className="text-sm font-semibold mb-2.5" style={{ color: textColor }}>Budget</Text>
+
+      <View className="flex-row items-baseline justify-center mb-4" style={{ gap: 6 }}>
+        <Text style={{ color: textColor, fontSize: 32, fontWeight: '600', letterSpacing: -0.5 }}>{heroAmount}</Text>
+        <Text style={{ color: dimColor, fontSize: 15 }}>{heroSuffix}</Text>
       </View>
 
-      <View style={{ height: 18 }}>
-        <View
-          className="flex-row"
-          style={{ gap: 2.5, height: 18 }}
-          onLayout={e => setBarWidth(e.nativeEvent.layout.width)}
-        >
-          {Array.from({ length: SEGMENT_COUNT }).map((_, i) => (
-            <View key={i} style={{ flex: 1, height: 18, backgroundColor: trackColor }} />
-          ))}
-        </View>
-
-        {/* Grows via an animated clip width rather than flipping segment
-            colors — a single UI-thread width animation stays smooth at 60fps
-            without re-rendering every segment every frame. */}
+      <View
+        style={{ height: 6, borderRadius: 3, backgroundColor: trackColor, overflow: 'hidden' }}
+        onLayout={e => setBarWidth(e.nativeEvent.layout.width)}
+      >
+        {/* Grows via an animated clip width — a single UI-thread width
+            animation stays smooth at 60fps. */}
         <Animated.View
           pointerEvents="none"
-          style={[{ position: 'absolute', top: 0, left: 0, height: 18, overflow: 'hidden' }, fillStyle]}
-        >
-          <View className="flex-row" style={{ gap: 2.5, height: 18, width: barWidth }}>
-            {Array.from({ length: SEGMENT_COUNT }).map((_, i) => (
-              <View key={i} style={{ flex: 1, height: 18,backgroundColor: FILL_COLOR }} />
-            ))}
-          </View>
-        </Animated.View>
+          style={[{ height: 6, borderRadius: 3, backgroundColor: FILL_COLOR }, fillStyle]}
+        />
       </View>
 
-      <Text className="text-sm text-right mt-1.5" style={{ color: dimmerColor }}>{statusLabel}</Text>
+      <View className="flex-row items-center justify-between mt-2.5">
+        <Text className="text-xs" style={{ color: dimmerColor }}>{usedLabel}</Text>
+        <Text className="text-xs" style={{ color: dimmerColor }}>{formatCurrency(amount)} total</Text>
+      </View>
     </View>
   );
 }

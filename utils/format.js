@@ -142,10 +142,6 @@ export function getMonthTotal(transactions, type, month, year) {
     .reduce((sum, tx) => sum + tx.amount, 0)
 }
 
-export function toTitleCase(str) {
-  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
-}
-
 // Daily totals for a given month
 export function getDailyTotals(transactions, month, year) {
   const daysInMonth = new Date(year, month + 1, 0).getDate()

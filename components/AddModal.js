@@ -5,7 +5,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS } from 'react-native-reanimated';
 import Svg, { Rect, Line } from 'react-native-svg';
-import { today, toTitleCase } from '../utils/format';
+import { today } from '../utils/format';
 import CalendarPicker from './CalendarPicker';
 import { GlassPressable, PILL_ACTIVE_COLOR } from './Glass';
 import { NumericKeypad, nextAmountValue } from './NumericKeypad';
@@ -194,8 +194,8 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
     setSubmitting(true);
     setError('');
     const result = isEdit
-      ? await onEdit(editData.id, { type, amount: val, date, description: toTitleCase(description) })
-      : await onAdd({ type, amount: val, date, description: toTitleCase(description) });
+      ? await onEdit(editData.id, { type, amount: val, date, description })
+      : await onAdd({ type, amount: val, date, description });
     // The sheet was closed and reopened while this was in flight (drag-
     // dismiss is blocked while submitting, but the Android back button's
     // onRequestClose isn't) — this result belongs to a session the user

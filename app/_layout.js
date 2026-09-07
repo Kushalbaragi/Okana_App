@@ -1,7 +1,9 @@
 import '../global.css';
+import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { setAudioModeAsync } from 'expo-audio';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { NetworkProvider } from '../context/NetworkContext';
 import { OfflineBanner } from '../components/OfflineBanner';
@@ -14,6 +16,17 @@ function AppShell() {
   usePushToken(user?.id);
   useNotificationRouting();
   usePurchases(user?.id);
+
+  // expo-audio's default session requests exclusive audio focus — the
+  // keypad's click sound (NumericKeypad) and the success chime
+  // (SuccessBadge) were stopping whatever the user already had playing in
+  // another app (Spotify, etc.) the instant either one fired. mixWithOthers
+  // makes these short UI sounds layer on top instead of stealing focus. Set
+  // once at the app root rather than per-sound-effect component, since both
+  // mount/unmount repeatedly as their modals open and close.
+  useEffect(() => {
+    setAudioModeAsync({ interruptionMode: 'mixWithOthers' });
+  }, []);
 
   return (
     <>

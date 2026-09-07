@@ -163,6 +163,7 @@ function DailyChartSlide({ month, year, values, labels, highestIndex, highestAmo
             animKey={`recap-daily-${month}-${year}`}
             labelStep={4}
             useSqrtScale
+            noSpendDots
           />
         </View>
 

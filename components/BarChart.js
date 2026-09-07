@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, Fragment } from 'react';
-import Svg, { Line, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { Line, Rect, Circle, Text as SvgText } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedProps, withDelay, withTiming, Easing } from 'react-native-reanimated';
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
@@ -57,12 +57,16 @@ function Bar({ x, width, rx, targetHeight, delay, fill, animKey }) {
   );
 }
 
-function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false }) {
+function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false }) {
   const n       = values.length;
   const GROUP_W = CHART_W / n;
   const BAR_W   = Math.min(16, Math.max(6, GROUP_W - 10));
   const maxVal  = Math.max(...values, 1);
-  const svgH    = BAR_HEIGHT + 22;
+  // A little extra room below the date labels for the no-spend dot row —
+  // only when it's actually in use, so every other BarChart (Home's month
+  // view, etc.) keeps its current compact height.
+  const svgH    = BAR_HEIGHT + (noSpendDots ? 30 : 22);
+  const noSpendDotColor = light ? 'rgba(34,197,94,0.7)' : 'rgba(74,222,128,0.75)';
 
   const activeColor = isIncome ? 'rgba(22,163,74,0.95)' : 'rgba(255,59,48,0.92)';
   const dimColor    = isIncome ? 'rgba(22,163,74,0.62)' : 'rgba(255,59,48,0.56)';
@@ -139,6 +143,13 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
               >
                 {labels[i]}
               </SvgText>
+            )}
+
+            {/* Small "no spend" marker — every zero-value day gets one,
+                independent of labelStep, so the pattern reads at a glance
+                across the whole month rather than only on labeled days. */}
+            {noSpendDots && !hasData && (
+              <Circle cx={x + BAR_W / 2} cy={BAR_HEIGHT + 24} r={1.8} fill={noSpendDotColor} />
             )}
           </Fragment>
         );
