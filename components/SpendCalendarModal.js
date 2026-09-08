@@ -203,9 +203,9 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                   </Pressable>
                 )}
 
-                {/* Budget + calendar grouped into one padded surface,
-                    rather than sitting loose against the page. */}
-                <View className="rounded-3xl p-4" style={{ maxWidth: 320, alignSelf: 'center', width: '100%', backgroundColor: light ? '#F0F0EE' : '#161616' }}>
+                {/* Budget + calendar grouped into one padded block — no
+                    card surface, sits directly on the page background. */}
+                <View className="rounded-3xl p-4" style={{ maxWidth: 320, alignSelf: 'center', width: '100%' }}>
                   {budget && <BudgetStatusBar {...budget} light={light} />}
 
                   <View className="flex-row items-center justify-between mb-4">

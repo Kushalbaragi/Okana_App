@@ -128,6 +128,7 @@ function TransactionList({
           }
           return true;
         }
+        if (timeRange === 'year' && selectedMonth == null) return d.getFullYear() === year;
         return d.getMonth() === selectedMonth && d.getFullYear() === year;
       })
       // Sorting directly on `new Date(a.date) - new Date(b.date)` re-parses

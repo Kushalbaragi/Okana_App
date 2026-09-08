@@ -368,9 +368,11 @@ export default function Dashboard() {
     setSelectedDay(null);
     if (next === 'year') {
       setYear(currYear);
-      setSelectedMonth(currMonth);
+      // null = whole year selected (no specific month candle tapped yet) —
+      // shows the year's total/transactions until a bar is clicked.
+      setSelectedMonth(null);
     }
-  }, [currYear, currMonth]);
+  }, [currYear]);
 
   const openAdd = useCallback(() => {
     if (trialInfo.status === 'expired' || trialInfo.status === 'not_started') { setProRequired(true); return; }

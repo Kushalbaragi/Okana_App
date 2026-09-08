@@ -62,10 +62,7 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
   const GROUP_W = CHART_W / n;
   const BAR_W   = Math.min(16, Math.max(6, GROUP_W - 10));
   const maxVal  = Math.max(...values, 1);
-  // A little extra room below the date labels for the no-spend dot row —
-  // only when it's actually in use, so every other BarChart (Home's month
-  // view, etc.) keeps its current compact height.
-  const svgH    = BAR_HEIGHT + (noSpendDots ? 30 : 22);
+  const svgH    = BAR_HEIGHT + 22;
   const noSpendDotColor = light ? 'rgba(34,197,94,0.7)' : 'rgba(74,222,128,0.75)';
 
   const activeColor = isIncome ? 'rgba(22,163,74,0.95)' : 'rgba(255,59,48,0.92)';
@@ -147,9 +144,13 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
 
             {/* Small "no spend" marker — every zero-value day gets one,
                 independent of labelStep, so the pattern reads at a glance
-                across the whole month rather than only on labeled days. */}
-            {noSpendDots && !hasData && (
-              <Circle cx={x + BAR_W / 2} cy={BAR_HEIGHT + 24} r={1.8} fill={noSpendDotColor} />
+                across the whole month rather than only on labeled days.
+                Sits just under the baseline grid line, above the date
+                labels. Skipped for disabled (not-yet-happened) days — those
+                are zero because the day hasn't occurred, not because
+                nothing was spent. */}
+            {noSpendDots && !hasData && !isDisabled && (
+              <Circle cx={x + BAR_W / 2} cy={BAR_HEIGHT + 6} r={1.8} fill={noSpendDotColor} />
             )}
           </Fragment>
         );

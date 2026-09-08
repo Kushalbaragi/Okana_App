@@ -187,7 +187,7 @@ function SummaryCard({
       const exp = chartData.expense.reduce((a, b) => a + b, 0);
       return inc - exp;
     }
-    if (timeRange === 'year') return getMonthTotal(transactions, chartTab, selectedMonth, year);
+    if (timeRange === 'year' && selectedMonth != null) return getMonthTotal(transactions, chartTab, selectedMonth, year);
     if (timeRange === '5y' && selectedPeriodIndex >= 0) {
       return inc_ ? chartData.income[selectedPeriodIndex] : chartData.expense[selectedPeriodIndex];
     }
@@ -197,7 +197,7 @@ function SummaryCard({
 
   const delta = useMemo(() => {
     if (chartTab === 'overview') return null;
-    if (timeRange === 'year')  return getDelta(transactions, chartTab, selectedMonth, year);
+    if (timeRange === 'year' && selectedMonth != null) return getDelta(transactions, chartTab, selectedMonth, year);
     if (timeRange === 'month') return getDelta(transactions, chartTab, currMonth, currYear);
     return null;
   }, [chartTab, timeRange, transactions, selectedMonth, year, currMonth, currYear]);
@@ -214,7 +214,7 @@ function SummaryCard({
 
   const periodLabel = useMemo(() => {
     if (timeRange === 'month') return MONTH_NAMES[currMonth];
-    if (timeRange === 'year')  return MONTH_NAMES[selectedMonth];
+    if (timeRange === 'year')  return selectedMonth != null ? MONTH_NAMES[selectedMonth] : String(year);
     if (timeRange === '5y') {
       if (selectedPeriod != null) {
         return selectedPeriod.month != null ? `${MONTH_NAMES[selectedPeriod.month]} ${selectedPeriod.year}` : String(selectedPeriod.year);
@@ -301,7 +301,7 @@ function SummaryCard({
           labels={chartData.labels}
           activeIndex={
             timeRange === 'month' && selectedDay != null ? selectedDay - 1 :
-            timeRange === 'year' ? selectedMonth :
+            timeRange === 'year' ? (selectedMonth ?? -1) :
             timeRange === '5y' ? selectedPeriodIndex :
             -1
           }
@@ -312,6 +312,7 @@ function SummaryCard({
           animKey={animKey}
           labelStep={labelStep}
           useSqrtScale={timeRange === 'month'}
+          noSpendDots={timeRange === 'month'}
           light={light}
         />
       )}
