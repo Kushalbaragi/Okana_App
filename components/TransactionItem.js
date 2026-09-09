@@ -36,12 +36,16 @@ function RightActions({ drag, onEdit, onDelete, light }) {
         <Pressable
           onPress={onEdit}
           style={{ width: ACTION_WIDTH, alignItems: 'center', justifyContent: 'center', backgroundColor: light ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)' }}
+          accessibilityRole="button"
+          accessibilityLabel="Edit transaction"
         >
           <EditIcon size={19} color={light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.85)'} />
         </Pressable>
         <Pressable
           onPress={onDelete}
           style={{ width: ACTION_WIDTH, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,59,48,0.56)' }}
+          accessibilityRole="button"
+          accessibilityLabel="Delete transaction"
         >
           <TrashIcon size={19} color="#ffffff" />
         </Pressable>

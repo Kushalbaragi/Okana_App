@@ -83,6 +83,8 @@ function KeypadKey({ label, onPress, color = '#ffffff' }) {
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       style={{ flex: 1, height: 64, alignItems: 'center', justifyContent: 'center' }}
+      accessibilityRole="button"
+      accessibilityLabel={label === 'backspace' ? 'Delete' : label}
     >
       <Animated.Text style={[{ color, fontSize: label === 'backspace' ? 24 : 30, fontWeight: '400' }, labelStyle]}>
         {label === 'backspace' ? '⌫' : label}

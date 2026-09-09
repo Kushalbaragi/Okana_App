@@ -1,6 +1,6 @@
 import { memo, useEffect, useState } from 'react';
 import { View } from 'react-native';
-import Svg, { Defs, LinearGradient, Stop, Path, Circle, Line, Text as SvgText, G } from 'react-native-svg';
+import Svg, { Defs, LinearGradient, Stop, Path, Circle, Line, Rect, Text as SvgText, G } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 
 const CHART_W = 300;
@@ -25,7 +25,7 @@ function areaPath(pts, bottom) {
   return `${line} L${pts[pts.length - 1].x.toFixed(1)},${bottom} L${pts[0].x.toFixed(1)},${bottom} Z`;
 }
 
-function LineChart({ incomeData, expenseData, labels, animKey, light = false }) {
+function LineChart({ incomeData, expenseData, labels, animKey, light = false, activeIndex = -1, onPointClick, onDeselect }) {
   const progress = useSharedValue(0);
   // The reveal-width animation needs a real pixel target, not a percentage —
   // Reanimated interpolates numbers reliably; measured once via onLayout
@@ -91,6 +91,13 @@ function LineChart({ incomeData, expenseData, labels, animKey, light = false }) 
   };
   const svgPixelHeight = containerWidth * (svgH / CHART_W);
 
+  // The marker circles follow the active selection — defaulting to the
+  // last point (the existing always-on-end behavior) when nothing's
+  // selected, same fallback shape as BarChart's activeIndex=-1 convention.
+  const markerIndex = activeIndex >= 0 ? activeIndex : n - 1;
+  const isSelected = activeIndex >= 0;
+  const touchTargetW = n > 1 ? CHART_W / n : CHART_W;
+
   return (
     <View
       style={{ width: '100%', aspectRatio: CHART_W / svgH }}
@@ -110,6 +117,10 @@ function LineChart({ incomeData, expenseData, labels, animKey, light = false }) 
               </LinearGradient>
             </Defs>
 
+            {onDeselect && (
+              <Rect x={0} y={0} width={CHART_W} height={bottom} fill="transparent" onPress={onDeselect} />
+            )}
+
             <G>
               <Path d={incomeArea}  fill="url(#ig)" />
               <Path d={expenseArea} fill="url(#eg)" />
@@ -117,11 +128,40 @@ function LineChart({ incomeData, expenseData, labels, animKey, light = false }) 
               <Path d={expenseLine} stroke="rgba(248,113,113,0.65)" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
               <Path d={incomeLine}  stroke="rgba(74,222,128,0.75)"  strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
-              <Circle cx={incomePts[n - 1].x}  cy={incomePts[n - 1].y}  r="2.5" fill="#4ade80" />
-              <Circle cx={expensePts[n - 1].x} cy={expensePts[n - 1].y} r="2.5" fill="#f87171" />
+              {/* A vertical guide pinpointing the tapped period — only once
+                  something's actually selected, not for the default
+                  trailing marker below. */}
+              {isSelected && (
+                <Line
+                  x1={incomePts[markerIndex].x} y1={PAD_TOP} x2={incomePts[markerIndex].x} y2={bottom}
+                  stroke={light ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.18)'} strokeWidth="1" strokeDasharray="2 3"
+                />
+              )}
+
+              {/* Follows the active selection, defaulting to the last point
+                  (the original always-on-end marker) when nothing's picked. */}
+              <Circle cx={incomePts[markerIndex].x}  cy={incomePts[markerIndex].y}  r={isSelected ? 3 : 2.5} fill="#4ade80" />
+              <Circle cx={expensePts[markerIndex].x} cy={expensePts[markerIndex].y} r={isSelected ? 3 : 2.5} fill="#f87171" />
             </G>
 
             <Line x1={0} y1={bottom} x2={CHART_W} y2={bottom} stroke={light ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.18)'} strokeWidth="1" strokeDasharray="2 3" />
+
+            {/* Separate, never-animated per-point touch targets — same
+                reasoning as BarChart's own full-column hit rects: hovers
+                over the actual (curved, thin) line paths would be an
+                unreliable tap target, so each period gets a generous
+                invisible column instead. */}
+            {onPointClick && incomePts.map((p, i) => (
+              <Rect
+                key={i}
+                x={i * stepX - touchTargetW / 2}
+                y={0}
+                width={touchTargetW}
+                height={bottom}
+                fill="transparent"
+                onPress={() => onPointClick(i)}
+              />
+            ))}
 
             {labels.map((lbl, i) => showLabel(i) && lbl && (
               <SvgText

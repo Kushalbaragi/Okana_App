@@ -70,6 +70,18 @@ const SPEND_SHADES_LIGHT = {
   ],
 }
 
+export function getDayTotal(transactions, type, dateStr) {
+  return transactions
+    .filter(tx => tx.type === type && tx.date === dateStr)
+    .reduce((sum, tx) => sum + tx.amount, 0)
+}
+
+export function getDayDelta(transactions, type, dateStr) {
+  const current = getDayTotal(transactions, type, dateStr)
+  const prev = getDayTotal(transactions, type, shiftDate(dateStr, -1))
+  return { current, prev, diff: current - prev }
+}
+
 export function getDailyExpenseTotals(transactions) {
   const map = {}
   transactions.forEach(tx => {

@@ -27,6 +27,7 @@ import { BackIcon, EditIcon, ChevronRight, CheckIcon, CameraIcon } from '../../c
 import { ONBOARDING_SEEN_KEY } from '../onboarding';
 import { AnimatedModal } from '../../components/AnimatedModal';
 import { ActionOverlay } from '../../components/ActionOverlay';
+import * as SettingsUI from '../../components/SettingsUI';
 
 // One-flag experiment: a light theme for just this screen. Flip back to
 // false to fully revert. Mirrors the same LIGHT_HOME flag in app/(app)/index.js.
@@ -64,32 +65,14 @@ function YouTubeIcon() {
   );
 }
 
-function Divider() {
-  return <View style={{ height: 1, backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)', marginHorizontal: 16 }} />;
-}
-
-function SectionLabel({ children }) {
-  return (
-    <Text
-      className="text-[11px] font-medium uppercase tracking-widest px-1 pt-2 mb-2"
-      style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.30)' }}>{children}</Text>
-  );
-}
-
-function Card({ children }) {
-  return (
-    <View
-      className="rounded-2xl overflow-hidden"
-      style={{
-        backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)',
-        borderWidth: 1,
-        borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)',
-      }}
-    >
-      {children}
-    </View>
-  );
-}
+// Thin bindings over the shared components in SettingsUI.js — every call
+// site below (`<Card>`, `<Row label=... />`, etc.) stays exactly as it was,
+// just backed by the shared implementation instead of a local copy that can
+// drift from Subscription's own.
+function Divider(props) { return <SettingsUI.Divider light={LIGHT_SETTINGS} {...props} />; }
+function SectionLabel(props) { return <SettingsUI.SectionLabel light={LIGHT_SETTINGS} {...props} />; }
+function Card(props) { return <SettingsUI.Card light={LIGHT_SETTINGS} {...props} />; }
+function Row(props) { return <SettingsUI.Row light={LIGHT_SETTINGS} {...props} />; }
 
 function Pill({ label, tone = 'green' }) {
   const color = tone === 'red' ? '#f87171' : '#4ade80';
@@ -99,19 +82,6 @@ function Pill({ label, tone = 'green' }) {
       <Text style={{ color, fontSize: 12, fontWeight: '600' }}>{label}</Text>
     </View>
   );
-}
-
-function Row({ label, value, onPress, right }) {
-  const content = (
-    <View className="flex-row items-center justify-between px-4 py-[14px]">
-      <Text className="text-base" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>{label}</Text>
-      <View className="flex-row items-center" style={{ gap: 8 }}>
-        {!!value && <Text className="text-xs" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}>{value}</Text>}
-        {right || (onPress && !right && <ChevronRight color={LIGHT_SETTINGS ? 'rgba(0,0,0,0.25)' : undefined} />)}
-      </View>
-    </View>
-  );
-  return onPress ? <Pressable onPress={onPress}>{content}</Pressable> : content;
 }
 
 function InfoModal({ open, title, onClose, onClosed, children }) {
@@ -240,7 +210,13 @@ function AvatarPhoto({ uri, phase, onPress }) {
   }));
 
   return (
-    <Pressable onPress={onPress} disabled={phase === 'uploading'} style={{ width: 80, height: 80 }}>
+    <Pressable
+      onPress={onPress}
+      disabled={phase === 'uploading'}
+      style={{ width: 80, height: 80 }}
+      accessibilityRole="button"
+      accessibilityLabel="Change profile photo"
+    >
       {uri ? (
         <Image
           source={{ uri }}
@@ -945,7 +921,12 @@ export default function AccountPage() {
       {LIGHT_SETTINGS && isFocused && <StatusBar style="dark" />}
       <ScrollView showsVerticalScrollIndicator={false}>
         <View className="flex-row items-center gap-2 px-4 pt-14 pb-4">
-          <Pressable onPress={() => router.back()} className="w-9 h-9 items-center justify-center rounded-xl">
+          <Pressable
+            onPress={() => router.back()}
+            className="w-9 h-9 items-center justify-center rounded-xl"
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
             <BackIcon color={LIGHT_SETTINGS ? 'rgba(0,0,0,0.7)' : undefined} />
           </Pressable>
           <Text className="text-base font-semibold" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>Settings</Text>
@@ -982,7 +963,12 @@ export default function AccountPage() {
                 ) : (
                   <View className="flex-row items-center justify-between">
                     <Text className="text-base" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>{profile?.name || '—'}</Text>
-                    <Pressable onPress={() => { setNameInput(profile?.name || ''); setEditingName(true); }} className="w-7 h-7 items-center justify-center rounded-lg">
+                    <Pressable
+                      onPress={() => { setNameInput(profile?.name || ''); setEditingName(true); }}
+                      className="w-7 h-7 items-center justify-center rounded-lg"
+                      accessibilityRole="button"
+                      accessibilityLabel="Edit name"
+                    >
                       <EditIcon color={LIGHT_SETTINGS ? 'rgba(0,0,0,0.4)' : undefined} />
                     </Pressable>
                   </View>
@@ -1057,21 +1043,22 @@ export default function AccountPage() {
           </View>
 
           <View>
-            <Pressable onPress={() => setShowLogoutConfirm(true)} className="self-start px-4 py-[14px]">
-              <Text className="text-base" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.70)' : 'rgba(255,255,255,0.70)' }}>Log Out</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => (isOnline ? setShowEraseConfirm(true) : notifyOffline())}
-              className="self-start px-4 py-[14px]"
-            >
-              <Text className="text-red-400 text-base">Erase Data</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => (isOnline ? setShowDeleteConfirm(true) : notifyOffline())}
-              className="self-start px-4 py-[14px]"
-            >
-              <Text className="text-red-400 text-base">Delete Account</Text>
-            </Pressable>
+            <SectionLabel>Account</SectionLabel>
+            <Card>
+              <Row label="Log Out" onPress={() => setShowLogoutConfirm(true)} />
+              <Divider />
+              <Row
+                label="Erase Data"
+                labelColor="#f87171"
+                onPress={() => (isOnline ? setShowEraseConfirm(true) : notifyOffline())}
+              />
+              <Divider />
+              <Row
+                label="Delete Account"
+                labelColor="#f87171"
+                onPress={() => (isOnline ? setShowDeleteConfirm(true) : notifyOffline())}
+              />
+            </Card>
           </View>
 
           <Text className="text-xs text-center mt-2 mb-8" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)' }}>v{APP_VERSION}</Text>

@@ -23,12 +23,17 @@ const GROW_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard (and the flows it opens) — see the matching comment in
 // Header.js.
-function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, light = false }) {
+// `hideDivider` drops the bottom border-line — SpendCalendarModal sits this
+// right above its own calendar grid with a wider blank gap instead, so the
+// line there just reads as clutter; MonthlyRecapModal's slide keeps it.
+function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, light = false, hideDivider = false }) {
   const wrapperStyle = {
     paddingBottom: 10,
     marginBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
+    ...(hideDivider ? null : {
+      borderBottomWidth: 1,
+      borderBottomColor: light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
+    }),
   };
   const textColor = light ? '#111111' : '#ffffff';
   const dimColor = light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
@@ -67,14 +72,12 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, 
   const isOver = remaining < 0;
   const heroAmount = formatCurrency(Math.abs(remaining));
   const heroSuffix = isOver ? 'over' : 'left';
-  const usedLabel = isOver ? `${Math.round(percent - 100)}% over budget` : `${Math.round(percent)}% of budget used`;
+  const usedLabel = isOver ? `${Math.round(percent - 100)}% over budget` : `${Math.round(percent)}% used`;
 
   return (
     <View style={wrapperStyle}>
-      <Text className="text-sm font-semibold text-center mb-2.5" style={{ color: dimColor }}>Budget</Text>
-
       <View className="flex-row items-baseline justify-center mb-4" style={{ gap: 6 }}>
-        <Text style={{ color: textColor, fontSize: 32, fontWeight: '600', letterSpacing: -0.5 }}>{heroAmount}</Text>
+        <Text style={{ color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.80)', fontSize: 32, fontWeight: '600', letterSpacing: -0.5 }}>{heroAmount}</Text>
         <Text style={{ color: dimColor, fontSize: 15 }}>{heroSuffix}</Text>
       </View>
 

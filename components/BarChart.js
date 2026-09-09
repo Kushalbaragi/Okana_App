@@ -145,12 +145,12 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
             {/* Small "no spend" marker — every zero-value day gets one,
                 independent of labelStep, so the pattern reads at a glance
                 across the whole month rather than only on labeled days.
-                Sits just under the baseline grid line, above the date
-                labels. Skipped for disabled (not-yet-happened) days — those
-                are zero because the day hasn't occurred, not because
-                nothing was spent. */}
+                Sits just above the baseline grid line, in the empty column
+                where that day's bar would otherwise start. Skipped for
+                disabled (not-yet-happened) days — those are zero because
+                the day hasn't occurred, not because nothing was spent. */}
             {noSpendDots && !hasData && !isDisabled && (
-              <Circle cx={x + BAR_W / 2} cy={BAR_HEIGHT + 6} r={1.8} fill={noSpendDotColor} />
+              <Circle cx={x + BAR_W / 2} cy={BAR_HEIGHT - 6} r={1.8} fill={noSpendDotColor} />
             )}
           </Fragment>
         );

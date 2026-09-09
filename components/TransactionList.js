@@ -165,7 +165,12 @@ function TransactionList({
         {ListHeaderFor(light)}
         <View className="items-center justify-center py-14 px-4">
           <Text className="text-base text-center" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.25)' }}>
-            No {isOverview ? 'transactions' : `${activeTab}s`} for this period
+            {/* Expense-empty gets the same "you saved" framing as the
+                calendar page's no-spend day — Income/Overview stay neutral
+                since "saved" doesn't make sense for those. */}
+            {activeTab === 'expense'
+              ? 'You saved — nothing spent this period 🌿'
+              : `No ${isOverview ? 'transactions' : `${activeTab}s`} for this period`}
           </Text>
           <Text className="text-base mt-1" style={{ color: light ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.15)' }}>Tap + to add one</Text>
         </View>

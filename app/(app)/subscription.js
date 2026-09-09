@@ -9,25 +9,7 @@ import { formatChargeDate, getSubscriptionDisplayStatus, PRICE_PER_YEAR, WHY_ITE
 import { today } from '../../utils/format';
 import { BackIcon, CheckIcon } from '../../components/icons';
 import { PaymentProcessing } from '../../components/PaymentProcessing';
-
-function Divider() {
-  return <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.07)', marginHorizontal: 16 }} />;
-}
-
-function SectionLabel({ children }) {
-  return (
-    <Text
-      className="text-white/30 text-[11px] font-medium uppercase tracking-widest px-1 pt-2 mb-2">{children}</Text>
-  );
-}
-
-function Card({ children }) {
-  return (
-    <View className="rounded-2xl overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' }}>
-      {children}
-    </View>
-  );
-}
+import { Card, Divider, SectionLabel } from '../../components/SettingsUI';
 
 export default function SubscriptionPage() {
   const router = useRouter();
@@ -180,7 +162,12 @@ export default function SubscriptionPage() {
         }
       >
         <View className="flex-row items-center gap-2 px-4 pt-14 pb-4">
-          <Pressable onPress={() => router.back()} className="w-9 h-9 items-center justify-center rounded-xl">
+          <Pressable
+            onPress={() => router.back()}
+            className="w-9 h-9 items-center justify-center rounded-xl"
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
             <BackIcon />
           </Pressable>
           <Text className="text-white text-base font-semibold">Subscription</Text>

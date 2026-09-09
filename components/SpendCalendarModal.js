@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, runOnJS } from 'react-native-reanimated';
 import {
+  formatCurrency,
   formatCurrencyFull,
   formatDateFull,
   getDailyExpenseTotals,
@@ -204,15 +205,21 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                 )}
 
                 {/* Budget + calendar grouped into one padded block — no
-                    card surface, sits directly on the page background. */}
-                <View className="rounded-3xl p-4" style={{ maxWidth: 320, alignSelf: 'center', width: '100%' }}>
-                  {budget && <BudgetStatusBar {...budget} light={light} />}
+                    card surface, sits directly on the page background.
+                    Top padding trimmed and matched by extra margin below
+                    the budget bar, so Budget sits higher while the
+                    calendar grid underneath stays put — just a wider gap
+                    between the two. */}
+                <View className="rounded-3xl px-4 pb-4" style={{ maxWidth: 320, alignSelf: 'center', width: '100%', paddingTop: 6 }}>
+                  {budget && <View style={{ marginBottom: 10 }}><BudgetStatusBar {...budget} light={light} hideDivider /></View>}
 
                   <View className="flex-row items-center justify-between mb-4">
                     <Pressable
                       onPress={prevMonth}
                       className="w-7 h-7 rounded-full items-center justify-center"
                       style={{ backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.07)' }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Previous month"
                     >
                       <Text style={{ color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>‹</Text>
                     </Pressable>
@@ -223,6 +230,8 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                       onPress={nextMonth}
                       className="w-7 h-7 rounded-full items-center justify-center"
                       style={{ backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.07)' }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Next month"
                     >
                       <Text style={{ color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>›</Text>
                     </Pressable>
@@ -292,12 +301,17 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
             {selectedDate && (
               <View style={{ flex: 1, marginTop: 20, paddingHorizontal: 20 }}>
                 <View style={{ maxWidth: 320, alignSelf: 'center', width: '100%', flex: 1 }}>
-                  <Text className="text-base font-semibold mb-3" style={{ color: light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)' }}>
-                    {formatDateFull(selectedDate)}
-                  </Text>
+                  <View className="flex-row items-center justify-between mb-3">
+                    <Text className="text-base font-semibold" style={{ color: light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)' }}>
+                      {formatDateFull(selectedDate)}
+                    </Text>
+                    <Text className="text-base font-semibold" style={{ color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>
+                      {formatCurrency(dailyTotals[selectedDate] || 0)}
+                    </Text>
+                  </View>
                   {dayTxs.length === 0 ? (
                     <Text className="text-base" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>
-                      No transactions — spend-free day 🎉
+                      You saved today — nothing spent 🌿
                     </Text>
                   ) : (
                     <GestureDetector gesture={nativeScroll}>

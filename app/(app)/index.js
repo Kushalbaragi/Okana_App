@@ -21,7 +21,7 @@ import BudgetSetupModal from '../../components/BudgetSetupModal';
 import { AnimatedModal } from '../../components/AnimatedModal';
 import { PlusIcon } from '../../components/icons';
 import { PILL_ACTIVE_COLOR } from '../../components/Glass';
-import { currentMonthYear, today } from '../../utils/format';
+import { currentMonthYear, today, formatCurrency } from '../../utils/format';
 import { getMonthlyRecapSlides, hasAnyRecapData, prevMonthYear, MONTH_NAMES } from '../../utils/monthlyRecap';
 
 // One-flag experiment: a light theme for just this screen (Header,
@@ -126,6 +126,9 @@ export default function Dashboard() {
   const [dailyPopupsResolved, setDailyPopupsResolved] = useState(false);
 
   const [proRequired, setProRequired] = useState(false);
+
+  const [budgetCrossedOpen, setBudgetCrossedOpen] = useState(false);
+  const [budgetCrossedOverAmount, setBudgetCrossedOverAmount] = useState(0);
 
   // Tracks whether AddModal's own native <Modal> has actually finished
   // closing (not just whether `modalOpen` is false) — see addModalClosed
@@ -387,6 +390,43 @@ export default function Dashboard() {
     router.push('/(app)/subscription');
   }, [router]);
 
+  const closeBudgetCrossed = useCallback(() => setBudgetCrossedOpen(false), []);
+
+  // Set by addTransactionWithBudgetCheck below, consumed by the effect
+  // right after it — not opened directly there because AddModal is still
+  // mid-close at that point (its own native <Modal> is still up), and two
+  // native Modals mounted at once is broken on Android (same constraint
+  // documented on SpendCalendarModal/pendingAfterCalendarClose above).
+  // Stashing the amount and waiting for addModalClosed to flip true mirrors
+  // that same stash-then-fire pattern.
+  const pendingBudgetCrossedRef = useRef(null);
+
+  // Wraps addTransaction so it can compare this month's spend right before
+  // and right after this one add — that's what "crossed" means (a genuine
+  // under-to-over transition), rather than just "currently over", which
+  // would also fire on every later add once already past the budget.
+  // Expense-only (income never affects spend) and only when a budget is
+  // actually set for the month.
+  const addTransactionWithBudgetCheck = useCallback(async (data) => {
+    const affectsBudget = data.type === 'expense' && budget.hasBudget && budget.amount > 0;
+    const prevSpent = budget.spentThisMonth;
+    const result = await addTransaction(data);
+    if (result?.success !== false && affectsBudget) {
+      const newSpent = prevSpent + parseFloat(data.amount);
+      if (prevSpent <= budget.amount && newSpent > budget.amount) {
+        pendingBudgetCrossedRef.current = newSpent - budget.amount;
+      }
+    }
+    return result;
+  }, [addTransaction, budget.hasBudget, budget.amount, budget.spentThisMonth]);
+
+  useEffect(() => {
+    if (!addModalClosed || pendingBudgetCrossedRef.current == null) return;
+    setBudgetCrossedOverAmount(pendingBudgetCrossedRef.current);
+    pendingBudgetCrossedRef.current = null;
+    setBudgetCrossedOpen(true);
+  }, [addModalClosed]);
+
   const openEdit = useCallback((tx) => {
     setAddModalClosed(false);
     setEditData(tx);
@@ -468,6 +508,8 @@ export default function Dashboard() {
         onPress={openAdd}
         className="absolute bottom-20 self-center w-[68px] h-[68px] rounded-full items-center justify-center"
         style={{ backgroundColor: PILL_ACTIVE_COLOR, left: '50%', marginLeft: -34, zIndex: 50, elevation: 50 }}
+        accessibilityRole="button"
+        accessibilityLabel="Add transaction"
       >
         <PlusIcon size={30} color="#ffffff" />
       </Pressable>
@@ -476,7 +518,7 @@ export default function Dashboard() {
         open={modalOpen}
         onClose={closeAddModal}
         onClosed={handleAddModalClosed}
-        onAdd={addTransaction}
+        onAdd={addTransactionWithBudgetCheck}
         onEdit={editTransaction}
         editData={editData}
         light={LIGHT_HOME}
@@ -525,6 +567,22 @@ export default function Dashboard() {
               <Text className="text-base font-semibold" style={{ color: '#4ade80' }}>Subscribe Now</Text>
             </Pressable>
           </View>
+        </View>
+      </AnimatedModal>
+
+      <AnimatedModal open={budgetCrossedOpen} onClose={closeBudgetCrossed} variant="center">
+        <View
+          className="w-full rounded-2xl p-6 items-center"
+          style={{ maxWidth: 360, backgroundColor: 'rgba(20,20,20,0.98)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
+        >
+          <Text style={{ fontSize: 30 }} className="mb-3">⚠️</Text>
+          <Text className="text-white font-semibold text-base mb-2 text-center">You've gone over budget</Text>
+          <Text className="text-white/45 text-base text-center mb-6" style={{ lineHeight: 22 }}>
+            You're now {formatCurrency(budgetCrossedOverAmount)} over your {formatCurrency(budget.amount)} budget for {MONTH_NAMES[currMonth]}.
+          </Text>
+          <Pressable onPress={closeBudgetCrossed} className="w-full py-[11px] rounded-xl items-center" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+            <Text className="text-white text-base font-semibold">Got it</Text>
+          </Pressable>
         </View>
       </AnimatedModal>
     </Animated.View>

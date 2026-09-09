@@ -7,12 +7,14 @@ import { GlassPressable } from './Glass';
 import {
   formatCurrency,
   getDelta,
+  getDayDelta,
   getMonthTotal,
   getMonthlyTotals,
   getDailyTotals,
   getLifetimeYearly,
   getLifetimeMonthly,
   currentMonthYear,
+  toDateStr,
 } from '../utils/format';
 
 const LIFETIME_YEARLY_THRESHOLD = 2; // years of history before "All Time" switches from monthly to yearly bars
@@ -183,6 +185,17 @@ function SummaryCard({
   const displayAmount = useMemo(() => {
     const inc_ = chartTab === 'income';
     if (chartTab === 'overview') {
+      // Same per-period drill-down as Expense/Income below, just net
+      // (income - expense) instead of a single series.
+      if (timeRange === 'month' && selectedDay != null) {
+        return (chartData.income[selectedDay - 1] ?? 0) - (chartData.expense[selectedDay - 1] ?? 0);
+      }
+      if (timeRange === 'year' && selectedMonth != null) {
+        return getMonthTotal(transactions, 'income', selectedMonth, year) - getMonthTotal(transactions, 'expense', selectedMonth, year);
+      }
+      if (timeRange === '5y' && selectedPeriodIndex >= 0) {
+        return (chartData.income[selectedPeriodIndex] ?? 0) - (chartData.expense[selectedPeriodIndex] ?? 0);
+      }
       const inc = chartData.income.reduce((a, b) => a + b, 0);
       const exp = chartData.expense.reduce((a, b) => a + b, 0);
       return inc - exp;
@@ -192,15 +205,22 @@ function SummaryCard({
       return inc_ ? chartData.income[selectedPeriodIndex] : chartData.expense[selectedPeriodIndex];
     }
     const arr = inc_ ? chartData.income : chartData.expense;
+    if (timeRange === 'month' && selectedDay != null) return arr[selectedDay - 1] ?? 0;
     return arr.reduce((a, b) => a + b, 0);
-  }, [chartTab, chartData, timeRange, transactions, selectedMonth, year, selectedPeriodIndex]);
+  }, [chartTab, chartData, timeRange, transactions, selectedMonth, year, selectedPeriodIndex, selectedDay]);
 
   const delta = useMemo(() => {
     if (chartTab === 'overview') return null;
     if (timeRange === 'year' && selectedMonth != null) return getDelta(transactions, chartTab, selectedMonth, year);
+    // A specific day selected compares against the day before instead of
+    // the month-over-month comparison below — that one has nothing to do
+    // with the single day's amount now showing above it.
+    if (timeRange === 'month' && selectedDay != null) {
+      return getDayDelta(transactions, chartTab, toDateStr(new Date(currYear, currMonth, selectedDay)));
+    }
     if (timeRange === 'month') return getDelta(transactions, chartTab, currMonth, currYear);
     return null;
-  }, [chartTab, timeRange, transactions, selectedMonth, year, currMonth, currYear]);
+  }, [chartTab, timeRange, transactions, selectedMonth, year, currMonth, currYear, selectedDay]);
 
   const isIncome    = chartTab === 'income';
   const isOverview  = chartTab === 'overview';
@@ -213,7 +233,7 @@ function SummaryCard({
   const deltaColor      = deltaGood ? 'rgba(74,222,128,0.9)' : 'rgba(248,113,113,0.9)';
 
   const periodLabel = useMemo(() => {
-    if (timeRange === 'month') return MONTH_NAMES[currMonth];
+    if (timeRange === 'month') return selectedDay != null ? `${MONTH_NAMES[currMonth]} ${selectedDay}` : MONTH_NAMES[currMonth];
     if (timeRange === 'year')  return selectedMonth != null ? MONTH_NAMES[selectedMonth] : String(year);
     if (timeRange === '5y') {
       if (selectedPeriod != null) {
@@ -222,7 +242,7 @@ function SummaryCard({
       return earliestYear === currYear ? String(currYear) : `${earliestYear} – ${currYear}`;
     }
     return String(currYear);
-  }, [timeRange, selectedMonth, currYear, currMonth, selectedPeriod, earliestYear]);
+  }, [timeRange, selectedMonth, currYear, currMonth, selectedPeriod, earliestYear, selectedDay]);
 
   const lineChartData = useMemo(() => {
     // Daily-within-month view (chartData here is always the current month —
@@ -267,6 +287,14 @@ function SummaryCard({
     null;
   const onDeselect = timeRange === 'month' ? onDeselectMonth : null;
 
+  // Shared between BarChart (Expense/Income) and LineChart (Overview) — same
+  // drill-down selection, just a different chart shape to show it on.
+  const chartActiveIndex =
+    timeRange === 'month' && selectedDay != null ? selectedDay - 1 :
+    timeRange === 'year' ? (selectedMonth ?? -1) :
+    timeRange === '5y' ? selectedPeriodIndex :
+    -1;
+
   return (
     <View className="mx-4 mb-3 p-5">
       <Text className="text-base text-center mb-1" style={{ color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.40)' }}>{periodLabel}</Text>
@@ -294,17 +322,15 @@ function SummaryCard({
           labels={lineChartData.labels}
           animKey={animKey}
           light={light}
+          activeIndex={chartActiveIndex}
+          onPointClick={onBarClick}
+          onDeselect={onDeselect}
         />
       ) : (
         <BarChart
           values={barValues}
           labels={chartData.labels}
-          activeIndex={
-            timeRange === 'month' && selectedDay != null ? selectedDay - 1 :
-            timeRange === 'year' ? (selectedMonth ?? -1) :
-            timeRange === '5y' ? selectedPeriodIndex :
-            -1
-          }
+          activeIndex={chartActiveIndex}
           onBarClick={onBarClick}
           onDeselect={onDeselect}
           disabledAfterIndex={disabledAfterIndex}
@@ -312,7 +338,7 @@ function SummaryCard({
           animKey={animKey}
           labelStep={labelStep}
           useSqrtScale={timeRange === 'month'}
-          noSpendDots={timeRange === 'month'}
+          noSpendDots={timeRange === 'month' && chartTab === 'expense'}
           light={light}
         />
       )}

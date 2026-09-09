@@ -65,13 +65,23 @@ function Header({ onMenuOpen, chartTab, onChartTabChange, onCalendarOpen, light 
 
   return (
     <View className="flex-row items-center justify-between pb-5 px-5" style={{ paddingTop: insets.top + 16 }}>
-      <Pressable onPress={onMenuOpen} className="w-9 h-9 items-center justify-center rounded-xl">
+      <Pressable
+        onPress={onMenuOpen}
+        className="w-9 h-9 items-center justify-center rounded-xl"
+        accessibilityRole="button"
+        accessibilityLabel="Open menu"
+      >
         <HamburgerIcon color={iconColor} />
       </Pressable>
 
       <ChartTabToggle value={chartTab} onChange={onChartTabChange} light={light} />
 
-      <Pressable onPress={onCalendarOpen} className="w-9 h-9 items-center justify-center rounded-xl">
+      <Pressable
+        onPress={onCalendarOpen}
+        className="w-9 h-9 items-center justify-center rounded-xl"
+        accessibilityRole="button"
+        accessibilityLabel="Open spend calendar"
+      >
         <CalendarIcon color={iconColor} />
       </Pressable>
     </View>
