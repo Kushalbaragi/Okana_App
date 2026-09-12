@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// TEMPORARY: forces every tour step to replay regardless of what's already
-// marked seen in AsyncStorage, so the whole tour can be tested end-to-end
-// on any account without reinstalling. Flip back to false before shipping.
-const FORCE_UNSEEN_FOR_TESTING = true;
-
 // One-time "has this coach-mark been shown" flag per (user, step) — same
 // on-device-only tradeoff already accepted for the onboarding/welcome-seen
 // flags elsewhere in this app (a reinstall replays it once more; that's
@@ -19,7 +14,6 @@ export function useTourStep(userId, stepKey) {
 
   useEffect(() => {
     if (!key) return;
-    if (FORCE_UNSEEN_FOR_TESTING) { setSeen(false); return; }
     let cancelled = false;
     AsyncStorage.getItem(key)
       .then(v => { if (!cancelled) setSeen(v === '1'); })
