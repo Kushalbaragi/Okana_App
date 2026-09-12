@@ -13,6 +13,7 @@ import {
   getDailyTotals,
   getLifetimeYearly,
   getLifetimeMonthly,
+  getEarliestDate,
   currentMonthYear,
   toDateStr,
 } from '../utils/format';
@@ -182,24 +183,55 @@ function SummaryCard({
     return new Date().getMonth();
   }, [timeRange, year, currYear]);
 
+  // Mirrors the Calendar page's own "before earliest known activity" cutoff
+  // (see spendShadeFor/getEarliestDate in utils/format.js) — a new account
+  // that starts partway through the month otherwise has no way to tell "no
+  // transactions yet because I didn't exist" apart from "no transactions
+  // because nothing was spent," and every day before signup showed a false
+  // no-spend dot.
+  const disabledBeforeIndex = useMemo(() => {
+    if (timeRange !== 'month') return null;
+    const earliest = getEarliestDate(transactions);
+    // No transactions at all yet — nothing anchors "no spend before this,"
+    // so every day through today stays blank rather than dotted, same as
+    // the Calendar page treats a brand new account.
+    if (!earliest) return disabledAfterIndex + 1;
+    const d = new Date(earliest);
+    // Only applies when the earliest transaction actually falls within the
+    // month being shown; an account with history from an earlier month has
+    // nothing to cut off this month.
+    if (d.getFullYear() !== currYear || d.getMonth() !== currMonth) return null;
+    return d.getDate() - 1;
+  }, [timeRange, transactions, currYear, currMonth, disabledAfterIndex]);
+
+  // Overview's income/expense split for whatever period is currently
+  // shown — same per-period drill-down as Expense/Income's displayAmount
+  // below. Kept separate (rather than only computing the net) so the
+  // breakdown line under the amount can show both halves, not just their
+  // difference.
+  const overviewBreakdown = useMemo(() => {
+    if (chartTab !== 'overview') return null;
+    if (timeRange === 'month' && selectedDay != null) {
+      return { income: chartData.income[selectedDay - 1] ?? 0, expense: chartData.expense[selectedDay - 1] ?? 0 };
+    }
+    if (timeRange === 'year' && selectedMonth != null) {
+      return {
+        income: getMonthTotal(transactions, 'income', selectedMonth, year),
+        expense: getMonthTotal(transactions, 'expense', selectedMonth, year),
+      };
+    }
+    if (timeRange === '5y' && selectedPeriodIndex >= 0) {
+      return { income: chartData.income[selectedPeriodIndex] ?? 0, expense: chartData.expense[selectedPeriodIndex] ?? 0 };
+    }
+    return {
+      income: chartData.income.reduce((a, b) => a + b, 0),
+      expense: chartData.expense.reduce((a, b) => a + b, 0),
+    };
+  }, [chartTab, timeRange, chartData, transactions, selectedMonth, year, selectedPeriodIndex, selectedDay]);
+
   const displayAmount = useMemo(() => {
     const inc_ = chartTab === 'income';
-    if (chartTab === 'overview') {
-      // Same per-period drill-down as Expense/Income below, just net
-      // (income - expense) instead of a single series.
-      if (timeRange === 'month' && selectedDay != null) {
-        return (chartData.income[selectedDay - 1] ?? 0) - (chartData.expense[selectedDay - 1] ?? 0);
-      }
-      if (timeRange === 'year' && selectedMonth != null) {
-        return getMonthTotal(transactions, 'income', selectedMonth, year) - getMonthTotal(transactions, 'expense', selectedMonth, year);
-      }
-      if (timeRange === '5y' && selectedPeriodIndex >= 0) {
-        return (chartData.income[selectedPeriodIndex] ?? 0) - (chartData.expense[selectedPeriodIndex] ?? 0);
-      }
-      const inc = chartData.income.reduce((a, b) => a + b, 0);
-      const exp = chartData.expense.reduce((a, b) => a + b, 0);
-      return inc - exp;
-    }
+    if (chartTab === 'overview') return overviewBreakdown.income - overviewBreakdown.expense;
     if (timeRange === 'year' && selectedMonth != null) return getMonthTotal(transactions, chartTab, selectedMonth, year);
     if (timeRange === '5y' && selectedPeriodIndex >= 0) {
       return inc_ ? chartData.income[selectedPeriodIndex] : chartData.expense[selectedPeriodIndex];
@@ -207,7 +239,7 @@ function SummaryCard({
     const arr = inc_ ? chartData.income : chartData.expense;
     if (timeRange === 'month' && selectedDay != null) return arr[selectedDay - 1] ?? 0;
     return arr.reduce((a, b) => a + b, 0);
-  }, [chartTab, chartData, timeRange, transactions, selectedMonth, year, selectedPeriodIndex, selectedDay]);
+  }, [chartTab, chartData, timeRange, transactions, selectedMonth, year, selectedPeriodIndex, selectedDay, overviewBreakdown]);
 
   const delta = useMemo(() => {
     if (chartTab === 'overview') return null;
@@ -222,6 +254,24 @@ function SummaryCard({
     return null;
   }, [chartTab, timeRange, transactions, selectedMonth, year, currMonth, currYear, selectedDay]);
 
+  // "₹27,612 ↓" alone doesn't say what it's being compared against — this
+  // mirrors delta's own branches (previous month, or the day before for a
+  // selected day) into the readable "vs X" that goes with it.
+  const deltaVsLabel = useMemo(() => {
+    if (!delta) return null;
+    if (timeRange === 'year' && selectedMonth != null) {
+      return `vs ${MONTH_NAMES[selectedMonth === 0 ? 11 : selectedMonth - 1]}`;
+    }
+    if (timeRange === 'month' && selectedDay != null) {
+      const prev = new Date(currYear, currMonth, selectedDay - 1);
+      return `vs ${MONTH_NAMES[prev.getMonth()]} ${prev.getDate()}`;
+    }
+    if (timeRange === 'month') {
+      return `vs ${MONTH_NAMES[currMonth === 0 ? 11 : currMonth - 1]}`;
+    }
+    return null;
+  }, [delta, timeRange, selectedMonth, selectedDay, currMonth, currYear]);
+
   const isIncome    = chartTab === 'income';
   const isOverview  = chartTab === 'overview';
   const netPositive = displayAmount >= 0;
@@ -232,17 +282,34 @@ function SummaryCard({
   const deltaText       = delta && delta.diff !== 0 ? formatCurrency(Math.abs(delta.diff)) : null;
   const deltaColor      = deltaGood ? 'rgba(74,222,128,0.9)' : 'rgba(248,113,113,0.9)';
 
+  // A bare period ("2026", "September 11") makes the big number below it
+  // ambiguous on first glance — a new user has to cross-reference the
+  // Expense/Income/Overview tab above to know what it even means. Reads
+  // as "{period} {noun}" (e.g. "September Earnings") rather than a
+  // second line or a repeat of the tab name above the card.
+  const periodNoun = chartTab === 'income' ? 'Earnings' : chartTab === 'overview' ? 'Net saved' : 'Spending';
+
   const periodLabel = useMemo(() => {
-    if (timeRange === 'month') return selectedDay != null ? `${MONTH_NAMES[currMonth]} ${selectedDay}` : MONTH_NAMES[currMonth];
-    if (timeRange === 'year')  return selectedMonth != null ? MONTH_NAMES[selectedMonth] : String(year);
+    if (timeRange === 'month') {
+      const period = selectedDay != null ? `${MONTH_NAMES[currMonth]} ${selectedDay}` : MONTH_NAMES[currMonth];
+      return `${period} ${periodNoun}`;
+    }
+    if (timeRange === 'year') {
+      const period = selectedMonth != null ? MONTH_NAMES[selectedMonth] : String(year);
+      return `${period} ${periodNoun}`;
+    }
     if (timeRange === '5y') {
       if (selectedPeriod != null) {
-        return selectedPeriod.month != null ? `${MONTH_NAMES[selectedPeriod.month]} ${selectedPeriod.year}` : String(selectedPeriod.year);
+        const period = selectedPeriod.month != null
+          ? `${MONTH_NAMES[selectedPeriod.month]} ${selectedPeriod.year}`
+          : String(selectedPeriod.year);
+        return `${period} ${periodNoun}`;
       }
-      return earliestYear === currYear ? String(currYear) : `${earliestYear} – ${currYear}`;
+      const range = earliestYear === currYear ? String(currYear) : `${earliestYear} – ${currYear}`;
+      return `${range} ${periodNoun}`;
     }
-    return String(currYear);
-  }, [timeRange, selectedMonth, currYear, currMonth, selectedPeriod, earliestYear, selectedDay]);
+    return `${currYear} ${periodNoun}`;
+  }, [timeRange, selectedMonth, currYear, currMonth, selectedPeriod, earliestYear, selectedDay, year, periodNoun]);
 
   const lineChartData = useMemo(() => {
     // Daily-within-month view (chartData here is always the current month —
@@ -304,10 +371,28 @@ function SummaryCard({
       </View>
 
       <View className="items-center justify-center mb-5" style={{ minHeight: 16 }}>
-        {isOverview ? null : deltaText ? (
+        {isOverview ? (
+          // Overview's number alone is a net figure — this breaks it back
+          // into its two halves so the full picture ("earned X, spent Y")
+          // is visible without switching tabs.
+          <View className="flex-row items-center" style={{ gap: 5 }}>
+            <Text className="text-sm" style={{ color: 'rgba(74,222,128,0.9)' }}>
+              <Text className="font-semibold">{formatCurrency(overviewBreakdown.income)}</Text> income
+            </Text>
+            <Text className="text-sm" style={{ color: light ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)' }}>·</Text>
+            <Text className="text-sm" style={{ color: 'rgba(248,113,113,0.9)' }}>
+              <Text className="font-semibold">{formatCurrency(overviewBreakdown.expense)}</Text> spent
+            </Text>
+          </View>
+        ) : deltaText ? (
           <View className="flex-row items-center" style={{ gap: 3 }}>
             <AnimatedDelta text={deltaText} style={{ color: deltaColor }} />
             {arrow && <Text className="text-base font-medium" style={{ color: deltaColor }}>{arrow}</Text>}
+            {deltaVsLabel && (
+              <Text className="text-sm ml-0.5" style={{ color: light ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }}>
+                {deltaVsLabel}
+              </Text>
+            )}
           </View>
         ) : (
           <Text className="text-base" style={{ color: light ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)' }}>—</Text>
@@ -334,6 +419,7 @@ function SummaryCard({
           onBarClick={onBarClick}
           onDeselect={onDeselect}
           disabledAfterIndex={disabledAfterIndex}
+          disabledBeforeIndex={disabledBeforeIndex}
           isIncome={isIncome}
           animKey={animKey}
           labelStep={labelStep}

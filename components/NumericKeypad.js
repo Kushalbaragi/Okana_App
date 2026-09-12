@@ -48,7 +48,7 @@ export function nextAmountValue(prev, key) {
   if (prev === '0') return key;
   const decimals = prev.split('.')[1];
   if (decimals != null && decimals.length >= 2) return prev; // max 2 decimal places
-  if (prev.replace('.', '').length >= 9) return prev; // sane upper bound
+  if (prev.replace('.', '').length >= 8) return prev; // sane upper bound
   return prev + key;
 }
 

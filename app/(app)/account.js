@@ -44,6 +44,25 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 // showing 1.0.0 while the actual shipped version was 1.0.2).
 const APP_VERSION = Constants.expoConfig?.version ?? '—';
 
+// Deep-links straight to the review-writing screen on each store rather than
+// just the listing page — itms-apps:// (iOS) and market:// (Android) open
+// the native store app directly; falls back to the plain https listing if
+// the store app itself isn't available to handle the custom scheme (e.g.
+// Play Store missing on some Android builds/emulators).
+async function rateApp() {
+  const storeUrl = Platform.OS === 'ios'
+    ? 'itms-apps://apps.apple.com/app/id6805307127?action=write-review'
+    : 'market://details?id=com.kushalbaragi.okana&showAllReviews=true';
+  const webUrl = Platform.OS === 'ios'
+    ? 'https://apps.apple.com/app/id6805307127'
+    : 'https://play.google.com/store/apps/details?id=com.kushalbaragi.okana';
+  try {
+    await Linking.openURL(storeUrl);
+  } catch {
+    Linking.openURL(webUrl);
+  }
+}
+
 function InstagramIcon() {
   const c = LIGHT_SETTINGS ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
   return (
@@ -1038,7 +1057,7 @@ export default function AccountPage() {
               <Divider />
               <Row label="Support" onPress={() => setModal('feedback')} />
               <Divider />
-              <Row label="Rate Us" value="Coming soon" />
+              <Row label="Rate Us" onPress={rateApp} />
             </Card>
           </View>
 

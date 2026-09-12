@@ -58,6 +58,11 @@ function TransactionList({
   onEdit,
   onDelete,
   light = false,
+  // Attached to whichever row ends up first overall (across sections) —
+  // lets the screen this list lives on target it for the "swipe to
+  // edit/delete" tour step. Optional; TransactionList itself doesn't know
+  // or care about tour state, it just exposes the target.
+  firstRowRef,
 }, ref) {
   const bgColor = light ? '#FAFAF8' : '#0a0a0a';
   const isOverview = chartTab === 'overview';
@@ -193,8 +198,13 @@ function TransactionList({
         keyExtractor={tx => tx.id}
         onScrollBeginDrag={closeOpenRow}
         renderItem={({ item, index, section }) => {
+          // The swipe-hint tour step targets whichever row is literally
+          // first in the whole (possibly grouped) list, not just first
+          // within its own section.
+          const isFirstOverall = section === sections[0] && index === 0;
           const card = (
             <View
+              ref={isFirstOverall ? firstRowRef : undefined}
               style={{
                 backgroundColor: bgColor,
                 overflow: 'hidden',

@@ -19,6 +19,8 @@ import SpendCalendarModal from '../../components/SpendCalendarModal';
 import MonthlyRecapModal from '../../components/MonthlyRecapModal';
 import BudgetSetupModal from '../../components/BudgetSetupModal';
 import { AnimatedModal } from '../../components/AnimatedModal';
+import { TourHint } from '../../components/TourHint';
+import { useTourStep } from '../../hooks/useTourStep';
 import { PlusIcon } from '../../components/icons';
 import { PILL_ACTIVE_COLOR } from '../../components/Glass';
 import { currentMonthYear, today, formatCurrency } from '../../utils/format';
@@ -55,6 +57,27 @@ async function markRecapAvailableToday(userId) {
     await AsyncStorage.setItem(`okana_recap_available_date_${userId}`, today());
   } catch {
     // best-effort
+  }
+}
+
+// AsyncStorage's own "already shown this month" flag lives only on-device —
+// a reinstall wipes it, which used to make the recap pop up again for a
+// month the account had already seen it for. The server-side write
+// markRecapViewedServerSide already makes below is the durable record (tied
+// to the account, not the install); this reads it back as a fallback only
+// when the local flag is missing, so a normal (non-reinstalled) app open
+// never pays the network round trip.
+async function hasViewedRecapServerSide(userId, monthId) {
+  try {
+    const { data } = await supabase
+      .from('monthly_summary_status')
+      .select('viewed_at')
+      .eq('user_id', userId)
+      .eq('month_id', monthId)
+      .maybeSingle();
+    return !!data?.viewed_at;
+  } catch {
+    return false;
   }
 }
 
@@ -193,7 +216,12 @@ export default function Dashboard() {
       await AsyncStorage.setItem(shownKey, todayStr);
 
       const recapShownKey = `okana_recap_shown_${user.id}`;
-      const alreadyShown = (await AsyncStorage.getItem(recapShownKey)) === recapMonthId;
+      let alreadyShown = (await AsyncStorage.getItem(recapShownKey)) === recapMonthId;
+      if (!alreadyShown) {
+        alreadyShown = await hasViewedRecapServerSide(user.id, recapMonthId);
+        if (cancelled) return;
+        if (alreadyShown) await AsyncStorage.setItem(recapShownKey, recapMonthId);
+      }
 
       if (!alreadyShown && hasAnyRecapData(transactions, prev.month, prev.year)) {
         await AsyncStorage.setItem(recapShownKey, recapMonthId);
@@ -433,6 +461,48 @@ export default function Dashboard() {
     setModalOpen(true);
   }, []);
 
+  // First-run product tour for the three Home-screen habits: adding a
+  // transaction, switching chart tabs, and swiping a row to edit/delete.
+  // The first two need no data and can run right after signup; the third
+  // needs a real transaction to point at, so it just sits deferred (seen
+  // stays false, step never becomes reachable) until one exists — no
+  // forcing a brand-new, data-less account through a step with nothing to
+  // show. (The calendar's color legend, tap-a-date, and budget section get
+  // their own separate tour, triggered from SpendCalendarModal.js instead,
+  // for the same "only show it once it's real" reason.)
+  const fabRef = useRef(null);
+  const tabToggleRef = useRef(null);
+  const firstRowRef = useRef(null);
+  const addTxTour = useTourStep(user?.id, 'add_transaction');
+  const tabsTour = useTourStep(user?.id, 'income_expense_tabs');
+  const swipeTour = useTourStep(user?.id, 'swipe_edit_delete');
+  const [homeTourActive, setHomeTourActive] = useState(null); // 'fab' | 'tabs' | 'swipe' | null
+
+  useEffect(() => {
+    if (!user || homeTourActive) return;
+    // Waits for the daily popup chain to settle, and none of the other
+    // native-Modal popups on this screen to be open — same "never stack
+    // two native Modals" constraint documented throughout this file.
+    if (!dailyPopupsResolved || recapOpen || budgetSetupOpen || proRequired || budgetCrossedOpen || modalOpen) return;
+    // A beat of breathing room before a hint appears — same idea as the
+    // Calendar tour's own delay, so it never fires the instant the screen
+    // (or, for the swipe step, the row that was just added) lands, before
+    // the user has even had a chance to look around on their own.
+    const t = setTimeout(() => {
+      if (!addTxTour.seen) { setHomeTourActive('fab'); return; }
+      if (!tabsTour.seen) { setHomeTourActive('tabs'); return; }
+      if (!swipeTour.seen && transactions.length > 0) { setHomeTourActive('swipe'); }
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [user, homeTourActive, dailyPopupsResolved, recapOpen, budgetSetupOpen, proRequired, budgetCrossedOpen, modalOpen, addTxTour.seen, tabsTour.seen, swipeTour.seen, transactions.length]);
+
+  const advanceHomeTour = useCallback(() => {
+    if (homeTourActive === 'fab') addTxTour.markSeen();
+    else if (homeTourActive === 'tabs') tabsTour.markSeen();
+    else if (homeTourActive === 'swipe') swipeTour.markSeen();
+    setHomeTourActive(null);
+  }, [homeTourActive, addTxTour, tabsTour, swipeTour]);
+
   // Stable no-arg toggles for the modal props below — each was previously
   // an inline arrow function created fresh every render, which defeated
   // memo() on Header/AddModal/SpendCalendarModal:
@@ -472,6 +542,7 @@ export default function Dashboard() {
         onChartTabChange={setChartTab}
         onCalendarOpen={openCalendar}
         light={LIGHT_HOME}
+        tabToggleRef={tabToggleRef}
       />
 
       <SummaryCard
@@ -502,9 +573,11 @@ export default function Dashboard() {
         onEdit={openEdit}
         onDelete={deleteTransaction}
         light={LIGHT_HOME}
+        firstRowRef={firstRowRef}
       />
 
       <Pressable
+        ref={fabRef}
         onPress={openAdd}
         className="absolute bottom-20 self-center w-[68px] h-[68px] rounded-full items-center justify-center"
         style={{ backgroundColor: PILL_ACTIVE_COLOR, left: '50%', marginLeft: -34, zIndex: 50, elevation: 50 }}
@@ -513,6 +586,25 @@ export default function Dashboard() {
       >
         <PlusIcon size={30} color="#ffffff" />
       </Pressable>
+
+      <TourHint
+        visible={homeTourActive === 'fab'}
+        targetRef={fabRef}
+        description="Tap here to add an expense or income."
+        onNext={advanceHomeTour}
+      />
+      <TourHint
+        visible={homeTourActive === 'tabs'}
+        targetRef={tabToggleRef}
+        description="Switch between Expense, Income, and Overview here."
+        onNext={advanceHomeTour}
+      />
+      <TourHint
+        visible={homeTourActive === 'swipe'}
+        targetRef={firstRowRef}
+        description="Swipe left on a transaction to edit or delete it."
+        onNext={advanceHomeTour}
+      />
 
       <AddModal
         open={modalOpen}
@@ -532,6 +624,7 @@ export default function Dashboard() {
         recap={recapForCalendar}
         budget={budgetForCalendar}
         light={LIGHT_HOME}
+        userId={user?.id}
       />
 
       <MonthlyRecapModal

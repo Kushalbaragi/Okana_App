@@ -10,6 +10,7 @@ import CalendarPicker from './CalendarPicker';
 import { GlassPressable, PILL_ACTIVE_COLOR } from './Glass';
 import { NumericKeypad, nextAmountValue } from './NumericKeypad';
 import { AmountRow, SETTLE_EASING } from './AmountField';
+import { useShake } from '../hooks/useShake';
 
 // How far (px) or how fast (px/s) a downward drag on the handle needs to go
 // before it counts as "dismiss" rather than snapping back.
@@ -19,6 +20,11 @@ const DISMISS_VELOCITY = 800;
 // for the dismiss-drag's finishing slide, without needing to measure the
 // actual window height just for this.
 const OFF_SCREEN_Y = 1200;
+// The sheet covers most, not all, of the screen — a real bottom sheet with
+// a dimmed backdrop above it, rather than a full-screen takeover.
+const SHEET_HEIGHT_RATIO = 0.95;
+// Max backdrop opacity at full open — a soft dark tint, not pure black.
+const BACKDROP_MAX_OPACITY = 0.55;
 
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatDisplay(dateStr) {
@@ -69,6 +75,14 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
   const [calOpen, setCalOpen] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // The CTA stays enabled at all times now (no disabled/greyed-out state) —
+  // an invalid submit attempt shakes whichever field(s) are actually
+  // missing instead, so the button always looks tappable and the feedback
+  // points at exactly what needs fixing. No color change — the existing
+  // "0" / "What was this for?" placeholder content already says the field
+  // is empty; the shake is just what draws the eye to it.
+  const amountShake = useShake();
+  const descriptionShake = useShake();
   // Stable reference — CalendarPicker is memo()-wrapped, and AddModal
   // re-renders on every keystroke in the amount/description fields, so an
   // inline arrow here would defeat that memo the whole time the calendar
@@ -97,7 +111,6 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
   // identity.
   const handleKeypadPressRef = useRef();
   handleKeypadPressRef.current = (key) => {
-    Haptics.selectionAsync();
     const next = nextAmountValue(amount, key);
     const changed = next !== amount;
     if (changed) {
@@ -189,7 +202,13 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
     // same transaction twice.
     if (submitting) return;
     const val = parseFloat(amount);
-    if (!val || val <= 0) return;
+    const amountInvalid = !val || val <= 0;
+    const descriptionInvalid = !description.trim();
+    if (amountInvalid || descriptionInvalid) {
+      if (amountInvalid) amountShake.shake();
+      if (descriptionInvalid) descriptionShake.shake();
+      return;
+    }
     const mySession = sessionRef.current;
     setSubmitting(true);
     setError('');
@@ -224,8 +243,6 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
     if (submitting) return;
     onClose();
   }
-
-  const canSubmit = !!amount && parseFloat(amount) > 0 && !submitting;
 
   // Drag-to-dismiss from anywhere on the card, not just the handle.
   // activeOffsetY/failOffsetY are what make this safe to wrap around the
@@ -268,6 +285,16 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
     transform: [{ translateY: pageTranslateY.value + dragY.value }],
   }));
 
+  // Fades with the exact same slide/drag progress as the sheet — dragging
+  // the sheet down dims the backdrop proportionally instead of it just
+  // popping away once the sheet's gone. Capped at BACKDROP_MAX_OPACITY (a
+  // soft dark tint) rather than reaching pure black/opaque — no real blur
+  // here (see Glass.js's own note on why BlurView was removed from this
+  // app: muddy/inconsistent on Android's software-rendered blur path).
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: (1 - Math.min(1, Math.max(0, (pageTranslateY.value + dragY.value) / windowHeight))) * BACKDROP_MAX_OPACITY,
+  }));
+
   // Unmount the whole tree while closed instead of just hiding it behind
   // Modal's own visible=false — left mounted, all of this stays in the React
   // tree and keeps re-rendering on every unrelated Dashboard state change.
@@ -275,30 +302,48 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={handleRequestClose}>
-      {/* RN's <Modal> stays fully touch-active for its whole lifetime —
-          `visible` only flips to false once the close animation below has
-          actually finished, so without this the FAB underneath (and
-          anything else on Dashboard) is unreachable for the ~600ms the
-          content is sliding off-screen, even though it's already invisible.
-          `open` (not `visible`) flips to false the instant a close starts,
-          so touches fall through immediately instead of at the end. */}
-      <Animated.View className="flex-1" style={[{ backgroundColor: light ? '#FAFAF8' : '#0a0a0a' }, pageStyle]} pointerEvents={open ? 'auto' : 'none'}>
+      <View style={{ flex: 1 }}>
+        {/* Dimmed backdrop above the sheet — only needed now that the sheet
+            covers part of the screen rather than all of it. Tapping it
+            dismisses, same as the drag gesture below. */}
+        <Animated.View pointerEvents={open ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, { backgroundColor: '#000000' }, backdropStyle]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={handleRequestClose} />
+        </Animated.View>
+
+        {/* RN's <Modal> stays fully touch-active for its whole lifetime —
+            `visible` only flips to false once the close animation below has
+            actually finished, so without this the FAB underneath (and
+            anything else on Dashboard) is unreachable for the ~600ms the
+            content is sliding off-screen, even though it's already invisible.
+            `open` (not `visible`) flips to false the instant a close starts,
+            so touches fall through immediately instead of at the end. */}
+        <Animated.View
+          style={[
+            {
+              position: 'absolute', left: 0, right: 0, bottom: 0,
+              height: windowHeight * SHEET_HEIGHT_RATIO,
+              backgroundColor: light ? '#FAFAF8' : '#0a0a0a',
+              borderTopLeftRadius: 28, borderTopRightRadius: 28,
+              overflow: 'hidden',
+            },
+            pageStyle,
+          ]}
+          pointerEvents={open ? 'auto' : 'none'}
+        >
       <GestureDetector gesture={pan}>
       <View style={{ flex: 1 }}>
-        <View style={{ paddingTop: insets.top + 10, paddingBottom: 24, alignItems: 'center' }}>
+        <View style={{ paddingTop: 10, paddingBottom: 24, alignItems: 'center' }}>
           <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: light ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.2)' }} />
         </View>
 
-        {/* No flex:1 here deliberately — this content (toggle/amount/date/
-            description) is short and fixed, so stretching the ScrollView's
-            viewport to fill the space up to the footer just left a big dead
-            gap between Description and the button. Sizing to content means
-            the button and keypad sit right after it instead. */}
+        {/* No flex:1 here — fixed margins around the amount below keep
+            Date/Amount/Description close together instead of spread
+            across however much space the device happens to have. */}
         <GestureDetector gesture={nativeScroll}>
         <ScrollView
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingHorizontal: 20 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 16 }}
         >
           <View
             className="flex-row rounded-full p-[3px] mb-8"
@@ -328,33 +373,56 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
             ))}
           </View>
 
-          <View className="mb-8 items-center">
-            <AmountRow amount={amount} prevAmountLength={prevAmountLength} skipDigitAnim={skipDigitAnimRef.current} light={light} />
-          </View>
+          <Pressable
+            onPress={() => setCalOpen(true)}
+            className="flex-row items-center self-center rounded-full mb-3"
+            style={{ paddingHorizontal: 16, paddingVertical: 10, marginTop: 6, backgroundColor: light ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)' }}
+          >
+            <CalIcon color={light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'} />
+            <Text className="text-[13px] ml-1.5" style={{ color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>
+              {formatDisplay(date)}
+            </Text>
+          </Pressable>
 
-          <View className="mb-6">
-            <Text className="text-[15px] font-medium mb-2" style={{ color: light ? '#111111' : '#ffffff' }}>Date</Text>
-            <GlassPressable
-              variant="field"
-              onPress={() => setCalOpen(true)}
-              className="w-full px-4 py-3 flex-row items-center justify-between"
-              style={{ borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.14)' }}
-            >
-              <Text className="text-base" style={{ color: light ? '#111111' : '#ffffff' }}>{formatDisplay(date)}</Text>
-              <CalIcon color={light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)'} />
-            </GlassPressable>
-          </View>
+          <Animated.View className="items-center" style={[{ marginTop: 10, marginBottom: 8 }, amountShake.style]}>
+            <AmountRow
+              amount={amount}
+              prevAmountLength={prevAmountLength}
+              skipDigitAnim={skipDigitAnimRef.current}
+              light={light}
+              digitFontSize={72}
+              lineHeight={80}
+              zeroColor={light ? 'rgba(0,0,0,0.82)' : 'rgba(255,255,255,0.82)'}
+              weight="500"
+            />
+          </Animated.View>
 
-          <View className="mb-6">
-            <Text className="text-[15px] font-medium mb-4" style={{ color: light ? '#111111' : '#ffffff' }}>Description</Text>
+          {/* Description moved back in right after the amount — living in
+              the footer (a separate sibling further down) left an
+              unexplained gap between them; being a direct, tightly-margined
+              neighbor here guarantees there's no room for anything to
+              insert space between the two. */}
+          <View style={{ alignSelf: 'center', marginTop: 20 }}>
             <TextInput
               value={description}
               onChangeText={setDescription}
-              placeholder="What was this for?"
-              placeholderTextColor={light ? '#b0b0b0' : '#4d4d4d'}
-              className="w-full rounded-xl px-4 py-3 text-base"
-              style={{ backgroundColor: 'transparent', borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.14)', color: light ? '#111111' : '#ffffff' }}
+              className="rounded-full px-4 py-3 text-base text-center"
+              style={{ minWidth: 200, backgroundColor: light ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)', color: light ? '#111111' : '#ffffff' }}
             />
+            {/* A real TextInput's `placeholder` is drawn internally by the
+                native view itself — there's no way to animate just that
+                text independently of the whole input box. This fake
+                placeholder sits on top instead (hidden the instant real
+                text exists, and ignoring touches so a tap still focuses
+                the real input underneath), so only the wording shakes on
+                an invalid submit, not the box around it. */}
+            {!description && (
+              <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' }}>
+                <Animated.Text className="text-base" style={[{ color: light ? '#b0b0b0' : '#4d4d4d' }, descriptionShake.style]}>
+                  What was this for?
+                </Animated.Text>
+              </View>
+            )}
           </View>
         </ScrollView>
         </GestureDetector>
@@ -364,11 +432,11 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
           <GlassPressable
             variant="active"
             radius={16}
-            disabled={!canSubmit}
+            disabled={submitting}
             onPress={handleSubmit}
-            className="w-full py-[14px] items-center"
+            className="w-full py-4 items-center"
           >
-            <Text className="text-black text-base font-semibold">
+            <Text className="text-black text-[15px] font-semibold">
               {isEdit
                 ? (submitting ? 'Updating' : 'Update')
                 : (submitting ? 'Adding' : `Add ${type.charAt(0).toUpperCase() + type.slice(1)}`)}
@@ -397,6 +465,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
           </View>
         </Pressable>
       )}
+      </View>
     </Modal>
   );
 }

@@ -115,7 +115,14 @@ export function getEarliestDate(transactions) {
 export function spendShadeFor(dateStr, { dailyTotals, thresholds, earliest, todayStr, light = false }) {
   const shades = light ? SPEND_SHADES_LIGHT : SPEND_SHADES
   const isFuture = dateStr > todayStr
-  const noData = earliest && dateStr < earliest
+  const isToday = dateStr === todayStr
+  // No transactions at all yet — every day, including today, has nothing
+  // to compare against, so none of them should read as "no spend" green.
+  // Today alone stays "known" (tappable) so a brand new account isn't
+  // completely inert before its first transaction; every other day stays
+  // neutral and untappable until one actually exists.
+  if (!earliest) return { ...shades.neutral, isKnown: isToday }
+  const noData = dateStr < earliest
   if (isFuture || noData) return { ...shades.neutral, isKnown: false }
   const amt = dailyTotals[dateStr] || 0
   const intensity = spendIntensity(amt, thresholds)

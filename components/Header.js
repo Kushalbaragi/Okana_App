@@ -14,7 +14,7 @@ const TABS  = ['expense', 'income', 'overview'];
 // eased glide a withTiming curve produces.
 const PILL_SPRING = { damping: 18, stiffness: 220, mass: 0.5 };
 
-function ChartTabToggle({ value, onChange, light }) {
+function ChartTabToggle({ value, onChange, light, toggleRef }) {
   const idx = TABS.indexOf(value);
 
   // transform-based rather than animating `left` directly — runs on the
@@ -25,6 +25,7 @@ function ChartTabToggle({ value, onChange, light }) {
 
   return (
     <View
+      ref={toggleRef}
       className="flex-row rounded-full"
       style={{ width: BTN_W * 3 + PAD * 2, padding: PAD, backgroundColor: light ? '#EFEFED' : '#161616' }}
     >
@@ -56,7 +57,7 @@ function ChartTabToggle({ value, onChange, light }) {
 // the Dashboard — not a real app-wide theme system, so it's threaded
 // through as a plain prop rather than a context. Every other screen keeps
 // passing nothing (defaults to the normal dark look).
-function Header({ onMenuOpen, chartTab, onChartTabChange, onCalendarOpen, light = false }) {
+function Header({ onMenuOpen, chartTab, onChartTabChange, onCalendarOpen, light = false, tabToggleRef }) {
   // Safe-area-aware — a fixed pt-6 isn't enough clearance under the status
   // bar / notch / Dynamic Island on real devices (fine in the web preview,
   // which has no such concept, but overlapped the status bar on-device).
@@ -74,7 +75,7 @@ function Header({ onMenuOpen, chartTab, onChartTabChange, onCalendarOpen, light 
         <HamburgerIcon color={iconColor} />
       </Pressable>
 
-      <ChartTabToggle value={chartTab} onChange={onChartTabChange} light={light} />
+      <ChartTabToggle value={chartTab} onChange={onChartTabChange} light={light} toggleRef={tabToggleRef} />
 
       <Pressable
         onPress={onCalendarOpen}

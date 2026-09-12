@@ -3,12 +3,13 @@ import { View, Text, Pressable, useWindowDimensions } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
 import { isConnectivityError } from '../../utils/errors';
 import { NumericKeypad, DIGIT_ONLY_KEYPAD_ROWS } from '../../components/NumericKeypad';
 import { BackIcon } from '../../components/icons';
+import { useShake } from '../../hooks/useShake';
 
 // Must match the "Email OTP Length" set in Supabase Dashboard ->
 // Authentication -> Sign In / Providers -> Email, or auto-submit fires
@@ -16,24 +17,6 @@ import { BackIcon } from '../../components/icons';
 const CODE_LENGTH = 6;
 const RESEND_COOLDOWN_S = 60; // matches Supabase's own per-email OTP rate limit
 const HORIZONTAL_PADDING = 64; // matches the px-8 (32 each side) on the containing View
-
-// A small shake on the code boxes when a submitted code turns out wrong —
-// the one bit of "reacting to failure" a plain error line under the boxes
-// doesn't convey on its own.
-function useShake() {
-  const shakeX = useSharedValue(0);
-  function shake() {
-    shakeX.value = withSequence(
-      withTiming(-8, { duration: 55 }),
-      withTiming(8, { duration: 55 }),
-      withTiming(-6, { duration: 55 }),
-      withTiming(6, { duration: 55 }),
-      withTiming(0, { duration: 55 }),
-    );
-  }
-  const style = useAnimatedStyle(() => ({ transform: [{ translateX: shakeX.value }] }));
-  return { shake, style };
-}
 
 export default function OtpScreen() {
   const router = useRouter();

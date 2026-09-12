@@ -72,7 +72,6 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
   // hand NumericKeypad a fresh onKeyPress each time and defeat its memo).
   const handleKeypadPressRef = useRef();
   handleKeypadPressRef.current = (key) => {
-    Haptics.selectionAsync();
     const next = nextAmountValue(amount, key);
     const changed = next !== amount;
     if (changed) {
@@ -242,7 +241,17 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
         </View>
 
         {confirmDelta ? (
-          <Animated.View style={[{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }, confirmStyle]}>
+          // Absolutely positioned over the whole sheet (not the leftover
+          // flex space below the drag-handle bar) so it centers on the
+          // actual full screen — a flex:1 sibling of the handle only
+          // centers within the space after it, which visibly sits lower
+          // than true center.
+          <Animated.View
+            style={[
+              { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
+              confirmStyle,
+            ]}
+          >
             {confirmDelta.greeting ? (
               <>
                 <SuccessBadge style={{ marginBottom: 24 }} />

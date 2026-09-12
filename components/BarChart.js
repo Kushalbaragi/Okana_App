@@ -3,6 +3,7 @@ import Svg, { Line, Rect, Circle, Text as SvgText } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedProps, withDelay, withTiming, Easing } from 'react-native-reanimated';
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const BAR_HEIGHT = 110;
 const CHART_W    = 264;
@@ -57,7 +58,33 @@ function Bar({ x, width, rx, targetHeight, delay, fill, animKey }) {
   );
 }
 
-function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false }) {
+// Fades in on the same stagger schedule as the Bar it stands in for — same
+// animKey-aware replay rule (full delayed fade on a genuinely new period,
+// quick snap on a same-period tab switch) so a no-spend day's dot appears
+// in sync with its neighbors' bars instead of just being there instantly
+// before the candles have even started growing in.
+function NoSpendDot({ cx, cy, r, fill, delay, animKey }) {
+  const opacity = useSharedValue(0);
+  const prevAnimKey = useRef(null);
+
+  useEffect(() => {
+    const isNewPeriod = prevAnimKey.current !== animKey;
+    prevAnimKey.current = animKey;
+    if (isNewPeriod) {
+      opacity.value = 0;
+      opacity.value = withDelay(delay, withTiming(1, { duration: 300, easing: Easing.out(Easing.exp) }));
+    } else {
+      opacity.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [animKey]);
+
+  const animatedProps = useAnimatedProps(() => ({ opacity: opacity.value }));
+
+  return <AnimatedCircle cx={cx} cy={cy} r={r} fill={fill} animatedProps={animatedProps} />;
+}
+
+function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, disabledBeforeIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false }) {
   const n       = values.length;
   const GROUP_W = CHART_W / n;
   const BAR_W   = Math.min(16, Math.max(6, GROUP_W - 10));
@@ -84,6 +111,7 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
         const h          = useSqrtScale ? Math.sqrt(v / maxVal) * BAR_HEIGHT : (v / maxVal) * BAR_HEIGHT;
         const isActive   = i === activeIndex;
         const isDisabled = disabledAfterIndex != null && i > disabledAfterIndex;
+        const isBeforeStart = disabledBeforeIndex != null && i < disabledBeforeIndex;
         const hasData    = h > 0;
         const showLabel  = i % labelStep === 0 || (i === n - 1 && (n - 1) - Math.floor((n - 2) / labelStep) * labelStep > 1);
 
@@ -148,9 +176,19 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
                 Sits just above the baseline grid line, in the empty column
                 where that day's bar would otherwise start. Skipped for
                 disabled (not-yet-happened) days — those are zero because
-                the day hasn't occurred, not because nothing was spent. */}
-            {noSpendDots && !hasData && !isDisabled && (
-              <Circle cx={x + BAR_W / 2} cy={BAR_HEIGHT - 6} r={1.8} fill={noSpendDotColor} />
+                the day hasn't occurred, not because nothing was spent —
+                and for days before the account's earliest-known activity,
+                same reasoning: a day the user didn't exist for yet isn't a
+                "no spend" day, it's just not their data. */}
+            {noSpendDots && !hasData && !isDisabled && !isBeforeStart && (
+              <NoSpendDot
+                cx={x + BAR_W / 2}
+                cy={BAR_HEIGHT - 3}
+                r={1.8}
+                fill={noSpendDotColor}
+                delay={n > 1 ? (i / (n - 1)) * 650 : 0}
+                animKey={animKey}
+              />
             )}
           </Fragment>
         );

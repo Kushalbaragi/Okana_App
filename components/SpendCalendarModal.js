@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, View, Text, Pressable, ScrollView, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -17,6 +17,8 @@ import {
 import { MONTH_NAMES as MONTHS } from '../utils/monthlyRecap';
 import BudgetStatusBar from './BudgetStatusBar';
 import { SETTLE_EASING } from './AmountField';
+import { TourHint } from './TourHint';
+import { useTourStep } from '../hooks/useTourStep';
 
 // Same drag-to-dismiss thresholds as AddModal, for a consistent feel.
 const DISMISS_DISTANCE = 120;
@@ -61,12 +63,25 @@ function DayTransactionRow({ tx, index, light }) {
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard (and the flows it opens) — see the matching comment in
 // Header.js.
-function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budget, light = false }) {
+function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budget, light = false, userId }) {
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const now = new Date();
   const [view, setView] = useState(new Date(now.getFullYear(), now.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(null);
+
+  // First-run tour for this page: what the color-coded days mean, that
+  // tapping one shows its transactions, and (only once a budget actually
+  // exists) what the budget bar shows. Separate from the Home-screen tour
+  // in app/(app)/index.js — this one only makes sense once the user has
+  // actually opened the calendar, not forced on them right after signup.
+  const legendRef = useRef(null);
+  const spentDayRef = useRef(null);
+  const budgetSectionRef = useRef(null);
+  const legendTour = useTourStep(userId, 'calendar_legend');
+  const tapDateTour = useTourStep(userId, 'calendar_tap_date');
+  const budgetTour = useTourStep(userId, 'calendar_budget_left');
+  const [calendarTourActive, setCalendarTourActive] = useState(null); // 'legend' | 'tapDate' | 'budget' | null
 
   // Same pattern as AddModal — managed independently of RN's Modal
   // animationType so `visible` stays mounted through the close animation,
@@ -105,6 +120,34 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  useEffect(() => {
+    // Resets immediately on close so a tour hint mid-flow doesn't linger
+    // pointing at a row that's now sliding off-screen with the sheet.
+    if (!open) { setCalendarTourActive(null); return; }
+    if (!userId || calendarTourActive) return;
+    // Waits out the sheet's own opening slide (950ms above) so the tour
+    // doesn't spotlight something that's still animating into place.
+    const t = setTimeout(() => {
+      if (!legendTour.seen) { setCalendarTourActive('legend'); return; }
+      // Deferred until there's an actual spent day to point at — same
+      // "only show it once it's real" rule as budget-left below and the
+      // Home-screen tour's swipe step.
+      if (!tapDateTour.seen && spentDayStr) { setCalendarTourActive('tapDate'); return; }
+      // Budget-left only makes sense once a budget actually exists —
+      // deferred (not skipped outright) until one does, same "only show it
+      // once it's real" rule as the Home-screen tour's swipe step.
+      if (!budgetTour.seen && budget?.hasBudget) setCalendarTourActive('budget');
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [open, userId, calendarTourActive, legendTour.seen, tapDateTour.seen, spentDayStr, budgetTour.seen, budget?.hasBudget]);
+
+  const advanceCalendarTour = useCallback(() => {
+    if (calendarTourActive === 'legend') legendTour.markSeen();
+    else if (calendarTourActive === 'tapDate') tapDateTour.markSeen();
+    else if (calendarTourActive === 'budget') budgetTour.markSeen();
+    setCalendarTourActive(null);
+  }, [calendarTourActive, legendTour, tapDateTour, budgetTour]);
 
   // Drag-to-dismiss from anywhere on the sheet — identical mechanics to
   // AddModal's: the Pan only activates once a touch has clearly moved down
@@ -148,6 +191,22 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
   const dailyTotals = useMemo(() => (visible ? getDailyExpenseTotals(transactions) : {}), [transactions, visible]);
   const thresholds = useMemo(() => (visible ? getIntensityThresholds(dailyTotals) : { low: 0, high: 0 }), [dailyTotals, visible]);
   const earliest = useMemo(() => (visible ? getEarliestDate(transactions) : null), [transactions, visible]);
+
+  // The most recent day (in the currently-viewed month, not in the future)
+  // that actually has spending on it — the "tap a date" tour step targets
+  // this instead of today's cell, so tapping it during the tour actually
+  // demonstrates something (a populated day view) rather than "You saved
+  // today - Nothing spent" on a day that may have no data at all. Null
+  // (and the step just stays deferred) when nothing in this month qualifies.
+  const spentDayStr = useMemo(() => {
+    if (!visible) return null;
+    for (let d = daysInMonth; d >= 1; d--) {
+      const str = toStr(new Date(year, month, d));
+      if (str > todayStr) continue;
+      if (dailyTotals[str] > 0) return str;
+    }
+    return null;
+  }, [visible, dailyTotals, year, month, daysInMonth, todayStr]);
 
   const dayTxs = useMemo(
     () => (visible && selectedDate
@@ -211,7 +270,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                     calendar grid underneath stays put — just a wider gap
                     between the two. */}
                 <View className="rounded-3xl px-4 pb-4" style={{ maxWidth: 320, alignSelf: 'center', width: '100%', paddingTop: 6 }}>
-                  {budget && <View style={{ marginBottom: 10 }}><BudgetStatusBar {...budget} light={light} hideDivider /></View>}
+                  {budget && <View ref={budgetSectionRef} style={{ marginBottom: 10 }}><BudgetStatusBar {...budget} light={light} hideDivider /></View>}
 
                   <View className="flex-row items-center justify-between mb-4">
                     <Pressable
@@ -258,6 +317,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                         return (
                           <Pressable
                             key={i}
+                            ref={str === spentDayStr ? spentDayRef : undefined}
                             disabled={!shade.isKnown}
                             onPress={() => setSelectedDate(prev => (prev === str ? null : str))}
                             className="aspect-square items-center justify-center rounded-md"
@@ -281,7 +341,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                     </View>
                   ))}
 
-                  <View className="flex-row items-center justify-center mt-3" style={{ gap: 12 }}>
+                  <View ref={legendRef} className="flex-row items-center justify-center mt-3" style={{ gap: 12 }}>
                     <View className="flex-row items-center" style={{ gap: 4 }}>
                       <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(34,197,94,0.5)' }} />
                       <Text style={{ fontSize: 10, color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>No spend</Text>
@@ -302,16 +362,16 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
               <View style={{ flex: 1, marginTop: 20, paddingHorizontal: 20 }}>
                 <View style={{ maxWidth: 320, alignSelf: 'center', width: '100%', flex: 1 }}>
                   <View className="flex-row items-center justify-between mb-3">
-                    <Text className="text-base font-semibold" style={{ color: light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)' }}>
+                    <Text className="text-base font-bold" style={{ color: light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)' }}>
                       {formatDateFull(selectedDate)}
                     </Text>
-                    <Text className="text-base font-semibold" style={{ color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>
+                    <Text className="text-base font-bold" style={{ color: light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)' }}>
                       {formatCurrency(dailyTotals[selectedDate] || 0)}
                     </Text>
                   </View>
                   {dayTxs.length === 0 ? (
                     <Text className="text-base" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>
-                      You saved today — nothing spent 🌿
+                      You saved today - Nothing spent 🌿
                     </Text>
                   ) : (
                     <GestureDetector gesture={nativeScroll}>
@@ -331,6 +391,25 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                 </View>
               </View>
             )}
+
+            <TourHint
+              visible={calendarTourActive === 'legend'}
+              targetRef={legendRef}
+              description="Red shows spending — dark red means more. Green means no spend that day."
+              onNext={advanceCalendarTour}
+            />
+            <TourHint
+              visible={calendarTourActive === 'tapDate'}
+              targetRef={spentDayRef}
+              description="Tap a date to see what you spent or earned that day."
+              onNext={advanceCalendarTour}
+            />
+            <TourHint
+              visible={calendarTourActive === 'budget'}
+              targetRef={budgetSectionRef}
+              description="This shows what's left in your budget this month."
+              onNext={advanceCalendarTour}
+            />
           </View>
         </GestureDetector>
       </Animated.View>
