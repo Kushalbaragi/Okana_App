@@ -73,12 +73,10 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
   const handleKeypadPressRef = useRef();
   handleKeypadPressRef.current = (key) => {
     const next = nextAmountValue(amount, key);
-    const changed = next !== amount;
-    if (changed) {
+    if (next !== amount) {
       skipDigitAnimRef.current = false;
       setAmount(next);
     }
-    return changed;
   };
   const handleKeypadPress = useCallback((key) => handleKeypadPressRef.current(key), []);
 

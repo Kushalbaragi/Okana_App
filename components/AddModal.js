@@ -1,5 +1,5 @@
 import { memo, useCallback, useState, useEffect, useRef } from 'react';
-import { Modal, View, Text, TextInput, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
+import { Modal, View, Text, TextInput, Pressable, ScrollView, StyleSheet, Keyboard, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
@@ -112,12 +112,10 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
   const handleKeypadPressRef = useRef();
   handleKeypadPressRef.current = (key) => {
     const next = nextAmountValue(amount, key);
-    const changed = next !== amount;
-    if (changed) {
+    if (next !== amount) {
       skipDigitAnimRef.current = false;
       setAmount(next);
     }
-    return changed;
   };
   const handleKeypadPress = useCallback((key) => handleKeypadPressRef.current(key), []);
 
@@ -374,7 +372,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
           </View>
 
           <Pressable
-            onPress={() => setCalOpen(true)}
+            onPress={() => { Keyboard.dismiss(); setCalOpen(true); }}
             className="flex-row items-center self-center rounded-full mb-3"
             style={{ paddingHorizontal: 16, paddingVertical: 10, marginTop: 6, backgroundColor: light ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)' }}
           >

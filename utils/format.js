@@ -20,7 +20,10 @@ export function formatCurrencyFull(amount) {
 }
 
 export function today() {
-  return new Date().toISOString().slice(0, 10)
+  // Local calendar date, not UTC — toISOString() converts to UTC first,
+  // which rolls back to "yesterday" for any timezone ahead of UTC (e.g.
+  // IST) during the hours after local midnight but before UTC midnight.
+  return toDateStr(new Date())
 }
 
 export function toDateStr(d) {

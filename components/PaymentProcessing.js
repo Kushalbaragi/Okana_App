@@ -10,7 +10,10 @@ import Animated, {
   cancelAnimation,
   Easing,
 } from 'react-native-reanimated';
+import { useAudioPlayer } from 'expo-audio';
 import { SuccessBadge } from './SuccessBadge';
+
+const SUCCESS_SOUND = require('../assets/sounds/success.wav');
 
 // Same "settle" ease-out-expo feel used throughout the app's onboarding/
 // reveal sequences (see welcome.js) — keeps this reading as the same motion
@@ -46,6 +49,11 @@ function FadeIn({ delay, duration = 450, distance = 8, style, children }) {
 export function PaymentProcessing({ succeeded, successMessage = 'Payment is successful', onDone }) {
   const [showLabels, setShowLabels] = useState(true);
   const [showSuccess, setShowSuccess] = useState(false);
+  // Created on mount, well ahead of `showSuccess` (only flips once the
+  // whole processing → labels-fade → coin-settle sequence below finishes)
+  // so the sound asset is already loaded by the time it actually plays —
+  // see the comment on SuccessBadge's `player` prop.
+  const successSound = useAudioPlayer(SUCCESS_SOUND);
 
   const coinOpacity = useSharedValue(0);
   const coinScale = useSharedValue(0.85);
@@ -120,7 +128,7 @@ export function PaymentProcessing({ succeeded, successMessage = 'Payment is succ
       )}
       {showSuccess && (
         <>
-          <SuccessBadge style={{ marginBottom: 18 }} playSound />
+          <SuccessBadge style={{ marginBottom: 18 }} playSound player={successSound} />
           <FadeIn delay={350} duration={450} distance={10}>
             <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '500', textAlign: 'center' }}>{successMessage}</Text>
           </FadeIn>

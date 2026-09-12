@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { Text, Platform } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, LinearTransition } from 'react-native-reanimated';
+import { Platform } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, Easing, LinearTransition } from 'react-native-reanimated';
 
 // SF Pro Rounded — a system font on iOS, so no bundling/download needed,
 // but only iOS actually has it; Android has no equivalent rounded design
@@ -115,6 +115,32 @@ export function AmountDigit({ char, animateIn, color = '#ffffff', fontSize = 48,
   );
 }
 
+// The dim "0" shown once the field is fully cleared. When that clearing
+// just happened (a real last digit was backspaced away), this holds off
+// appearing until that digit's own exiting animation has actually finished
+// — otherwise it mounts instantly in the same spot the outgoing digit is
+// still fading out of, reading as an overlap instead of one clean
+// replacing the other. On first mount with nothing ever typed, there's no
+// digit to wait on, so it just shows immediately.
+function ZeroPlaceholder({ fontSize, lineHeight, fontWeight, color, delayed }) {
+  const opacity = useSharedValue(delayed ? 0 : 1);
+
+  useEffect(() => {
+    if (delayed) {
+      opacity.value = withDelay(EXIT_DURATION, withTiming(1, { duration: ENTER_DURATION * 0.6, easing: SETTLE_EASING }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
+
+  return (
+    <Animated.Text style={[{ fontSize, lineHeight, fontWeight, color, fontFamily: ROUNDED_FONT }, style]}>
+      0
+    </Animated.Text>
+  );
+}
+
 // The ₹ symbol + digit row, sharing the same layout transition so the whole
 // group slides together as digits are added/removed — or the dimmed "0"
 // placeholder when the field is empty. Used anywhere an amount is entered
@@ -185,7 +211,13 @@ export function AmountRow({ amount, prevAmountLength, skipDigitAnim, digitFontSi
           />
         ))
       ) : (
-        <Text style={{ fontSize: digitFontSize, lineHeight, fontWeight, color: emptyColor, fontFamily: ROUNDED_FONT }}>0</Text>
+        <ZeroPlaceholder
+          fontSize={digitFontSize}
+          lineHeight={lineHeight}
+          fontWeight={fontWeight}
+          color={emptyColor}
+          delayed={prevAmountLength > 0 && !skipDigitAnim}
+        />
       )}
     </Animated.View>
   );

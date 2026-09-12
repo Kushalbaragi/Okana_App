@@ -9,9 +9,13 @@ const TOOLTIP_WIDTH = 280;
 const HOLE_PADDING = 8;
 const HOLE_RADIUS = 14;
 // Thinner than the original cutout's stroke (was 2) — just enough to read
-// as an outline, not a boxed frame.
-const BORDER_WIDTH = 1.25;
-const BORDER_COLOR = 'rgba(74,222,128,0.85)';
+// as an outline, not a boxed frame. Exported so a caller using `hideRing`
+// to draw its own ring (see the prop's comment below) can match this
+// component's own look exactly.
+export const TOUR_HINT_BORDER_WIDTH = 1.25;
+export const TOUR_HINT_BORDER_COLOR = 'rgba(74,222,128,0.85)';
+const BORDER_WIDTH = TOUR_HINT_BORDER_WIDTH;
+const BORDER_COLOR = TOUR_HINT_BORDER_COLOR;
 
 // A minimal coach-mark: a thin green outline around the real on-screen
 // target (measured live via measureInWindow), and a small card with just
@@ -19,17 +23,46 @@ const BORDER_COLOR = 'rgba(74,222,128,0.85)';
 // anywhere on screen dismisses it. Callers own the "has this been seen"
 // state (see useTourStep) and just flip `visible` once that resolves to
 // false.
-export function TourHint({ visible, targetRef, description, onNext }) {
+//
+// `circular` swaps the fixed HOLE_RADIUS rounded-rect for one that hugs a
+// round target instead — a plain rectangle around something like the
+// Settings avatar reads as a mis-measured, oversized box rather than
+// spotlighting the actual circle. `padding` overrides HOLE_PADDING — a
+// round target already reads as having its own breathing room from its own
+// curvature, so the default rectangle gap (tuned for square/pill targets)
+// leaves a visibly wider ring around a circle than around anything else.
+//
+// `relativeTo` (a ref to this TourHint's own ancestor) switches measurement
+// from measureInWindow to measureLayout, for screens where window-absolute
+// coordinates don't line up with the actual render (seen on a pushed
+// native-stack screen). `hideRing` skips drawing the highlight cutout
+// entirely — for a case still visibly off by a few px even with
+// measureLayout (a native-stack quirk deeper than the coordinate space
+// alone), the caller draws its own ring as a plain sibling of the real
+// target instead, which can't misalign since there's no cross-tree
+// measurement involved at all. This component still measures the target
+// (via whichever method) to place the tooltip card and the tap-anywhere
+// dismiss layer — a card a few px off is imperceptible, unlike a ring
+// that needs to trace the target's actual edge.
+export function TourHint({ visible, targetRef, description, onNext, circular = false, padding = HOLE_PADDING, relativeTo, hideRing = false }) {
   const { width: winW, height: winH } = useWindowDimensions();
   const [rect, setRect] = useState(null);
   const progress = useSharedValue(0);
 
   useEffect(() => {
     if (!visible || !targetRef?.current) { setRect(null); return; }
-    targetRef.current.measureInWindow((x, y, width, height) => {
-      setRect({ x, y, width, height });
-    });
-  }, [visible, targetRef]);
+    if (relativeTo?.current) {
+      targetRef.current.measureLayout(
+        relativeTo.current,
+        (x, y, width, height) => setRect({ x, y, width, height }),
+        () => {},
+      );
+    } else {
+      targetRef.current.measureInWindow((x, y, width, height) => {
+        setRect({ x, y, width, height });
+      });
+    }
+  }, [visible, targetRef, relativeTo]);
 
   useEffect(() => {
     if (visible && rect) {
@@ -75,19 +108,21 @@ export function TourHint({ visible, targetRef, description, onNext }) {
         onPress={onNext}
       />
 
-      <View
-        pointerEvents="none"
-        style={{
-          position: 'absolute',
-          left: rect.x - HOLE_PADDING,
-          top: rect.y - HOLE_PADDING,
-          width: rect.width + HOLE_PADDING * 2,
-          height: rect.height + HOLE_PADDING * 2,
-          borderRadius: HOLE_RADIUS,
-          borderWidth: BORDER_WIDTH,
-          borderColor: BORDER_COLOR,
-        }}
-      />
+      {!hideRing && (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: rect.x - padding,
+            top: rect.y - padding,
+            width: rect.width + padding * 2,
+            height: rect.height + padding * 2,
+            borderRadius: circular ? (Math.min(rect.width, rect.height) + padding * 2) / 2 : HOLE_RADIUS,
+            borderWidth: BORDER_WIDTH,
+            borderColor: BORDER_COLOR,
+          }}
+        />
+      )}
 
       <Animated.View
         style={[

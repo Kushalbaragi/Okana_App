@@ -15,10 +15,20 @@ const SUCCESS_SOUND = require('../assets/sounds/success.wav');
 // moments that most deserve it — account creation and payment success —
 // rather than firing on every minor confirmation (budget set, account
 // erase/delete, cancel-subscription) this badge also appears for.
-export function SuccessBadge({ size = SIZE, iconSize = ICON_SIZE, style, playSound = false }) {
+//
+// `player` is an optional pre-created useAudioPlayer instance — a fresh
+// player's underlying asset still has to actually finish loading natively
+// before .play() produces sound, so creating one right here and playing it
+// in the same mount tick read as a noticeable lag between the checkmark
+// appearing and the ding. Both callers that pass `playSound` mount this
+// badge only after their own earlier "processing" phase, so they create the
+// player well ahead of time (at the start of that phase) and hand it down
+// already loaded by the moment this actually plays it.
+export function SuccessBadge({ size = SIZE, iconSize = ICON_SIZE, style, playSound = false, player: externalPlayer }) {
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.6);
-  const player = useAudioPlayer(SUCCESS_SOUND);
+  const ownPlayer = useAudioPlayer(SUCCESS_SOUND);
+  const player = externalPlayer ?? ownPlayer;
 
   useEffect(() => {
     opacity.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) });
