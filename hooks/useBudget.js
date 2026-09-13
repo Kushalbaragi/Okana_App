@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from '../lib/supabase'
 import { useNetwork } from '../context/NetworkContext'
-import { isConnectivityError } from '../utils/errors'
+import { isConnectivityError, reportError } from '../utils/errors'
 import { currentMonthYear, getMonthTotal } from '../utils/format'
 import { prevMonthYear } from '../utils/monthlyRecap'
 
@@ -74,12 +74,13 @@ async function flushPendingBudget(userId, currentMonthStart) {
     // way on every future retry — drop it rather than leaving a stuck
     // "_pending" budget that silently never confirms. The caller's own
     // refresh (right after this) will then show whatever the server
-    // actually has for the month instead.
-    if (!isConnectivityError(error)) await savePendingBudget(userId, null)
+    // actually has for the month instead. Unattended (background flush,
+    // no UI here) — reportError is the only record this happened.
+    if (!isConnectivityError(error)) { reportError(error); await savePendingBudget(userId, null) }
   } catch (err) {
     // A thrown (not returned) error while genuinely offline is expected —
     // leave it queued. Anything else gets the same drop-it treatment.
-    if (!isConnectivityError(err)) await savePendingBudget(userId, null)
+    if (!isConnectivityError(err)) { reportError(err); await savePendingBudget(userId, null) }
   }
 }
 
@@ -204,7 +205,7 @@ export function useBudget(user, transactions) {
         )
         .select()
         .single()
-      if (error) return { success: false, error: error.message }
+      if (error) { reportError(error); return { success: false, error: error.message } }
       // This set is now the source of truth for the month — drop any
       // stale pending value so a later refresh doesn't reapply an older
       // queued number over it.
@@ -218,6 +219,7 @@ export function useBudget(user, transactions) {
         notifyOffline()
         return { success: true, queued: true }
       }
+      reportError(err)
       return { success: false, error: err.message || 'Something went wrong. Please try again.' }
     }
   }, [user, monthStart, notifyOffline])

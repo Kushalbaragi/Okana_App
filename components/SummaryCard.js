@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withDelay, withTiming, Easing } from 'react-native-reanimated';
+import { parseISO } from 'date-fns';
 import BarChart from './BarChart';
 import LineChart from './LineChart';
 import { GlassPressable } from './Glass';
@@ -134,27 +135,32 @@ function SummaryCard({
 }) {
   const { month: currMonth, year: currYear } = currentMonthYear();
 
+  // One shared scan for "earliest transaction" instead of three separate
+  // ones — getLifetimeYearly/getLifetimeMonthly used to each independently
+  // re-derive this same thing internally, on top of this component's own
+  // copy, which made switching to "All Time" noticeably do more work than
+  // Month/Year (neither of which needs an account-wide earliest date at
+  // all, just a same-year filter). getEarliestDate is the same helper the
+  // Calendar page already uses for its own "before earliest activity" cutoff.
+  const earliestDateStr = useMemo(() => getEarliestDate(transactions), [transactions]);
   // Earliest transaction year decides "All Time" granularity — under
   // LIFETIME_YEARLY_THRESHOLD years of history, yearly bars would only show
   // a handful of candles, so months are shown instead; getLifetimeYearly
   // takes over once there's enough history for yearly bars to actually be
   // useful.
-  const earliestYear = useMemo(() => {
-    if (!transactions.length) return currYear;
-    return transactions.reduce((min, tx) => {
-      const y = new Date(tx.date).getFullYear(); return y < min ? y : min;
-    }, currYear);
-  }, [transactions, currYear]);
+  const earliestYear = earliestDateStr ? parseISO(earliestDateStr).getFullYear() : currYear;
   const lifetimeGranularity = (currYear - earliestYear + 1) < LIFETIME_YEARLY_THRESHOLD ? 'month' : 'year';
 
   const chartData = useMemo(() => {
     if (timeRange === 'month') return getDailyTotals(transactions, currMonth, currYear);
     if (timeRange === '5y') {
-      return lifetimeGranularity === 'year' ? getLifetimeYearly(transactions) : getLifetimeMonthly(transactions);
+      return lifetimeGranularity === 'year'
+        ? getLifetimeYearly(transactions, earliestDateStr)
+        : getLifetimeMonthly(transactions, earliestDateStr);
     }
     const { income, expense } = getMonthlyTotals(transactions, year);
     return { income, expense, labels: MONTH_LABELS_SHORT };
-  }, [transactions, timeRange, year, currYear, currMonth, lifetimeGranularity]);
+  }, [transactions, timeRange, year, currYear, currMonth, lifetimeGranularity, earliestDateStr]);
 
   // What each "All Time" bar actually represents, as real calendar periods —
   // {year, month: null} per bar in yearly mode, {year, month} per bar in
@@ -177,11 +183,22 @@ function SummaryCard({
 
   const disabledAfterIndex = useMemo(() => {
     if (timeRange === 'month') return new Date().getDate() - 1;
-    if (timeRange !== 'year') return null;
-    if (year < currYear) return null;
-    if (year > currYear) return -1;
-    return new Date().getMonth();
-  }, [timeRange, year, currYear]);
+    if (timeRange === 'year') {
+      if (year < currYear) return null;
+      if (year > currYear) return -1;
+      return new Date().getMonth();
+    }
+    // "All Time" in yearly mode now pads forward to MIN_YEAR_SLOTS (see
+    // getLifetimeYearly) so a young account isn't just a couple of bars
+    // stranded with huge gaps — the padded years past currYear are the
+    // same kind of "hasn't happened yet" as a future month in the Year
+    // tab, so they get the same disabled/untappable treatment.
+    if (timeRange === '5y' && lifetimeGranularity === 'year') {
+      const idx = (chartData.years ?? []).indexOf(currYear);
+      return idx === -1 ? null : idx;
+    }
+    return null;
+  }, [timeRange, year, currYear, lifetimeGranularity, chartData]);
 
   // Mirrors the Calendar page's own "before earliest known activity" cutoff
   // (see spendShadeFor/getEarliestDate in utils/format.js) — a new account
@@ -191,18 +208,17 @@ function SummaryCard({
   // no-spend dot.
   const disabledBeforeIndex = useMemo(() => {
     if (timeRange !== 'month') return null;
-    const earliest = getEarliestDate(transactions);
     // No transactions at all yet — nothing anchors "no spend before this,"
     // so every day through today stays blank rather than dotted, same as
     // the Calendar page treats a brand new account.
-    if (!earliest) return disabledAfterIndex + 1;
-    const d = new Date(earliest);
+    if (!earliestDateStr) return disabledAfterIndex + 1;
+    const d = parseISO(earliestDateStr);
     // Only applies when the earliest transaction actually falls within the
     // month being shown; an account with history from an earlier month has
     // nothing to cut off this month.
     if (d.getFullYear() !== currYear || d.getMonth() !== currMonth) return null;
     return d.getDate() - 1;
-  }, [timeRange, transactions, currYear, currMonth, disabledAfterIndex]);
+  }, [timeRange, earliestDateStr, currYear, currMonth, disabledAfterIndex]);
 
   // Overview's income/expense split for whatever period is currently
   // shown — same per-period drill-down as Expense/Income's displayAmount
@@ -254,24 +270,6 @@ function SummaryCard({
     return null;
   }, [chartTab, timeRange, transactions, selectedMonth, year, currMonth, currYear, selectedDay]);
 
-  // "₹27,612 ↓" alone doesn't say what it's being compared against — this
-  // mirrors delta's own branches (previous month, or the day before for a
-  // selected day) into the readable "vs X" that goes with it.
-  const deltaVsLabel = useMemo(() => {
-    if (!delta) return null;
-    if (timeRange === 'year' && selectedMonth != null) {
-      return `vs ${MONTH_NAMES[selectedMonth === 0 ? 11 : selectedMonth - 1]}`;
-    }
-    if (timeRange === 'month' && selectedDay != null) {
-      const prev = new Date(currYear, currMonth, selectedDay - 1);
-      return `vs ${MONTH_NAMES[prev.getMonth()]} ${prev.getDate()}`;
-    }
-    if (timeRange === 'month') {
-      return `vs ${MONTH_NAMES[currMonth === 0 ? 11 : currMonth - 1]}`;
-    }
-    return null;
-  }, [delta, timeRange, selectedMonth, selectedDay, currMonth, currYear]);
-
   const isIncome    = chartTab === 'income';
   const isOverview  = chartTab === 'overview';
   const netPositive = displayAmount >= 0;
@@ -282,56 +280,48 @@ function SummaryCard({
   const deltaText       = delta && delta.diff !== 0 ? formatCurrency(Math.abs(delta.diff)) : null;
   const deltaColor      = deltaGood ? 'rgba(74,222,128,0.9)' : 'rgba(248,113,113,0.9)';
 
-  // A bare period ("2026", "September 11") makes the big number below it
-  // ambiguous on first glance — a new user has to cross-reference the
-  // Expense/Income/Overview tab above to know what it even means. Reads
-  // as "{period} {noun}" (e.g. "September Earnings") rather than a
-  // second line or a repeat of the tab name above the card.
-  const periodNoun = chartTab === 'income' ? 'Earnings' : chartTab === 'overview' ? 'Net saved' : 'Spending';
-
   const periodLabel = useMemo(() => {
     if (timeRange === 'month') {
-      const period = selectedDay != null ? `${MONTH_NAMES[currMonth]} ${selectedDay}` : MONTH_NAMES[currMonth];
-      return `${period} ${periodNoun}`;
+      return selectedDay != null ? `${MONTH_NAMES[currMonth]} ${selectedDay}` : MONTH_NAMES[currMonth];
     }
     if (timeRange === 'year') {
-      const period = selectedMonth != null ? MONTH_NAMES[selectedMonth] : String(year);
-      return `${period} ${periodNoun}`;
+      return selectedMonth != null ? MONTH_NAMES[selectedMonth] : String(year);
     }
     if (timeRange === '5y') {
       if (selectedPeriod != null) {
-        const period = selectedPeriod.month != null
+        return selectedPeriod.month != null
           ? `${MONTH_NAMES[selectedPeriod.month]} ${selectedPeriod.year}`
           : String(selectedPeriod.year);
-        return `${period} ${periodNoun}`;
       }
-      const range = earliestYear === currYear ? String(currYear) : `${earliestYear} – ${currYear}`;
-      return `${range} ${periodNoun}`;
+      return earliestYear === currYear ? String(currYear) : `${earliestYear} – ${currYear}`;
     }
-    return `${currYear} ${periodNoun}`;
-  }, [timeRange, selectedMonth, currYear, currMonth, selectedPeriod, earliestYear, selectedDay, year, periodNoun]);
+    return String(currYear);
+  }, [timeRange, selectedMonth, currYear, currMonth, selectedPeriod, earliestYear, selectedDay, year]);
 
   const lineChartData = useMemo(() => {
+    let income = chartData.income, expense = chartData.expense, labels = chartData.labels;
     // Daily-within-month view (chartData here is always the current month —
     // see the chartData useMemo above) — truncate to today's day so the
     // line doesn't run flat out to day 31 for days that haven't happened
-    // yet, same idea as the year-view truncation below.
+    // yet, same idea as the other two truncations below.
     if (timeRange === 'month') {
       const end = new Date().getDate();
-      return {
-        income:  chartData.income.slice(0, end),
-        expense: chartData.expense.slice(0, end),
-        labels:  chartData.labels.slice(0, end),
-      };
+      income = income.slice(0, end); expense = expense.slice(0, end); labels = labels.slice(0, end);
+    } else if (timeRange === 'year' && year >= currYear) {
+      const end = new Date().getMonth() + 1;
+      income = income.slice(0, end); expense = expense.slice(0, end); labels = labels.slice(0, end);
+    } else if (timeRange === '5y' && lifetimeGranularity === 'year') {
+      // getLifetimeYearly pads forward to MIN_YEAR_SLOTS with as-yet-empty
+      // future years (see its own comment, and BarChart's disabledAfterIndex
+      // handling of the same padding) — same truncation idea, cut the line
+      // off at the current year instead of trailing flat through them.
+      const idx = (chartData.years ?? []).indexOf(currYear);
+      if (idx !== -1) {
+        income = income.slice(0, idx + 1); expense = expense.slice(0, idx + 1); labels = labels.slice(0, idx + 1);
+      }
     }
-    if (timeRange !== 'year' || year < currYear) return chartData;
-    const end = new Date().getMonth() + 1;
-    return {
-      income:  chartData.income.slice(0, end),
-      expense: chartData.expense.slice(0, end),
-      labels:  chartData.labels.slice(0, end),
-    };
-  }, [chartData, timeRange, year, currYear]);
+    return { income, expense, labels };
+  }, [chartData, timeRange, year, currYear, lifetimeGranularity]);
 
   // Includes chartTab — switching Expense<->Income should replay the full
   // collapse-and-regrow reveal too, not just an actual timeRange/year
@@ -371,28 +361,10 @@ function SummaryCard({
       </View>
 
       <View className="items-center justify-center mb-5" style={{ minHeight: 16 }}>
-        {isOverview ? (
-          // Overview's number alone is a net figure — this breaks it back
-          // into its two halves so the full picture ("earned X, spent Y")
-          // is visible without switching tabs.
-          <View className="flex-row items-center" style={{ gap: 5 }}>
-            <Text className="text-sm" style={{ color: 'rgba(74,222,128,0.9)' }}>
-              <Text className="font-semibold">{formatCurrency(overviewBreakdown.income)}</Text> income
-            </Text>
-            <Text className="text-sm" style={{ color: light ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)' }}>·</Text>
-            <Text className="text-sm" style={{ color: 'rgba(248,113,113,0.9)' }}>
-              <Text className="font-semibold">{formatCurrency(overviewBreakdown.expense)}</Text> spent
-            </Text>
-          </View>
-        ) : deltaText ? (
+        {isOverview ? null : deltaText ? (
           <View className="flex-row items-center" style={{ gap: 3 }}>
             <AnimatedDelta text={deltaText} style={{ color: deltaColor }} />
             {arrow && <Text className="text-base font-medium" style={{ color: deltaColor }}>{arrow}</Text>}
-            {deltaVsLabel && (
-              <Text className="text-sm ml-0.5" style={{ color: light ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }}>
-                {deltaVsLabel}
-              </Text>
-            )}
           </View>
         ) : (
           <Text className="text-base" style={{ color: light ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)' }}>—</Text>
@@ -400,12 +372,15 @@ function SummaryCard({
       </View>
 
       {isOverview ? (
+        // No `key={animKey}` — this used to force a full remount on every
+        // period switch (replaying LineChart's own one-time width reveal
+        // every time, see its own comment). Staying mounted across a
+        // switch is what lets that reveal genuinely only play once, while
+        // still updating the curve's actual shape/points instantly.
         <LineChart
-          key={animKey}
           incomeData={lineChartData.income}
           expenseData={lineChartData.expense}
           labels={lineChartData.labels}
-          animKey={animKey}
           light={light}
           activeIndex={chartActiveIndex}
           onPointClick={onBarClick}
@@ -420,6 +395,7 @@ function SummaryCard({
           onDeselect={onDeselect}
           disabledAfterIndex={disabledAfterIndex}
           disabledBeforeIndex={disabledBeforeIndex}
+          hideLabelAfterIndex={timeRange === '5y' && lifetimeGranularity === 'year' ? disabledAfterIndex : null}
           isIncome={isIncome}
           animKey={animKey}
           labelStep={labelStep}

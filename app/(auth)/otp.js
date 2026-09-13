@@ -6,7 +6,7 @@ import * as Haptics from 'expo-haptics';
 import Animated from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
-import { isConnectivityError } from '../../utils/errors';
+import { isConnectivityError, reportError } from '../../utils/errors';
 import { NumericKeypad, DIGIT_ONLY_KEYPAD_ROWS } from '../../components/NumericKeypad';
 import { BackIcon } from '../../components/icons';
 import { useShake } from '../../hooks/useShake';
@@ -102,7 +102,7 @@ export default function OtpScreen() {
       setCooldown(RESEND_COOLDOWN_S);
     } catch (err) {
       if (isConnectivityError(err, isOnline)) { notifyOffline(); }
-      else { setError(err.message || 'Failed to resend code. Please try again.'); }
+      else { reportError(err); setError(err.message || 'Failed to resend code. Please try again.'); }
     } finally {
       setResending(false);
     }

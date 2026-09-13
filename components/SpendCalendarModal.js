@@ -3,6 +3,7 @@ import { Modal, View, Text, Pressable, ScrollView, useWindowDimensions } from 'r
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, runOnJS } from 'react-native-reanimated';
+import { addMonths, subMonths, startOfMonth, getDaysInMonth } from 'date-fns';
 import {
   formatCurrency,
   formatCurrencyFull,
@@ -67,7 +68,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const now = new Date();
-  const [view, setView] = useState(new Date(now.getFullYear(), now.getMonth(), 1));
+  const [view, setView] = useState(startOfMonth(now));
   const [selectedDate, setSelectedDate] = useState(null);
 
   // First-run tour for this page: what the color-coded days mean, that
@@ -100,7 +101,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
       // later (even a different day) leaves the calendar stuck wherever it
       // was last left instead of back on the actual current month — this
       // modal stays mounted across opens/closes, so nothing else resets it.
-      setView(new Date(now.getFullYear(), now.getMonth(), 1));
+      setView(startOfMonth(now));
       dragY.value = 0;
       pageTranslateY.value = withTiming(0, { duration: 950, easing: SETTLE_EASING });
     } else {
@@ -179,9 +180,9 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
   const month = view.getMonth();
   // getDay() is Sunday-indexed (0-6) — remap so Monday is column 0, matching
   // the Monday-first DAYS header below.
-  const rawFirstDay = new Date(year, month, 1).getDay();
+  const rawFirstDay = view.getDay();
   const firstDay = rawFirstDay === 0 ? 6 : rawFirstDay - 1;
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const daysInMonth = getDaysInMonth(view);
   const todayStr = today();
 
   // Gated on `visible` — this component stays mounted (rendering null)
@@ -224,8 +225,8 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
   const weeks = [];
   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
 
-  function prevMonth() { setView(new Date(year, month - 1, 1)); setSelectedDate(null); }
-  function nextMonth() { setView(new Date(year, month + 1, 1)); setSelectedDate(null); }
+  function prevMonth() { setView(subMonths(view, 1)); setSelectedDate(null); }
+  function nextMonth() { setView(addMonths(view, 1)); setSelectedDate(null); }
 
   if (!visible) return null;
 

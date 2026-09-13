@@ -15,7 +15,7 @@ import Animated, { useSharedValue, useAnimatedStyle, useAnimatedProps, withDelay
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
-import { isConnectivityError } from '../../utils/errors';
+import { isConnectivityError, reportError } from '../../utils/errors';
 import { useSubscription } from '../../hooks/useSubscription';
 import { useTransactions } from '../../hooks/useTransactions';
 import { openManageSubscription } from '../../hooks/usePurchases';
@@ -551,7 +551,7 @@ export default function AccountPage() {
       setEditingName(false);
     } catch (err) {
       if (isConnectivityError(err, isOnline)) { notifyOffline(); }
-      else { setActionError(err.message || 'Failed to update name. Please try again.'); }
+      else { reportError(err); setActionError(err.message || 'Failed to update name. Please try again.'); }
     } finally {
       setSavingName(false);
     }
@@ -612,7 +612,7 @@ export default function AccountPage() {
     } catch (err) {
       setAvatarPhase('idle');
       if (isConnectivityError(err, isOnline)) { notifyOffline(); }
-      else { setActionError(err.message || 'Failed to update profile photo. Please try again.'); }
+      else { reportError(err); setActionError(err.message || 'Failed to update profile photo. Please try again.'); }
     }
   }
 
@@ -654,6 +654,7 @@ export default function AccountPage() {
     } catch (err) {
       setActionFlow(null);
       if (isConnectivityError(err, isOnline)) { notifyOffline(); return; }
+      reportError(err);
       setActionError(
         step === 'budget'
           ? `Your transactions were erased, but budgets couldn't be — ${err.message || 'please try again'}.`
@@ -689,6 +690,7 @@ export default function AccountPage() {
     } catch (err) {
       setActionFlow(null);
       if (isConnectivityError(err, isOnline)) { notifyOffline(); return; }
+      reportError(err);
       const partial = step === 'budget' || step === 'account';
       setActionError(
         partial
@@ -792,7 +794,7 @@ export default function AccountPage() {
       setTimeout(() => { setFeedbackSent(false); setFeedbackText(''); setModal(null); }, 1500);
     } catch (err) {
       if (isConnectivityError(err, isOnlineRef.current)) { notifyOffline(); }
-      else { setFeedbackError(err.message || 'Failed to send feedback. Please try again.'); }
+      else { reportError(err); setFeedbackError(err.message || 'Failed to send feedback. Please try again.'); }
     } finally {
       setFeedbackSending(false);
     }
@@ -808,7 +810,11 @@ export default function AccountPage() {
     setExportError('');
     try {
       const base64 = buildTransactionsWorkbook(transactions);
-      const fileUri = `${FileSystem.cacheDirectory}okana-transactions-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      // today(), not new Date().toISOString().slice(0, 10) — the latter is
+      // UTC, which can name the file "yesterday" for the first several
+      // hours of a local day in any timezone ahead of UTC (see today()'s
+      // own comment in utils/format.js).
+      const fileUri = `${FileSystem.cacheDirectory}okana-transactions-${today()}.xlsx`;
       await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: FileSystem.EncodingType.Base64 });
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri, { mimeType: XLSX_MIME, dialogTitle: 'Export transactions' });
@@ -816,6 +822,7 @@ export default function AccountPage() {
         setExportError('Sharing is not available on this device.');
       }
     } catch (err) {
+      reportError(err);
       setExportError(err.message || 'Failed to export. Please try again.');
     } finally {
       setExporting(false);
@@ -898,6 +905,7 @@ export default function AccountPage() {
         // problem — so it gets a message someone can actually act on
         // instead of "row-level security policy" being shown verbatim.
         const isAccessExpired = /row-level security/i.test(res.error || '');
+        if (!isAccessExpired) reportError(new Error(res.error || 'Import failed'));
         setImportErrorMsg(isAccessExpired
           ? 'Your Okana Plus trial or subscription has expired — resubscribe to import transactions.'
           : (res.error || 'Import failed. Please try again.'));
@@ -1014,6 +1022,7 @@ export default function AccountPage() {
                       value={nameInput}
                       onChangeText={setNameInput}
                       onSubmitEditing={saveName}
+                      maxLength={60}
                       className="flex-1 text-base"
                       style={{
                         color: LIGHT_SETTINGS ? '#111111' : '#ffffff',
@@ -1186,6 +1195,10 @@ export default function AccountPage() {
               onChangeText={setFeedbackText}
               placeholder="How can we help?"
               placeholderTextColor={LIGHT_SETTINGS ? '#b0b0b0' : '#4d4d4d'}
+              // Well under send-feedback's own MAX_MESSAGE_LENGTH (5000) —
+              // that's the real enforcement, this just stops someone from
+              // typing past a sane length only to have it rejected on send.
+              maxLength={2000}
               multiline
               numberOfLines={4}
               textAlignVertical="top"

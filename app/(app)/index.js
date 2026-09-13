@@ -394,6 +394,15 @@ export default function Dashboard() {
     onSetup: openBudgetSetupFromCalendar,
   }), [budget.loading, budget.hasBudget, budget.amount, budget.spentThisMonth, budget.percent, openBudgetSetupFromCalendar]);
 
+  // Switching tabs itself is instant — every bar in the chart fully
+  // remounts (a fresh, genuinely-new instance, not a reused one) whenever
+  // its period changes, which is what actually fixed the old "wrong candle
+  // flashes" bug (a reused bar briefly showing the *previous* period's
+  // height at the new bar's position), not a delay here. An earlier version
+  // of this also throttled how fast a new switch could be accepted, as a
+  // second line of defense — that made rapid tapping feel unresponsive for
+  // no remaining benefit once the real fix (the remount) and the other bug
+  // (BarChart's height rounding) were in, so it's gone.
   const handleTimeRangeChange = useCallback((next) => {
     setTimeRange(next);
     setSelectedDay(null);
@@ -404,6 +413,10 @@ export default function Dashboard() {
       setSelectedMonth(null);
     }
   }, [currYear]);
+
+  const handleChartTabChange = useCallback((next) => {
+    setChartTab(next);
+  }, []);
 
   const openAdd = useCallback(() => {
     if (trialInfo.status === 'expired' || trialInfo.status === 'not_started') { setProRequired(true); return; }
@@ -539,7 +552,7 @@ export default function Dashboard() {
       <Header
         onMenuOpen={openMenu}
         chartTab={chartTab}
-        onChartTabChange={setChartTab}
+        onChartTabChange={handleChartTabChange}
         onCalendarOpen={openCalendar}
         light={LIGHT_HOME}
         tabToggleRef={tabToggleRef}

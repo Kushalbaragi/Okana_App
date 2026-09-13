@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { Linking, Platform } from 'react-native';
+import { reportError } from '../utils/errors';
 
 const API_KEY = Platform.select({
   android: process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY,
@@ -29,6 +30,7 @@ export function usePurchases(userId) {
       // Fail quietly rather than crashing the app root — e.g. a malformed
       // key, or the native module genuinely unavailable in this environment.
       console.error('RevenueCat configure failed', err);
+      reportError(err);
     }
   }, [userId]);
 
@@ -39,6 +41,7 @@ export function usePurchases(userId) {
       const offerings = await Purchases.getOfferings();
       return { success: true, offering: offerings.current };
     } catch (err) {
+      reportError(err);
       return { success: false, error: err.message || 'Could not load subscription options.' };
     }
   }, []);
@@ -51,6 +54,7 @@ export function usePurchases(userId) {
       return { success: true, customerInfo };
     } catch (err) {
       if (err.userCancelled) return { success: false, cancelled: true };
+      reportError(err);
       return { success: false, error: err.message || 'Purchase failed. Please try again.' };
     }
   }, []);
@@ -62,6 +66,7 @@ export function usePurchases(userId) {
       const customerInfo = await Purchases.restorePurchases();
       return { success: true, customerInfo };
     } catch (err) {
+      reportError(err);
       return { success: false, error: err.message || 'Could not restore purchases.' };
     }
   }, []);

@@ -1,6 +1,7 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import { View, Text, SectionList, Pressable } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withDelay, withTiming } from 'react-native-reanimated';
+import { parseISO } from 'date-fns';
 import TransactionItem from './TransactionItem';
 import { monthLabel } from '../utils/format';
 import { SETTLE_EASING } from './AmountField';
@@ -113,58 +114,63 @@ function TransactionList({
     hasRevealedRef.current = true;
   }, []);
 
-  const filtered = useMemo(() => {
-    return transactions
-      .filter(tx => {
-        const d = new Date(tx.date);
-
-        if (timeRange === 'month' && selectedDay != null) {
-          if (d.getDate() !== selectedDay || d.getMonth() !== selectedMonth || d.getFullYear() !== year) return false;
-          if (!isOverview && tx.type !== activeTab) return false;
-          return true;
-        }
-
-        if (!isOverview && tx.type !== activeTab) return false;
-
-        if (timeRange === '5y') {
-          if (selectedPeriod != null) {
-            if (selectedPeriod.month != null) return d.getFullYear() === selectedPeriod.year && d.getMonth() === selectedPeriod.month;
-            return d.getFullYear() === selectedPeriod.year;
-          }
-          return true;
-        }
-        if (timeRange === 'year' && selectedMonth == null) return d.getFullYear() === year;
-        return d.getMonth() === selectedMonth && d.getFullYear() === year;
-      })
-      // Sorting directly on `new Date(a.date) - new Date(b.date)` re-parses
-      // both dates on every comparison the sort makes (O(m log m) parses,
-      // not O(m)) — for a few hundred rows that's thousands of Date()
-      // constructions on every tab/period switch. Timestamps are computed
-      // once per item up front instead, then sorted on the plain numbers.
-      .map(tx => ({ tx, ts: new Date(tx.date).getTime(), cts: new Date(tx.createdAt).getTime() }))
-      .sort((a, b) => b.ts - a.ts || b.cts - a.cts)
-      .map(({ tx }) => tx);
-  }, [transactions, activeTab, isOverview, selectedMonth, year, timeRange, selectedPeriod, selectedDay]);
-
-  // Single source of truth for both render paths — SectionList just gets
-  // one untitled section when the view isn't grouped, so there's only one
-  // rendering strategy (and one set of virtualization knobs) to reason
-  // about instead of two diverging FlatList branches.
+  // Filter, sort, and group in one pass instead of three (filter -> map ->
+  // sort -> map, then a separate pass over the result to group) — each of
+  // those previously re-parsed `new Date(tx.date)` from scratch (up to 3x
+  // per transaction total, once here, once for the sort key, once again
+  // for the group key), real, avoidable cost that scales with how many
+  // transactions a switch pulls in (worst case "All Time", every
+  // transaction the account has ever had). One parse per transaction,
+  // reused for the filter check, the sort key, and the group key.
   const sections = useMemo(() => {
+    function matches(tx, d) {
+      if (timeRange === 'month' && selectedDay != null) {
+        if (d.getDate() !== selectedDay || d.getMonth() !== selectedMonth || d.getFullYear() !== year) return false;
+        if (!isOverview && tx.type !== activeTab) return false;
+        return true;
+      }
+      if (!isOverview && tx.type !== activeTab) return false;
+      if (timeRange === '5y') {
+        if (selectedPeriod != null) {
+          if (selectedPeriod.month != null) return d.getFullYear() === selectedPeriod.year && d.getMonth() === selectedPeriod.month;
+          return d.getFullYear() === selectedPeriod.year;
+        }
+        return true;
+      }
+      if (timeRange === 'year' && selectedMonth == null) return d.getFullYear() === year;
+      return d.getMonth() === selectedMonth && d.getFullYear() === year;
+    }
+
+    const items = [];
+    for (const tx of transactions) {
+      // parseISO, not `new Date(tx.date)` — tx.date is a plain "YYYY-MM-DD",
+      // and the native constructor parses a date-only string as UTC
+      // midnight rather than local midnight, which can shift getDate()/
+      // getMonth()/getFullYear() by a day depending on timezone. See the
+      // matching comment on shiftDate in utils/format.js.
+      const d = parseISO(tx.date);
+      if (!matches(tx, d)) continue;
+      items.push({ tx, d, ts: d.getTime(), cts: new Date(tx.createdAt).getTime() });
+    }
+    items.sort((a, b) => b.ts - a.ts || b.cts - a.cts);
+
+    // Single source of truth for both render paths — SectionList just gets
+    // one untitled section when the view isn't grouped, so there's only one
+    // rendering strategy (and one set of virtualization knobs) to reason
+    // about instead of two diverging FlatList branches.
     if (!shouldGroup) {
-      return filtered.length ? [{ key: 'all', title: null, data: filtered }] : [];
+      return items.length ? [{ key: 'all', title: null, data: items.map(it => it.tx) }] : [];
     }
     const map = {};
-    filtered.forEach(tx => {
-      const d   = new Date(tx.date);
-      const key = `${d.getFullYear()}-${String(d.getMonth()).padStart(2, '0')}`;
-      if (!map[key]) map[key] = { key, title: monthLabel(d.getMonth(), d.getFullYear()), data: [] };
-      map[key].data.push(tx);
-    });
+    for (const it of items) {
+      const key = `${it.d.getFullYear()}-${String(it.d.getMonth()).padStart(2, '0')}`;
+      if (!map[key]) map[key] = { key, title: monthLabel(it.d.getMonth(), it.d.getFullYear()), data: [] };
+      map[key].data.push(it.tx);
+    }
     return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
-  }, [filtered, shouldGroup]);
+  }, [transactions, activeTab, isOverview, selectedMonth, year, timeRange, selectedPeriod, selectedDay, shouldGroup]);
 
-  if (filtered.length === 0) {
+  if (sections.length === 0) {
     return (
       <View className="px-4 pb-28">
         {ListHeaderFor(light)}

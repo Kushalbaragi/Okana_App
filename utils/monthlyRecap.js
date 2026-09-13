@@ -1,3 +1,4 @@
+import { parseISO } from 'date-fns'
 import {
   getDailyTotals, getMonthlyTotals, getMonthTotal,
   getDailyExpenseTotals, getIntensityThresholds, getEarliestDate, spendShadeFor, today, toDateStr,
@@ -174,7 +175,7 @@ export function getMonthlyRecapSlides(transactions, month, year, budgetInfo, has
 
 export function hasAnyRecapData(transactions, month, year) {
   return transactions.some(tx => {
-    const d = new Date(tx.date)
+    const d = parseISO(tx.date)
     return d.getMonth() === month && d.getFullYear() === year
   })
 }

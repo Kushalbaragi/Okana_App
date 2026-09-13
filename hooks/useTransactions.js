@@ -4,7 +4,7 @@ import * as Crypto from 'expo-crypto'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNetwork } from '../context/NetworkContext'
-import { isConnectivityError } from '../utils/errors'
+import { isConnectivityError, reportError } from '../utils/errors'
 import { hapticAdded, hapticDeleted } from '../utils/haptics'
 import { loadQueue, saveQueue, enqueue, collapseQueue, mergeWithPending, withQueueLock } from '../utils/syncQueue'
 
@@ -74,7 +74,12 @@ async function flushQueue(userId) {
         remaining.push(op, ...queue.slice(i + 1))
         break
       }
-      // Genuine rejection for just this one item — drop it, keep going.
+      // Genuine rejection for just this one item — drop it, keep going. This
+      // runs unattended (background refresh, not a direct user action), so
+      // there's no UI to show an error in — reportError is the only record
+      // that a queued add/edit/delete silently failed to ever reach the
+      // server.
+      reportError(error)
     }
 
     await saveQueue(userId, remaining)
@@ -211,6 +216,7 @@ export function useTransactions() {
       if (error) {
         // A real rejection, not connectivity — retrying later won't help,
         // so roll the optimistic entry back out and surface it.
+        reportError(error)
         setTransactions(prev => {
           const updated = prev.filter(tx => tx.id !== id)
           saveCache(user.id, updated)
@@ -235,6 +241,7 @@ export function useTransactions() {
       // Not connectivity — an unexpected error that would just fail the
       // same way on retry. Roll back rather than silently queueing
       // something doomed to fail every future sync attempt too.
+      reportError(err)
       setTransactions(prev => {
         const updated = prev.filter(tx => tx.id !== id)
         saveCache(user.id, updated)
@@ -271,6 +278,7 @@ export function useTransactions() {
         // Real rejection — resync from the server to undo the optimistic
         // edit, since there's no separate "previous values" snapshot kept
         // to roll back to locally.
+        reportError(error)
         await refresh()
         return { success: false, error: error.message }
       }
@@ -287,6 +295,7 @@ export function useTransactions() {
       }
       // Not connectivity — resync rather than leaving an edit applied
       // locally that's doomed to keep failing on retry.
+      reportError(err)
       await refresh()
       return { success: false, error: err.message || 'Something went wrong. Please try again.' }
     }
@@ -317,6 +326,7 @@ export function useTransactions() {
       if (error) {
         // Real rejection — resync to bring the row back if it's still
         // actually there server-side.
+        reportError(error)
         await refresh()
       }
     } catch (err) {
@@ -325,6 +335,7 @@ export function useTransactions() {
       } else {
         // Not connectivity — resync rather than leaving the row hidden
         // locally when the delete never actually went through.
+        reportError(err)
         await refresh()
       }
     }
@@ -369,6 +380,7 @@ export function useTransactions() {
         notifyOffline()
         return { success: false, offline: true, imported }
       }
+      reportError(err)
       return { success: false, error: err.message || 'Something went wrong. Please try again.', imported }
     }
 

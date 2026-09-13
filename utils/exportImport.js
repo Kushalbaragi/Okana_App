@@ -110,11 +110,15 @@ export function parseTransactionsWorkbook(base64) {
       continue;
     }
 
+    // Capped to match AddModal's own description field (140) — the
+    // `transactions.description` column itself has no length constraint,
+    // and a spreadsheet is the one path where an arbitrarily long value
+    // could otherwise reach it directly, bypassing that client-side cap.
     parsed.push({
       date,
       type,
       amount,
-      description: (rawDescription ?? '').toString().trim(),
+      description: (rawDescription ?? '').toString().trim().slice(0, 140),
     });
   }
 

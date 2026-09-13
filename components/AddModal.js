@@ -5,7 +5,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS } from 'react-native-reanimated';
 import Svg, { Rect, Line } from 'react-native-svg';
-import { today } from '../utils/format';
+import { today, shiftDate } from '../utils/format';
 import CalendarPicker from './CalendarPicker';
 import { GlassPressable, PILL_ACTIVE_COLOR } from './Glass';
 import { NumericKeypad, nextAmountValue } from './NumericKeypad';
@@ -30,10 +30,7 @@ const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct
 function formatDisplay(dateStr) {
   const todayStr = today();
   if (dateStr === todayStr) return 'Today';
-  const [ty, tm, td] = todayStr.split('-').map(Number);
-  const y = new Date(ty, tm - 1, td - 1);
-  const yesterdayStr = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
-  if (dateStr === yesterdayStr) return 'Yesterday';
+  if (dateStr === shiftDate(todayStr, -1)) return 'Yesterday';
   const [year, month, day] = dateStr.split('-').map(Number);
   return `${day} ${MONTHS_SHORT[month - 1]} ${year}`;
 }
@@ -320,7 +317,10 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
             {
               position: 'absolute', left: 0, right: 0, bottom: 0,
               height: windowHeight * SHEET_HEIGHT_RATIO,
-              backgroundColor: light ? '#FAFAF8' : '#0a0a0a',
+              // A step lighter than the app's own near-black background —
+              // reads as the sheet sitting slightly elevated above the
+              // backdrop instead of blending into it.
+              backgroundColor: light ? '#FAFAF8' : '#121212',
               borderTopLeftRadius: 28, borderTopRightRadius: 28,
               overflow: 'hidden',
             },
@@ -364,7 +364,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
               >
                 <Text
                   className="text-base font-medium"
-                  style={{ color: type === t ? '#ffffff' : light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.35)' }}>
+                  style={{ color: type === t ? '#ffffff' : light ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.55)' }}>
                   {t.charAt(0).toUpperCase() + t.slice(1)}
                 </Text>
               </Pressable>
@@ -400,12 +400,33 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
               unexplained gap between them; being a direct, tightly-margined
               neighbor here guarantees there's no room for anything to
               insert space between the two. */}
-          <View style={{ alignSelf: 'center', marginTop: 20 }}>
+          {/* Fixed width/height pill — not content-sized (minWidth only) —
+              with vertical centering handled entirely by this View's own
+              justifyContent, not the TextInput's internal one. The
+              TextInput carries no vertical padding/height of its own, just
+              its natural single-line height, which this View then centers
+              exactly like it already centers the placeholder overlay below
+              it — same mechanism for both, so they can't ever land
+              differently. Also stops the pill itself resizing as you type
+              (was minWidth-only, growing/shrinking with content length). */}
+          <View
+            style={{
+              alignSelf: 'center', marginTop: 20, width: 260, height: 48,
+              borderRadius: 9999, justifyContent: 'center',
+              backgroundColor: light ? '#FAFAF8' : '#161616',
+              borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.07)',
+            }}
+          >
             <TextInput
               value={description}
               onChangeText={setDescription}
-              className="rounded-full px-4 py-3 text-base text-center"
-              style={{ minWidth: 200, backgroundColor: light ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)', color: light ? '#111111' : '#ffffff' }}
+              // The `transactions.description` column is plain text with no
+              // server-side length constraint — this is the only cap it
+              // gets, since it's a short label ("Netflix", "Electricity
+              // bill"), not free-form notes.
+              maxLength={140}
+              className="px-4 text-base text-center"
+              style={{ color: light ? '#111111' : '#ffffff' }}
             />
             {/* A real TextInput's `placeholder` is drawn internally by the
                 native view itself — there's no way to animate just that

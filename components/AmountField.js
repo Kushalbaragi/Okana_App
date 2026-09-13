@@ -72,12 +72,20 @@ function digitExiting() {
 // it, and it's skipped entirely when the field is populated
 // programmatically (opening pre-filled) rather than typed. Backspacing a
 // digit plays the same effect in reverse via `exiting` above.
-export function AmountDigit({ char, animateIn, color = '#ffffff', fontSize = 48, lineHeight = 56, fontWeight = '600' }) {
+// `delay` is optional (default 0, matching every existing caller's
+// immediate-on-keystroke behavior) — used by SummaryCard's headline to
+// stagger a fresh set of digits in left-to-right instead of all at once.
+// `instantExit` skips the blur/scale/rise-away exit entirely (an outgoing
+// digit just disappears immediately) — SummaryCard's headline wants the
+// *old* value gone at once so the *new* one's own entrance can start right
+// away, rather than waiting out a whole exit animation on a value the user
+// already moved on from.
+export function AmountDigit({ char, animateIn, color = '#ffffff', fontSize = 48, lineHeight = 56, fontWeight = '600', delay = 0, instantExit = false }) {
   const fadeProgress = useSharedValue(animateIn ? 0 : 1);
 
   useEffect(() => {
     if (animateIn) {
-      fadeProgress.value = withTiming(1, { duration: ENTER_DURATION, easing: SETTLE_EASING });
+      fadeProgress.value = withDelay(delay, withTiming(1, { duration: ENTER_DURATION, easing: SETTLE_EASING }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -101,7 +109,7 @@ export function AmountDigit({ char, animateIn, color = '#ffffff', fontSize = 48,
   return (
     <Animated.Text
       layout={AMOUNT_LAYOUT_TRANSITION}
-      exiting={digitExiting}
+      exiting={instantExit ? undefined : digitExiting}
       style={[
         {
           fontSize, lineHeight, fontWeight, color, fontFamily: ROUNDED_FONT,

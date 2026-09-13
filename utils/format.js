@@ -1,3 +1,5 @@
+import { parseISO, getDaysInMonth } from 'date-fns'
+
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const MONTHS_ABBR  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -30,19 +32,28 @@ export function toDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// parseISO, not `new Date(dateStr)` — every dateStr in this app is a plain
+// "YYYY-MM-DD" (see toDateStr above), and the native Date constructor parses
+// a date-only string as UTC midnight, not local midnight (per the ECMAScript
+// spec — this is a long-standing, easy-to-miss JS footgun). For a timezone
+// ahead of UTC that happens to still land on the same calendar day once
+// getDate()/getMonth() convert it back to local time, so it can look correct
+// while developing/testing in one timezone and silently be a day off in
+// another. parseISO treats a date-only string as local midnight instead,
+// matching how toDateStr/today() above already construct these strings.
 export function shiftDate(dateStr, days) {
-  const d = new Date(dateStr)
+  const d = parseISO(dateStr)
   d.setDate(d.getDate() + days)
   return toDateStr(d)
 }
 
 export function dateBoxParts(dateStr) {
-  const d = new Date(dateStr)
+  const d = parseISO(dateStr)
   return { day: d.getDate(), month: MONTHS_ABBR[d.getMonth()].toUpperCase() }
 }
 
 export function formatDateFull(dateStr) {
-  const d = new Date(dateStr)
+  const d = parseISO(dateStr)
   return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`
 }
 
@@ -146,7 +157,7 @@ export function getMonthlyTotals(transactions, year) {
   const income = new Array(12).fill(0)
   const expense = new Array(12).fill(0)
   transactions.forEach(tx => {
-    const d = new Date(tx.date)
+    const d = parseISO(tx.date)
     if (d.getFullYear() !== year) return
     const m = d.getMonth()
     if (tx.type === 'income') income[m] += tx.amount
@@ -158,7 +169,7 @@ export function getMonthlyTotals(transactions, year) {
 export function getMonthTotal(transactions, type, month, year) {
   return transactions
     .filter(tx => {
-      const d = new Date(tx.date)
+      const d = parseISO(tx.date)
       return tx.type === type && d.getMonth() === month && d.getFullYear() === year
     })
     .reduce((sum, tx) => sum + tx.amount, 0)
@@ -166,12 +177,12 @@ export function getMonthTotal(transactions, type, month, year) {
 
 // Daily totals for a given month
 export function getDailyTotals(transactions, month, year) {
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const daysInMonth = getDaysInMonth(new Date(year, month))
   const income  = new Array(daysInMonth).fill(0)
   const expense = new Array(daysInMonth).fill(0)
   const labels  = Array.from({ length: daysInMonth }, (_, i) => String(i + 1))
   transactions.forEach(tx => {
-    const d = new Date(tx.date)
+    const d = parseISO(tx.date)
     if (d.getMonth() !== month || d.getFullYear() !== year) return
     const idx = d.getDate() - 1
     if (tx.type === 'income') income[idx] += tx.amount
@@ -181,20 +192,42 @@ export function getDailyTotals(transactions, month, year) {
 }
 
 // Yearly data from first transaction year to now (All Time)
-export function getLifetimeYearly(transactions) {
+// `earliestDateStr` is optional — a caller that's already computed the
+// account's earliest transaction date (e.g. via getEarliestDate, for its
+// own separate reason) can pass it through to skip a second full scan of
+// `transactions` here purely to re-derive the same thing.
+// A couple of years of real history reads as a handful of bars stranded
+// with huge gaps between them (BarChart spaces bars evenly across the full
+// chart width regardless of count) — this pads the range forward with
+// future, as-yet-empty years, the same way the Year tab always shows all 12
+// months of the calendar year rather than stopping at the current one.
+const MIN_YEAR_SLOTS = 5
+
+export function getLifetimeYearly(transactions, earliestDateStr) {
   const currYear = new Date().getFullYear()
   // A new account (or one with only this year's data) has just one year of
   // history — LineChart needs at least 2 points to draw a line, so the
   // range always spans at least currYear-1..currYear, padded with zeros.
-  if (!transactions.length) return { income: [0, 0], expense: [0, 0], labels: [String(currYear - 1), String(currYear)], years: [currYear - 1, currYear] }
-  const earliest = transactions.reduce((min, tx) => {
-    const y = new Date(tx.date).getFullYear(); return y < min ? y : min
-  }, currYear - 1)
-  const years   = Array.from({ length: currYear - earliest + 1 }, (_, i) => earliest + i)
+  if (!transactions.length) {
+    const earliest = currYear - 1
+    const endYear  = Math.max(currYear, earliest + MIN_YEAR_SLOTS - 1)
+    const years    = Array.from({ length: endYear - earliest + 1 }, (_, i) => earliest + i)
+    return { income: new Array(years.length).fill(0), expense: new Array(years.length).fill(0), labels: years.map(String), years }
+  }
+  const earliest = earliestDateStr
+    ? parseISO(earliestDateStr).getFullYear()
+    : transactions.reduce((min, tx) => {
+        const y = parseISO(tx.date).getFullYear(); return y < min ? y : min
+      }, currYear - 1)
+  // Extends into the future only far enough to reach MIN_YEAR_SLOTS total —
+  // an account with more real history than that already fills the chart
+  // on its own, so nothing past currYear gets added.
+  const endYear = Math.max(currYear, earliest + MIN_YEAR_SLOTS - 1)
+  const years   = Array.from({ length: endYear - earliest + 1 }, (_, i) => earliest + i)
   const income  = new Array(years.length).fill(0)
   const expense = new Array(years.length).fill(0)
   transactions.forEach(tx => {
-    const idx = years.indexOf(new Date(tx.date).getFullYear())
+    const idx = years.indexOf(parseISO(tx.date).getFullYear())
     if (idx !== -1) {
       if (tx.type === 'income') income[idx] += tx.amount
       else expense[idx] += tx.amount
@@ -207,7 +240,8 @@ export function getLifetimeYearly(transactions) {
 // while the user's history is still short, since yearly bars would be too
 // coarse to be useful that early on. getLifetimeYearly takes over once
 // there's enough history (see SummaryCard's LIFETIME_YEARLY_THRESHOLD).
-export function getLifetimeMonthly(transactions) {
+// `earliestDateStr` — see the matching comment on getLifetimeYearly above.
+export function getLifetimeMonthly(transactions, earliestDateStr) {
   const now = new Date()
   const currYear = now.getFullYear()
   const currMonth = now.getMonth()
@@ -220,9 +254,11 @@ export function getLifetimeMonthly(transactions) {
       months: [{ year: prevYear, month: prevMonth }, { year: currYear, month: currMonth }],
     }
   }
-  const earliest = transactions.reduce((min, tx) => {
-    const d = new Date(tx.date); return d < min ? d : min
-  }, now)
+  const earliest = earliestDateStr
+    ? parseISO(earliestDateStr)
+    : transactions.reduce((min, tx) => {
+        const d = parseISO(tx.date); return d < min ? d : min
+      }, now)
   const startYear  = earliest.getFullYear()
   const startMonth = earliest.getMonth()
   const totalMonths = (currYear - startYear) * 12 + (currMonth - startMonth) + 1
@@ -236,7 +272,7 @@ export function getLifetimeMonthly(transactions) {
   }))
   const labels  = months.map(({ year, month }) => `${MONTHS[month]} ${String(year).slice(2)}`)
   transactions.forEach(tx => {
-    const d = new Date(tx.date)
+    const d = parseISO(tx.date)
     const idx = (d.getFullYear() - startYear) * 12 + (d.getMonth() - startMonth)
     if (idx >= 0 && idx < totalMonths) {
       if (tx.type === 'income') income[idx] += tx.amount

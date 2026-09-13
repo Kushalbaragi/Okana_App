@@ -1,27 +1,32 @@
 import { memo, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
+import { addMonths, subMonths, startOfMonth, getDaysInMonth, parseISO } from 'date-fns';
 import { GlassView, GlassPressable } from './Glass';
 import { MONTH_NAMES as MONTHS } from '../utils/monthlyRecap';
 import { toDateStr as toStr } from '../utils/format';
 
 const DAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 
-function parseLocal(str) {
-  const [y, m, d] = str.split('-').map(Number);
-  return new Date(y, m - 1, d);
-}
-
 function CalendarPicker({ value, onChange, onClose, light = false }) {
-  const selected = parseLocal(value);
-  const [view, setView] = useState(new Date(selected.getFullYear(), selected.getMonth(), 1));
+  // parseISO, not `new Date(value)` — value is a plain "YYYY-MM-DD", which
+  // the native constructor parses as UTC midnight rather than local
+  // midnight (see the matching comment on shiftDate in utils/format.js).
+  // This used to be a hand-rolled parseLocal() doing the same local-midnight
+  // parsing by hand — parseISO replaces it outright rather than needing to
+  // exist alongside it.
+  const selected = parseISO(value);
+  // Always day-1-of-the-month — prev/next below preserve that — so `view`
+  // itself can stand in for "year, month" everywhere below instead of
+  // reconstructing a fresh Date from them each time.
+  const [view, setView] = useState(startOfMonth(selected));
 
   const year = view.getFullYear();
   const month = view.getMonth();
   // getDay() is Sunday-indexed (0-6) — remap so Monday is column 0, matching
   // the Monday-first DAYS header above.
-  const rawFirstDay = new Date(year, month, 1).getDay();
+  const rawFirstDay = view.getDay();
   const firstDay = rawFirstDay === 0 ? 6 : rawFirstDay - 1;
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const daysInMonth = getDaysInMonth(view);
 
   const now = new Date();
   const todayStr = toStr(now);
@@ -31,11 +36,11 @@ function CalendarPicker({ value, onChange, onClose, light = false }) {
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
   while (cells.length % 7 !== 0) cells.push(null);
 
-  function prev() { setView(new Date(year, month - 1, 1)); }
+  function prev() { setView(subMonths(view, 1)); }
   // Stops at the current month rather than letting the user navigate into
   // an entirely-future, entirely-disabled one — a transaction can't be
   // dated after today, so there's nothing to pick past this point anyway.
-  function next() { if (!isCurrentMonth) setView(new Date(year, month + 1, 1)); }
+  function next() { if (!isCurrentMonth) setView(addMonths(view, 1)); }
 
   function pick(d) {
     const dateStr = toStr(new Date(year, month, d));

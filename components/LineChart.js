@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Path, Circle, Line, Rect, Text as SvgText, G } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
@@ -25,7 +25,7 @@ function areaPath(pts, bottom) {
   return `${line} L${pts[pts.length - 1].x.toFixed(1)},${bottom} L${pts[0].x.toFixed(1)},${bottom} Z`;
 }
 
-function LineChart({ incomeData, expenseData, labels, animKey, light = false, activeIndex = -1, onPointClick, onDeselect }) {
+function LineChart({ incomeData, expenseData, labels, light = false, activeIndex = -1, onPointClick, onDeselect }) {
   const progress = useSharedValue(0);
   // The reveal-width animation needs a real pixel target, not a percentage —
   // Reanimated interpolates numbers reliably; measured once via onLayout
@@ -33,13 +33,21 @@ function LineChart({ incomeData, expenseData, labels, animKey, light = false, ac
   // whatever flex context it's placed in.
   const [containerWidth, setContainerWidth] = useState(0);
   const svgH = PAD_TOP + CHART_H + LABEL_H;
+  // The left-to-right width reveal is a nice first-impression moment, not
+  // something that should replay on every tab/period switch — this used to
+  // fire on every animKey change (Month/Year/All Time, Expense/Income/
+  // Overview all change it), each time hiding the whole chart and
+  // re-growing it over a full second, which is exactly what read as slow.
+  // Switching periods now just updates the curve's shape/points instantly
+  // instead, same as Bar's height does in BarChart.js.
+  const hasRevealedRef = useRef(false);
 
   useEffect(() => {
-    if (!containerWidth) return;
-    progress.value = 0;
-    progress.value = withTiming(1, { duration: 1000, easing: Easing.out(Easing.cubic) });
+    if (!containerWidth || hasRevealedRef.current) return;
+    hasRevealedRef.current = true;
+    progress.value = withTiming(1, { duration: 700, easing: Easing.out(Easing.cubic) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [animKey, containerWidth]);
+  }, [containerWidth]);
 
   const n = incomeData.length;
 

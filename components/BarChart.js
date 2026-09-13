@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, Fragment } from 'react';
+import { memo, useEffect, Fragment } from 'react';
 import Svg, { Line, Rect, Circle, Text as SvgText } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedProps, withDelay, withTiming, Easing } from 'react-native-reanimated';
 
@@ -7,33 +7,38 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const BAR_HEIGHT = 110;
 const CHART_W    = 264;
+// A flat per-bar step (capped, not spread proportionally across a fixed
+// total budget) — spreading a fixed budget across the bar count shrinks the
+// gap between consecutive bars as there are more of them (e.g. 120ms over
+// 12 bars is ~11ms apart, barely perceptible as anything but "all at once").
+// A flat step keeps the same visible gap between the first several bars
+// regardless of how many are on screen; the cap just stops a many-bar view
+// (like "All Time") from taking forever for the *later* ones to start.
+const BAR_STAGGER_STEP_MS = 55;
+const BAR_STAGGER_CAP_MS  = 450;
 
-function Bar({ x, width, rx, targetHeight, delay, fill, animKey }) {
+function Bar({ x, width, rx, targetHeight, delay, fill }) {
   // Animates the actual pixel height directly (not a 0-1 progress scaled by
-  // targetHeight) — that's what lets a same-period change smoothly tween
-  // from whatever height it's currently at to the new one, rather than
-  // only ever being able to animate from 0.
+  // targetHeight). Always grows from 0 — every period switch mounts a
+  // genuinely fresh Bar instance (see the key in the render loop below),
+  // so useSharedValue(0)'s own initial value is what gives the grow-in,
+  // with no explicit reset step or isNewPeriod branch needed here. A
+  // same-period value update (e.g. a live transaction landing) reuses the
+  // same instance instead, so that case still tweens smoothly from
+  // whatever height it's currently at rather than collapsing to 0.
+  //
+  // Tried letting every switch reuse the same instance and just tween
+  // straight to the new height, same as the same-period case — faster in
+  // theory, but with several bars moving to different new heights at once
+  // (some up, some down) it read as the bars "dancing" rather than a clean
+  // reveal. A uniform grow-from-0 is calmer to watch even though more
+  // pixels are moving.
   const animatedHeight = useSharedValue(0);
-  // null (not animKey's initial value) so the very first mount still gets
-  // the full grow-from-zero reveal — only a later *change* of animKey (a
-  // genuinely new period) should replay that. Switching Expense<->Income
-  // for the SAME period keeps animKey identical; bars still animate to
-  // their new height, just as a quick direct tween with no stagger delay —
-  // a full collapse-back-to-0-and-restagger there read as "slow to switch
-  // tabs", but snapping instantly read as no animation at all.
-  const prevAnimKey = useRef(null);
 
   useEffect(() => {
-    const isNewPeriod = prevAnimKey.current !== animKey;
-    prevAnimKey.current = animKey;
-    if (isNewPeriod) {
-      animatedHeight.value = 0;
-      animatedHeight.value = withDelay(delay, withTiming(targetHeight, { duration: 300, easing: Easing.out(Easing.exp) }));
-    } else {
-      animatedHeight.value = withTiming(targetHeight, { duration: 260, easing: Easing.out(Easing.cubic) });
-    }
+    animatedHeight.value = withDelay(delay, withTiming(targetHeight, { duration: 260, easing: Easing.out(Easing.cubic) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [animKey, targetHeight]);
+  }, [targetHeight]);
 
   // Tried anchoring a scaleY transform at the baseline via react-native-svg's
   // `origin` prop (to avoid animating layout props every frame) — on native
@@ -58,33 +63,30 @@ function Bar({ x, width, rx, targetHeight, delay, fill, animKey }) {
   );
 }
 
-// Fades in on the same stagger schedule as the Bar it stands in for — same
-// animKey-aware replay rule (full delayed fade on a genuinely new period,
-// quick snap on a same-period tab switch) so a no-spend day's dot appears
-// in sync with its neighbors' bars instead of just being there instantly
-// before the candles have even started growing in.
-function NoSpendDot({ cx, cy, r, fill, delay, animKey }) {
+// Fades in on the same stagger schedule as the Bar it stands in for, and
+// the same "no special-casing" reasoning as Bar above — see its comment.
+function NoSpendDot({ cx, cy, r, fill, delay }) {
   const opacity = useSharedValue(0);
-  const prevAnimKey = useRef(null);
 
   useEffect(() => {
-    const isNewPeriod = prevAnimKey.current !== animKey;
-    prevAnimKey.current = animKey;
-    if (isNewPeriod) {
-      opacity.value = 0;
-      opacity.value = withDelay(delay, withTiming(1, { duration: 300, easing: Easing.out(Easing.exp) }));
-    } else {
-      opacity.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) });
-    }
+    opacity.value = withDelay(delay, withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [animKey]);
+  }, []);
 
   const animatedProps = useAnimatedProps(() => ({ opacity: opacity.value }));
 
   return <AnimatedCircle cx={cx} cy={cy} r={r} fill={fill} animatedProps={animatedProps} />;
 }
 
-function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, disabledBeforeIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false }) {
+// Separate from `disabledAfterIndex` — that one also covers "hasn't
+// happened yet but is still a real calendar day/month" (e.g. day 17 later
+// this month), where the label should stay visible even though the bar
+// itself is inert. This one is only for slots that were padded in purely
+// to fill out the chart width (see getLifetimeYearly's MIN_YEAR_SLOTS) and
+// don't correspond to a real period at all — those keep their empty slot's
+// spacing but lose the label, since a label there isn't "a day that hasn't
+// happened yet," it's not a period the account will ever have.
+function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false }) {
   const n       = values.length;
   const GROUP_W = CHART_W / n;
   const BAR_W   = Math.min(16, Math.max(6, GROUP_W - 10));
@@ -108,31 +110,40 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
 
       {values.map((v, i) => {
         const x          = i * GROUP_W + (GROUP_W - BAR_W) / 2;
-        const h          = useSqrtScale ? Math.sqrt(v / maxVal) * BAR_HEIGHT : (v / maxVal) * BAR_HEIGHT;
+        // Rounded to a whole pixel — a bar whose value sits at or near
+        // maxVal (the tallest bar in the set) computes height through
+        // Math.sqrt(v / maxVal), which floating-point division can round
+        // to something like 0.9999999999999999 instead of a clean 1 on one
+        // render and exactly 1 on the next, depending on tiny variations
+        // in how `values` itself got summed. Bar's own effect re-triggers
+        // its tween on *any* targetHeight change, so that sub-pixel noise
+        // alone was enough to replay a (visually pointless, since it's an
+        // imperceptible height difference) animation over and over — most
+        // noticeable on whichever bar happens to be tallest, since that's
+        // the one most likely sitting right at this knife's-edge value.
+        const h          = Math.round(useSqrtScale ? Math.sqrt(v / maxVal) * BAR_HEIGHT : (v / maxVal) * BAR_HEIGHT);
         const isActive   = i === activeIndex;
         const isDisabled = disabledAfterIndex != null && i > disabledAfterIndex;
         const isBeforeStart = disabledBeforeIndex != null && i < disabledBeforeIndex;
         const hasData    = h > 0;
-        const showLabel  = i % labelStep === 0 || (i === n - 1 && (n - 1) - Math.floor((n - 2) / labelStep) * labelStep > 1);
+        const isPadding  = hideLabelAfterIndex != null && i > hideLabelAfterIndex;
+        const showLabel  = !isPadding && (i % labelStep === 0 || (i === n - 1 && (n - 1) - Math.floor((n - 2) / labelStep) * labelStep > 1));
 
         return (
-          <Fragment key={i}>
+          // Keyed by animKey too, not just index — this is what forces a
+          // genuinely fresh Bar instance (a true useSharedValue(0) start,
+          // see Bar's own comment) on every period switch, instead of
+          // reusing the one already there and tweening it to the new
+          // height in place.
+          <Fragment key={`${animKey}-${i}`}>
             {hasData ? (
               <Bar
                 x={x}
                 width={BAR_W}
                 rx={BAR_W / 3}
                 targetHeight={h}
-                // Spread proportionally across a fixed budget instead of a
-                // flat i*45 — that scaled with bar count, so "All Time"
-                // views with dozens of bars could take forever to finish
-                // staggering in on top of each bar's own animation time.
-                // Wide enough (650ms) that bars visibly grow one after
-                // another left to right instead of all popping at once,
-                // regardless of how many bars are on screen.
-                delay={n > 1 ? (i / (n - 1)) * 650 : 0}
+                delay={Math.min(i * BAR_STAGGER_STEP_MS, BAR_STAGGER_CAP_MS)}
                 fill={isActive ? activeColor : dimColor}
-                animKey={animKey}
               />
             ) : (
               <Rect x={x} y={BAR_HEIGHT - 2} width={BAR_W} height={2} rx={1} fill="transparent" />
@@ -186,8 +197,7 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
                 cy={BAR_HEIGHT - 3}
                 r={1.8}
                 fill={noSpendDotColor}
-                delay={n > 1 ? (i / (n - 1)) * 650 : 0}
-                animKey={animKey}
+                delay={Math.min(i * BAR_STAGGER_STEP_MS, BAR_STAGGER_CAP_MS)}
               />
             )}
           </Fragment>

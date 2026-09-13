@@ -1,3 +1,4 @@
+import { parseISO } from 'date-fns'
 import { MONTH_NAMES } from './monthlyRecap'
 
 export const PRICE_PER_YEAR = 499
@@ -16,7 +17,7 @@ export const WHY_ITEMS = [
 ]
 
 export function formatChargeDate(dateStr) {
-  const d = new Date(dateStr)
+  const d = parseISO(dateStr)
   return `${MONTH_NAMES[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`
 }
 
@@ -32,8 +33,13 @@ export function getSubscriptionDisplayStatus(subscription, todayStr) {
     return { status: 'not_started', chargeDate: null, cancelAtPeriodEnd: false, paymentFailed: false }
   }
 
-  const expiresAt = subscription.expires_at ? new Date(subscription.expires_at) : null
-  const isActive = subscription.status === 'active' || (expiresAt && expiresAt > new Date(todayStr))
+  const expiresAt = subscription.expires_at ? parseISO(subscription.expires_at) : null
+  // todayStr is a plain "YYYY-MM-DD" — parseISO (not `new Date(todayStr)`)
+  // so this compares against local midnight, not UTC midnight; the native
+  // constructor's UTC-midnight parsing of a date-only string would shift
+  // the actual cutoff by the local UTC offset, mattering most right at a
+  // day boundary — exactly where an expiry check needs to be correct.
+  const isActive = subscription.status === 'active' || (expiresAt && expiresAt > parseISO(todayStr))
   if (!isActive) {
     return { status: 'expired', chargeDate: subscription.expires_at, cancelAtPeriodEnd: false, paymentFailed: subscription.status === 'on_hold' }
   }
