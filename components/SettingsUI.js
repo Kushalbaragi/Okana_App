@@ -16,11 +16,21 @@ export function Divider({ light = false }) {
   return <View style={{ height: 1, backgroundColor: light ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)', marginHorizontal: 16 }} />;
 }
 
-export function SectionLabel({ children, light = false }) {
-  return (
+// `action` is an optional trailing element (e.g. a small refresh button) —
+// every existing caller just omits it and gets the exact same plain label
+// as before; only Subscription's "Current Plan" needs the row layout.
+export function SectionLabel({ children, light = false, action = null }) {
+  const label = (
     <Text
       className="text-[11px] font-medium uppercase tracking-widest px-1 pt-2 mb-2"
       style={{ color: light ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.30)' }}>{children}</Text>
+  );
+  if (!action) return label;
+  return (
+    <View className="flex-row items-center justify-between">
+      {label}
+      {action}
+    </View>
   );
 }
 

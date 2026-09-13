@@ -1,15 +1,100 @@
-import { useEffect, useState } from 'react';
-import { View, Text, Pressable, ScrollView, RefreshControl, Platform, ActivityIndicator, StyleSheet } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, Pressable, ScrollView, RefreshControl, Platform, ActivityIndicator, StyleSheet, AppState } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withRepeat, cancelAnimation, Easing } from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
 import { useSubscription } from '../../hooks/useSubscription';
 import { usePurchases, openManageSubscription } from '../../hooks/usePurchases';
 import { formatChargeDate, getSubscriptionDisplayStatus, PRICE_PER_YEAR, WHY_ITEMS } from '../../utils/trial';
 import { today } from '../../utils/format';
-import { BackIcon, CheckIcon } from '../../components/icons';
+import { BackIcon, CheckIcon, RefreshIcon } from '../../components/icons';
 import { PaymentProcessing } from '../../components/PaymentProcessing';
+import { SETTLE_EASING } from '../../components/AmountField';
 import { Card, Divider, SectionLabel } from '../../components/SettingsUI';
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Confirms a tap actually did something — spins for a minimum stretch (even
+// if the real refresh() resolves near-instantly, same "hold it long enough
+// to read as deliberate" reasoning as the avatar-upload spinner in
+// account.js), then settles into a plain "Refreshed" label for a few
+// seconds before quietly reverting. Icon and label never coexist — one
+// fades out, then the other fades in — so there's no dual-layout trick to
+// get wrong, just a sequential crossfade.
+const REFRESH_MIN_SPIN_MS = 2000;
+const REFRESH_HOLD_MS = 5000;
+const REFRESH_FADE_MS = 280;
+
+function RefreshAction({ onRefresh }) {
+  const [phase, setPhase] = useState('icon'); // 'icon' | 'label' — which one is actually mounted right now
+  const [busy, setBusy] = useState(false);
+  const rotation = useSharedValue(0);
+  const opacity = useSharedValue(1);
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
+
+  const iconStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ rotate: `${rotation.value}deg` }],
+  }));
+  const labelStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+
+  async function handlePress() {
+    if (busy) return;
+    setBusy(true);
+
+    rotation.value = 0;
+    rotation.value = withRepeat(withTiming(360, { duration: 700, easing: Easing.linear }), -1, false);
+
+    await Promise.all([sleep(REFRESH_MIN_SPIN_MS), onRefresh()]);
+    if (!mountedRef.current) return;
+
+    // Icon → label
+    opacity.value = withTiming(0, { duration: REFRESH_FADE_MS, easing: SETTLE_EASING });
+    await sleep(REFRESH_FADE_MS);
+    if (!mountedRef.current) return;
+    cancelAnimation(rotation);
+    setPhase('label');
+    opacity.value = withTiming(1, { duration: REFRESH_FADE_MS, easing: SETTLE_EASING });
+
+    await sleep(REFRESH_HOLD_MS);
+    if (!mountedRef.current) return;
+
+    // Label → icon
+    opacity.value = withTiming(0, { duration: REFRESH_FADE_MS, easing: SETTLE_EASING });
+    await sleep(REFRESH_FADE_MS);
+    if (!mountedRef.current) return;
+    rotation.value = 0;
+    setPhase('icon');
+    opacity.value = withTiming(1, { duration: REFRESH_FADE_MS, easing: SETTLE_EASING });
+
+    setBusy(false);
+  }
+
+  return (
+    <Pressable
+      onPress={handlePress}
+      disabled={busy}
+      hitSlop={10}
+      accessibilityRole="button"
+      accessibilityLabel={phase === 'label' ? 'Refreshed' : 'Refresh subscription status'}
+    >
+      {phase === 'icon' ? (
+        <Animated.View style={iconStyle}>
+          <RefreshIcon size={13} />
+        </Animated.View>
+      ) : (
+        <Animated.Text
+          style={[labelStyle, { fontSize: 11, fontWeight: '500', color: 'rgba(74,222,128,0.9)' }]}
+        >
+          Refreshed
+        </Animated.Text>
+      )}
+    </Pressable>
+  );
+}
 
 export default function SubscriptionPage() {
   const router = useRouter();
@@ -17,6 +102,33 @@ export default function SubscriptionPage() {
   const { isOnline, notifyOffline } = useNetwork();
   const { subscription, loading, refresh } = useSubscription(user);
   const { getOfferings, purchasePackage, restorePurchases } = usePurchases(user?.id);
+
+  // useSubscription only fetches once on this screen's own mount — returning
+  // here after cancelling via "Manage Subscription" (a native OS sheet, not
+  // an in-app screen, so this component never unmounts) otherwise left this
+  // page showing stale pre-cancellation state, e.g. still promising "You'll
+  // be charged ₹499 on [date]" for a subscription that was just cancelled.
+  // Same fix account.js already applies to its own "Current Plan" pill for
+  // the identical reason — refetching on every focus keeps it current the
+  // moment you actually land back here.
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh])
+  );
+
+  // Belt to useFocusEffect's suspenders: showManageSubscriptions() presents
+  // a native OS sheet, not an in-app screen, and it's not guaranteed to
+  // register as a React Navigation blur/focus transition the same way
+  // moving between app screens does — so the moment that actually reliably
+  // fires either way is the app itself coming back to the foreground.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refresh();
+    });
+    return () => sub.remove();
+  }, [refresh]);
+
   const [processingVisible, setProcessingVisible] = useState(false);
   const [purchaseSucceeded, setPurchaseSucceeded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -187,7 +299,21 @@ export default function SubscriptionPage() {
         ) : (
         <View className="px-4 pb-16" style={{ gap: 12 }}>
           <View>
-            <SectionLabel>Current Plan</SectionLabel>
+            <SectionLabel
+              action={
+                // A visible, always-tappable escape hatch — pull-to-refresh
+                // works but isn't discoverable, and this is exactly the row
+                // that can briefly lag behind a cancellation (see the
+                // useFocusEffect/AppState comments above). Calls refresh()
+                // directly, not onRefresh — the latter also flips on the
+                // ScrollView's native pull-to-refresh spinner, which would
+                // show up redundantly alongside this icon's own animation
+                // for a single tap.
+                <RefreshAction onRefresh={refresh} />
+              }
+            >
+              Current Plan
+            </SectionLabel>
             <Card>
               {status === 'expired' ? (
                 <View className="px-4 py-[18px] items-center">

@@ -9,6 +9,24 @@ export function Spinner({ size = 16, color = '#ffffff', trackColor = 'rgba(255,2
   );
 }
 
+// A circular arrow, not the Spinner above — Spinner is a loading state
+// (implies "something is happening right now"), this is a static tappable
+// affordance ("tap to refresh"). Reusing Spinner for both would make an
+// idle refresh button look like it's mid-load.
+export function RefreshIcon({ size = 14, color = 'rgba(255,255,255,0.4)' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <Path
+        d="M13.5 8a5.5 5.5 0 1 1-1.72-4"
+        stroke={color}
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+      <Path d="M13.5 2.5v3.2h-3.2" stroke={color} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
 export function CheckIcon({ size = 36, color = '#4ade80' }) {
   // Centered on the path's own bounding box (10.5,12.5)-(25.5,23.5), not just
   // the viewBox — the original points left it visibly off-center inside any
