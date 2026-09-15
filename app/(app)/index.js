@@ -158,6 +158,40 @@ export default function Dashboard() {
   // usage below for why this matters.
   const [addModalClosed, setAddModalClosed] = useState(true);
 
+  // Adding a transaction updates `transactions` optimistically the instant
+  // it's called — well before AddModal's own close animation even starts,
+  // since the sheet is still fully open at that point. Left alone, that
+  // means the amount/chart/list animations that are SUPPOSED to be the
+  // reveal all run to completion hidden behind the still-closing sheet, so
+  // by the time it's gone the screen just looks like it already "hard cut"
+  // to the new state. `holdReveal` freezes what SummaryCard/TransactionList
+  // are shown (via `displayTransactions` below) to a snapshot taken when
+  // the sheet opens, only letting the real (already-updated) data through
+  // once the sheet has actually finished closing — same stash-then-fire
+  // shape as pendingBudgetCrossedRef below, timed off the same
+  // addModalClosed flip. Only set from openAdd (not openEdit) — an edit's
+  // existing instant-update behavior is untouched.
+  const frozenTransactionsRef = useRef(null);
+  const [holdReveal, setHoldReveal] = useState(false);
+  // The transaction that reveal just brought in — TransactionList uses this
+  // to play a one-off entrance (fade + push the rows below it down) on
+  // exactly that row, not on every row a tab switch happens to re-key.
+  const [justAddedId, setJustAddedId] = useState(null);
+
+  useEffect(() => {
+    if (!addModalClosed || !holdReveal) return;
+    const beforeIds = new Set((frozenTransactionsRef.current || []).map(tx => tx.id));
+    const added = transactions.find(tx => !beforeIds.has(tx.id));
+    setHoldReveal(false);
+    frozenTransactionsRef.current = null;
+    if (!added) return;
+    setJustAddedId(added.id);
+    const t = setTimeout(() => setJustAddedId(null), 1000);
+    return () => clearTimeout(t);
+  }, [addModalClosed, holdReveal, transactions]);
+
+  const displayTransactions = holdReveal && frozenTransactionsRef.current ? frozenTransactionsRef.current : transactions;
+
   // Mirrors web App.jsx's popup-trigger effect, rewritten against
   // AsyncStorage (async) instead of localStorage (sync). The daily insight
   // itself moved to a server-side push notification (check-daily-insights
@@ -423,7 +457,9 @@ export default function Dashboard() {
     setAddModalClosed(false);
     setEditData(null);
     setModalOpen(true);
-  }, [trialInfo.status]);
+    frozenTransactionsRef.current = transactions;
+    setHoldReveal(true);
+  }, [trialInfo.status, transactions]);
 
   const closeProRequired = useCallback(() => setProRequired(false), []);
   const subscribeFromProRequired = useCallback(() => {
@@ -559,7 +595,7 @@ export default function Dashboard() {
       />
 
       <SummaryCard
-        transactions={transactions}
+        transactions={displayTransactions}
         chartTab={chartTab}
         timeRange={timeRange}
         onTimeRangeChange={handleTimeRangeChange}
@@ -575,7 +611,8 @@ export default function Dashboard() {
 
       <TransactionList
         ref={transactionListRef}
-        transactions={transactions}
+        transactions={displayTransactions}
+        justAddedId={justAddedId}
         activeTab={chartTab}
         chartTab={chartTab}
         selectedMonth={timeRange === 'month' ? currMonth : selectedMonth}

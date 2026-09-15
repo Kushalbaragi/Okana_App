@@ -1,14 +1,11 @@
-import { memo, useCallback, useEffect, useMemo } from 'react';
-import { View, Text, Pressable } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withDelay, withTiming, Easing } from 'react-native-reanimated';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import { View, Text, Pressable, Platform } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withDelay, withSpring, withTiming, Easing } from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
 import BarChart from './BarChart';
 import LineChart from './LineChart';
 import { GlassPressable } from './Glass';
 import {
-  formatCurrency,
-  getDelta,
-  getDayDelta,
   getMonthTotal,
   getMonthlyTotals,
   getDailyTotals,
@@ -16,7 +13,6 @@ import {
   getLifetimeMonthly,
   getEarliestDate,
   currentMonthYear,
-  toDateStr,
 } from '../utils/format';
 
 const LIFETIME_YEARLY_THRESHOLD = 2; // years of history before "All Time" switches from monthly to yearly bars
@@ -29,56 +25,120 @@ const fmt = new Intl.NumberFormat('en-IN', {
   minimumFractionDigits: 0, maximumFractionDigits: 0,
 });
 
-// Matches web's `.digit-up` keyframe exactly (translateY 18%→0, 500ms,
-// cubic-bezier(0.16,1,0.3,1) — an ease-out-expo "settle" feel) rather than
-// Reanimated's generic FadeInUp preset, which uses a different curve/travel
-// distance and reads as a slightly different, less "settled" motion.
-const DIGIT_EASING = Easing.bezier(0.16, 1, 0.3, 1);
+// 'ui-rounded', not 'SF Pro Rounded' (that name doesn't resolve — see
+// AmountField.js's own ROUNDED_FONT comment) — used for the headline amount
+// to match the rounded numeral style elsewhere in the app.
+const ROUNDED_FONT = Platform.OS === 'ios' ? 'ui-rounded' : undefined;
 
-function Digit({ char, delay, distance, style, className }) {
-  const progress = useSharedValue(0);
+// Own local digit, not AmountField's shared AmountDigit — that one scales
+// in from its own center with a blur; this headline instead drops each
+// digit in from above into its resting spot. Kept separate so tuning this
+// doesn't also change the Add Transaction field's own already-tuned
+// animation.
+//
+// Fade/blur and fall are driven by two separate values, not one — opacity
+// riding directly on the same spring as the bounce read as rough/uneven
+// (a spring's value isn't a smooth monotonic ramp, it overshoots and
+// wobbles, which is exactly what you want for a *position* bounce but not
+// for a fade). fadeProgress is a plain eased withTiming, so the fade/blur
+// resolve smoothly on their own; fallProgress is the spring, only ever
+// driving translateY, so its overshoot reads as a bounce in position, not
+// a flicker in opacity.
+const HEADLINE_FALL_DISTANCE = 4;
+const HEADLINE_BLUR_MAX = 14; // same soft-halo cap as AmountField's own tuning
+const HEADLINE_FADE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
+const HEADLINE_EXIT_DURATION = 220;
+
+// A digit's own remount (key={str} on the row below unmounts every old
+// digit at once) used to just vanish outright — no exiting prop meant an
+// instant cut, at odds with how gently the entrance fades in. A plain
+// opacity fade-out here is what makes the old value read as dissolving
+// into/behind the new one rather than being yanked away.
+function headlineDigitExiting() {
+  'worklet';
+  return {
+    initialValues: { opacity: 1 },
+    animations: {
+      opacity: withTiming(0, { duration: HEADLINE_EXIT_DURATION, easing: Easing.out(Easing.cubic) }),
+    },
+  };
+}
+
+function HeadlineDigit({ char, delay, color, fontSize, lineHeight, fontWeight, letterSpacing }) {
+  const fadeProgress = useSharedValue(0);
+  const fallProgress = useSharedValue(0);
 
   useEffect(() => {
-    progress.value = 0;
-    progress.value = withDelay(delay, withTiming(1, { duration: 500, easing: DIGIT_EASING }));
+    fadeProgress.value = 0;
+    fallProgress.value = 0;
+    fadeProgress.value = withDelay(delay, withTiming(1, { duration: 340, easing: HEADLINE_FADE_EASING }));
+    // Underdamped on purpose — this is what makes it overshoot slightly
+    // past its resting position and settle back, the "subtle bounce" at
+    // the end of the fall, instead of arriving and stopping dead. Lower
+    // stiffness + a touch more damping than before — a snappier spring
+    // here made the overshoot feel like a sharp flick rather than a
+    // smooth settle.
+    fallProgress.value = withDelay(delay, withSpring(1, { damping: 14, stiffness: 110, mass: 0.6 }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [char]);
 
-  const animStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [{ translateY: (1 - progress.value) * distance }],
-  }));
+  const style = useAnimatedStyle(() => {
+    const linearBlurT = Math.min(fadeProgress.value / 0.75, 1);
+    const blurT = linearBlurT * linearBlurT * (3 - 2 * linearBlurT);
+    // The spring driving the fall already overshoots past 1 before
+    // settling — reusing that same overshoot for a tiny scale pop (only
+    // once fallProgress passes 1) makes the bounce read clearly as a
+    // bounce instead of being a barely-visible few pixels of vertical
+    // motion on its own. Squared, not a plain linear clamp — a bare
+    // Math.max(0, x) has a sharp slope change right at the crossover
+    // (flat, then instantly ramping), which is exactly what read as a
+    // snap instead of a smooth pop. Squaring tapers the onset in gently.
+    const overshoot = Math.max(0, fallProgress.value - 1);
+    const scaleBounce = 1 + overshoot * overshoot * 2.2;
+    return {
+      opacity: fadeProgress.value,
+      transform: [
+        { translateY: (1 - fallProgress.value) * -HEADLINE_FALL_DISTANCE },
+        { scale: scaleBounce },
+      ],
+      textShadowRadius: Math.max(0, (1 - blurT) * HEADLINE_BLUR_MAX),
+    };
+  });
 
   return (
-    <Animated.Text className={className} style={[style, animStyle]}>
-      {char === ' ' ? ' ' : char}
+    <Animated.Text
+      exiting={headlineDigitExiting}
+      style={[
+        {
+          fontSize, lineHeight, fontWeight, color, letterSpacing, fontFamily: ROUNDED_FONT,
+          textShadowColor: color, textShadowOffset: { width: 0, height: 0 },
+        },
+        style,
+      ]}
+    >
+      {char}
     </Animated.Text>
   );
 }
+
+const HEADLINE_STAGGER_STEP_MS = 36;
+const HEADLINE_STAGGER_CAP_MS = 300;
 
 function AnimatedAmount({ value, color }) {
   const str = fmt.format(value);
   return (
     <View className="flex-row" key={str}>
       {[...str].map((char, i) => (
-        <Digit
+        <HeadlineDigit
           key={i}
           char={char}
-          delay={i * 22}
-          distance={7}
-          className="font-bold tracking-tight"
-          style={{ color, fontSize: 38 }}
+          delay={Math.min(i * HEADLINE_STAGGER_STEP_MS, HEADLINE_STAGGER_CAP_MS)}
+          fontSize={44}
+          lineHeight={52}
+          fontWeight="600"
+          letterSpacing={-1}
+          color={color}
         />
-      ))}
-    </View>
-  );
-}
-
-function AnimatedDelta({ text, style }) {
-  return (
-    <View className="flex-row" key={text}>
-      {[...text].map((char, i) => (
-        <Digit key={i} char={char} delay={i * 20} distance={4} className="text-base" style={style} />
       ))}
     </View>
   );
@@ -91,7 +151,7 @@ function RangeSelector({ value, onChange, currentYear, currentMonth, light }) {
     { id: '5y',    label: 'All Time' },
   ];
   return (
-    <View className="flex-row items-center justify-center mt-4" style={{ gap: 8 }}>
+    <View className="flex-row items-center justify-center mt-6" style={{ gap: 8 }}>
       {options.map(opt => (
         value === opt.id ? (
           <GlassPressable
@@ -257,28 +317,9 @@ function SummaryCard({
     return arr.reduce((a, b) => a + b, 0);
   }, [chartTab, chartData, timeRange, transactions, selectedMonth, year, selectedPeriodIndex, selectedDay, overviewBreakdown]);
 
-  const delta = useMemo(() => {
-    if (chartTab === 'overview') return null;
-    if (timeRange === 'year' && selectedMonth != null) return getDelta(transactions, chartTab, selectedMonth, year);
-    // A specific day selected compares against the day before instead of
-    // the month-over-month comparison below — that one has nothing to do
-    // with the single day's amount now showing above it.
-    if (timeRange === 'month' && selectedDay != null) {
-      return getDayDelta(transactions, chartTab, toDateStr(new Date(currYear, currMonth, selectedDay)));
-    }
-    if (timeRange === 'month') return getDelta(transactions, chartTab, currMonth, currYear);
-    return null;
-  }, [chartTab, timeRange, transactions, selectedMonth, year, currMonth, currYear, selectedDay]);
-
   const isIncome    = chartTab === 'income';
   const isOverview  = chartTab === 'overview';
   const netPositive = displayAmount >= 0;
-
-  const deltaPositive = delta && delta.diff >= 0;
-  const deltaGood     = isIncome ? deltaPositive : !deltaPositive;
-  const arrow          = delta && delta.diff !== 0 ? (deltaPositive ? '↑' : '↓') : null;
-  const deltaText       = delta && delta.diff !== 0 ? formatCurrency(Math.abs(delta.diff)) : null;
-  const deltaColor      = deltaGood ? 'rgba(74,222,128,0.9)' : 'rgba(248,113,113,0.9)';
 
   const periodLabel = useMemo(() => {
     if (timeRange === 'month') {
@@ -352,58 +393,69 @@ function SummaryCard({
     timeRange === '5y' ? selectedPeriodIndex :
     -1;
 
+  // Very small, deliberately — a dip-and-recover on the chart's own
+  // opacity when switching between the September/2026/All Time pills
+  // (timeRange only, not every chartTab/Expense-Income-Overview switch).
+  // Never drops fully to 0 — that read as a bigger transition than this
+  // is meant to be; a shallow dip is enough to soften the swap without
+  // becoming its own moment.
+  const prevTimeRangeRef = useRef(timeRange);
+  const chartOpacity = useSharedValue(1);
+  useEffect(() => {
+    if (prevTimeRangeRef.current === timeRange) return;
+    prevTimeRangeRef.current = timeRange;
+    chartOpacity.value = 0.25;
+    chartOpacity.value = withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) });
+  }, [timeRange, chartOpacity]);
+  const chartAnimStyle = useAnimatedStyle(() => ({ opacity: chartOpacity.value }));
+
   return (
     <View className="mx-4 mb-3 p-5">
-      <Text className="text-base text-center mb-1" style={{ color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.40)' }}>{periodLabel}</Text>
+      <Animated.View style={chartAnimStyle}>
+        <Text className="text-base text-center mb-2" style={{ color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.40)' }}>{periodLabel}</Text>
 
-      <View className="items-center justify-center mb-2">
-        <AnimatedAmount value={Math.abs(displayAmount)} color={isOverview ? (netPositive ? '#4ade80' : '#f87171') : (light ? '#111111' : '#ffffff')} />
-      </View>
+        <View className="items-center justify-center mb-8">
+          <AnimatedAmount value={Math.abs(displayAmount)} color={isOverview ? (netPositive ? '#4ade80' : 'rgba(239,68,68,0.92)') : (light ? '#111111' : '#ffffff')} />
+        </View>
 
-      <View className="items-center justify-center mb-5" style={{ minHeight: 16 }}>
-        {isOverview ? null : deltaText ? (
-          <View className="flex-row items-center" style={{ gap: 3 }}>
-            <AnimatedDelta text={deltaText} style={{ color: deltaColor }} />
-            {arrow && <Text className="text-base font-medium" style={{ color: deltaColor }}>{arrow}</Text>}
-          </View>
-        ) : (
-          <Text className="text-base" style={{ color: light ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)' }}>—</Text>
-        )}
-      </View>
-
-      {isOverview ? (
-        // No `key={animKey}` — this used to force a full remount on every
-        // period switch (replaying LineChart's own one-time width reveal
-        // every time, see its own comment). Staying mounted across a
-        // switch is what lets that reveal genuinely only play once, while
-        // still updating the curve's actual shape/points instantly.
-        <LineChart
-          incomeData={lineChartData.income}
-          expenseData={lineChartData.expense}
-          labels={lineChartData.labels}
-          light={light}
-          activeIndex={chartActiveIndex}
-          onPointClick={onBarClick}
-          onDeselect={onDeselect}
-        />
-      ) : (
-        <BarChart
-          values={barValues}
-          labels={chartData.labels}
-          activeIndex={chartActiveIndex}
-          onBarClick={onBarClick}
-          onDeselect={onDeselect}
-          disabledAfterIndex={disabledAfterIndex}
-          disabledBeforeIndex={disabledBeforeIndex}
-          hideLabelAfterIndex={timeRange === '5y' && lifetimeGranularity === 'year' ? disabledAfterIndex : null}
-          isIncome={isIncome}
-          animKey={animKey}
-          labelStep={labelStep}
-          useSqrtScale={timeRange === 'month'}
-          noSpendDots={timeRange === 'month' && chartTab === 'expense'}
-          light={light}
-        />
-      )}
+        <View className="mt-4">
+          {isOverview ? (
+            // No `key={animKey}` — this used to force a full remount on
+            // every period switch (replaying LineChart's own one-time
+            // width reveal every time, see its own comment). Staying
+            // mounted across a switch is what lets that reveal genuinely
+            // only play once, while still updating the curve's actual
+            // shape/points instantly.
+            <LineChart
+              incomeData={lineChartData.income}
+              expenseData={lineChartData.expense}
+              labels={lineChartData.labels}
+              light={light}
+              activeIndex={chartActiveIndex}
+              onPointClick={onBarClick}
+              onDeselect={onDeselect}
+            />
+          ) : (
+            <BarChart
+              values={barValues}
+              labels={chartData.labels}
+              activeIndex={chartActiveIndex}
+              onBarClick={onBarClick}
+              onDeselect={onDeselect}
+              disabledAfterIndex={disabledAfterIndex}
+              disabledBeforeIndex={disabledBeforeIndex}
+              hideLabelAfterIndex={timeRange === '5y' && lifetimeGranularity === 'year' ? disabledAfterIndex : null}
+              isIncome={isIncome}
+              animKey={animKey}
+              labelStep={labelStep}
+              useSqrtScale={timeRange === 'month'}
+              noSpendDots={timeRange === 'month' && chartTab === 'expense'}
+              showAverage={timeRange === 'month' || timeRange === 'year'}
+              light={light}
+            />
+          )}
+        </View>
+      </Animated.View>
 
       <RangeSelector value={timeRange} onChange={onTimeRangeChange} currentYear={currYear} currentMonth={currMonth} light={light} />
     </View>

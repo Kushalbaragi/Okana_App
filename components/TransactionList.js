@@ -1,10 +1,33 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import { View, Text, SectionList, Pressable } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withDelay, withTiming } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withDelay, withTiming, LinearTransition } from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
 import TransactionItem from './TransactionItem';
 import { monthLabel } from '../utils/format';
 import { SETTLE_EASING } from './AmountField';
+
+// Same spring shape as AmountField's AMOUNT_LAYOUT_TRANSITION (proven
+// smooth for this app's other retriggered repositioning), tuned a touch
+// slower — a taller list row settling into place reads better a bit more
+// gently than a narrow amount digit sliding.
+const ROW_LAYOUT_TRANSITION = LinearTransition.springify().damping(22).stiffness(180).mass(0.6);
+
+// Plays once, only for the row TransactionList is told just got added (see
+// justAddedId) — a plain fade + small rise, no stagger, since there's only
+// ever one of these at a time. Deliberately not reused for every row's
+// mount (e.g. a tab switch remounting a whole new filtered set) — that's
+// exactly the "real per-row Reanimated setup cost" RevealRow's own comment
+// already flags as not worth paying on every switch.
+function rowEntering() {
+  'worklet';
+  return {
+    initialValues: { opacity: 0, transform: [{ translateY: 14 }] },
+    animations: {
+      opacity: withTiming(1, { duration: 320, easing: SETTLE_EASING }),
+      transform: [{ translateY: withTiming(0, { duration: 320, easing: SETTLE_EASING }) }],
+    },
+  };
+}
 
 function ListHeaderFor(light) {
   return (
@@ -64,6 +87,12 @@ function TransactionList({
   // edit/delete" tour step. Optional; TransactionList itself doesn't know
   // or care about tour state, it just exposes the target.
   firstRowRef,
+  // Id of a transaction that was just added — that one row plays
+  // rowEntering (fade + rise) and everything below it pushes down via
+  // ROW_LAYOUT_TRANSITION. Every other row's mount (e.g. a tab switch's
+  // full re-filter) stays exactly as cheap as before — see rowEntering's
+  // own comment.
+  justAddedId,
 }, ref) {
   const bgColor = light ? '#FAFAF8' : '#0a0a0a';
   const isOverview = chartTab === 'overview';
@@ -204,8 +233,10 @@ function TransactionList({
           // within its own section.
           const isFirstOverall = section === sections[0] && index === 0;
           const card = (
-            <View
+            <Animated.View
               ref={isFirstOverall ? firstRowRef : undefined}
+              layout={ROW_LAYOUT_TRANSITION}
+              entering={item.id === justAddedId ? rowEntering : undefined}
               style={{
                 backgroundColor: bgColor,
                 overflow: 'hidden',
@@ -225,7 +256,7 @@ function TransactionList({
                 onCardPress={onCardPress}
                 light={light}
               />
-            </View>
+            </Animated.View>
           );
           // Only the first paint's top rows animate — once hasRevealedRef
           // flips (right after that first paint), every later render, for

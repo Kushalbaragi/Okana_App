@@ -275,7 +275,10 @@ export default function SubscriptionPage() {
       >
         <View className="flex-row items-center gap-2 px-4 pt-14 pb-4">
           <Pressable
-            onPress={() => router.back()}
+            // Same canGoBack() guard as account.js's back button, and for
+            // the same reason — a reload/deep-link landing directly here
+            // would otherwise leave back() silently doing nothing.
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/(app)'))}
             className="w-9 h-9 items-center justify-center rounded-xl"
             accessibilityRole="button"
             accessibilityLabel="Go back"

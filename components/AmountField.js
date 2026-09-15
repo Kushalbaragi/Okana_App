@@ -1,17 +1,17 @@
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, Easing, LinearTransition } from 'react-native-reanimated';
-
-// SF Pro Rounded — a system font on iOS, so no bundling/download needed,
-// but only iOS actually has it; Android has no equivalent rounded design
-// and just falls back to its own default (Roboto) when this doesn't
-// resolve to anything. Scoped to the amount digits only, not the app's
-// typeface in general.
-const ROUNDED_FONT = Platform.OS === 'ios' ? 'SF Pro Rounded' : undefined;
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring, withDelay, Easing, LinearTransition } from 'react-native-reanimated';
 
 // Same ease-out-expo "settle" feel used for reveals throughout the app
 // (welcome flow, account.js, onboarding).
 export const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
+
+// iOS-only rounded system-font design — 'SF Pro Rounded' is NOT a resolvable
+// PostScript name (UIFont(name:) returns nil for it), which silently fell
+// back to plain SF Pro. 'ui-rounded' is RN's actual identifier for this
+// design variant. No Android equivalent (Apple's font license doesn't
+// permit redistributing SF Pro for use off Apple platforms).
+const ROUNDED_FONT = Platform.OS === 'ios' ? 'ui-rounded' : undefined;
 
 // Shared by every element in an amount row (₹ symbol included) — the row
 // is center-justified, so adding a digit grows its total width and shifts
@@ -33,7 +33,11 @@ export const AMOUNT_LAYOUT_TRANSITION = LinearTransition.springify().damping(18)
 
 const ENTER_DURATION = 400;
 const EXIT_DURATION = 320;
-const BLUR_MAX = 30;
+// Lower than it looks like it should be — textShadowRadius is a shadow/glow
+// around the glyph's outline, not a true blur of its pixels, so a large
+// radius reads as a harsh bright halo rather than something soft/defocused.
+// Keeping it small is what makes it pass as "soft" instead of "glowing".
+const BLUR_MAX = 14;
 // How far below its resting spot a digit starts before rising in — 16px
 // reads as barely-there next to a 72px digit, so this is bumped up to
 // actually register as "rising from below" rather than popping in place.
@@ -58,16 +62,17 @@ function digitExiting() {
         { scale: withTiming(0.5, { duration: EXIT_DURATION, easing: Easing.in(Easing.cubic) }) },
         { translateY: withTiming(-16, { duration: EXIT_DURATION, easing: Easing.in(Easing.cubic) }) },
       ],
-      textShadowRadius: withTiming(BLUR_MAX, { duration: EXIT_DURATION * 0.75 }),
+      textShadowRadius: withTiming(BLUR_MAX, { duration: EXIT_DURATION * 0.75, easing: Easing.out(Easing.cubic) }),
     },
   };
 }
 
 // Each newly-typed digit blurs into focus rather than just appearing flat —
-// starts slightly enlarged, near-transparent, and genuinely blurred (RN's
-// textShadowRadius is a real Gaussian blur on the glyph itself, not a fake),
-// rising up from below as it fades in, then resolves to sharp/full-size/
-// full-opacity. Only the character that just appeared plays this —
+// starts slightly enlarged, near-transparent, and softly glowing (a
+// textShadowRadius halo standing in for a real blur — RN's Text has no
+// actual pixel-blur filter), rising up from below as it fades in, then
+// resolves to sharp/full-size/full-opacity. Only the character that just
+// appeared plays this —
 // existing digits are stable-keyed by index so they never remount/replay
 // it, and it's skipped entirely when the field is populated
 // programmatically (opening pre-filled) rather than typed. Backspacing a
@@ -80,7 +85,7 @@ function digitExiting() {
 // *old* value gone at once so the *new* one's own entrance can start right
 // away, rather than waiting out a whole exit animation on a value the user
 // already moved on from.
-export function AmountDigit({ char, animateIn, color = '#ffffff', fontSize = 48, lineHeight = 56, fontWeight = '600', delay = 0, instantExit = false }) {
+export function AmountDigit({ char, animateIn, color = '#ffffff', fontSize = 48, lineHeight = 56, fontWeight = '600', letterSpacing, delay = 0, instantExit = false }) {
   const fadeProgress = useSharedValue(animateIn ? 0 : 1);
 
   useEffect(() => {
@@ -95,7 +100,10 @@ export function AmountDigit({ char, animateIn, color = '#ffffff', fontSize = 48,
     // the way through — not tied to its own separate timer, derived
     // straight from the same progress driving fade/scale, so it's always
     // exactly "gone by three-quarters" regardless of duration tuning.
-    const blurT = Math.min(fadeProgress.value / 0.75, 1);
+    // Smoothstepped (not linear) so it tapers off gradually at both ends
+    // instead of dissolving at a constant rate then hard-stopping at 0.
+    const linearBlurT = Math.min(fadeProgress.value / 0.75, 1);
+    const blurT = linearBlurT * linearBlurT * (3 - 2 * linearBlurT);
     return {
       opacity: fadeProgress.value,
       transform: [
@@ -112,7 +120,7 @@ export function AmountDigit({ char, animateIn, color = '#ffffff', fontSize = 48,
       exiting={instantExit ? undefined : digitExiting}
       style={[
         {
-          fontSize, lineHeight, fontWeight, color, fontFamily: ROUNDED_FONT,
+          fontSize, lineHeight, fontWeight, color, letterSpacing, fontFamily: ROUNDED_FONT,
           textShadowColor: color, textShadowOffset: { width: 0, height: 0 },
         },
         style,
@@ -177,7 +185,6 @@ function ZeroPlaceholder({ fontSize, lineHeight, fontWeight, color, delayed }) {
 const SCALE_START_DIGITS = 4;
 const SCALE_END_DIGITS = 8; // matches nextAmountValue's entry cap
 const MIN_SCALE = 0.65;
-const SCALE_DURATION = 220;
 
 export function AmountRow({ amount, prevAmountLength, skipDigitAnim, digitFontSize = 48, lineHeight = 56, light = false, zeroColor, weight = '600' }) {
   const digitColor = zeroColor ?? (light ? '#111111' : '#ffffff');
@@ -192,9 +199,15 @@ export function AmountRow({ amount, prevAmountLength, skipDigitAnim, digitFontSi
     ? 1
     : Math.max(MIN_SCALE, 1 - (Math.min(rawDigitCount, SCALE_END_DIGITS) - SCALE_START_DIGITS) * ((1 - MIN_SCALE) / span));
 
+  // Spring, not duration+easing — this retriggers on every keystroke (a
+  // digit added or removed), same as AMOUNT_LAYOUT_TRANSITION above, and
+  // for the same reason: a fixed-duration curve resets to zero velocity on
+  // each restart, which read as a hard, stepped shrink rather than one
+  // continuous scale-down. A spring picks up from whatever speed it's
+  // already moving at instead.
   const scale = useSharedValue(targetScale);
   useEffect(() => {
-    scale.value = withTiming(targetScale, { duration: SCALE_DURATION, easing: SETTLE_EASING });
+    scale.value = withSpring(targetScale, { damping: 18, stiffness: 220, mass: 0.5 });
   }, [targetScale, scale]);
   const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 

@@ -111,7 +111,13 @@ export default function OtpScreen() {
   return (
     <View className="flex-1 bg-bg">
       <View className="flex-row items-center px-4" style={{ paddingTop: insets.top + 8, paddingBottom: 8 }}>
-        <Pressable onPress={() => router.back()} className="w-9 h-9 items-center justify-center rounded-xl">
+        <Pressable
+          // Same canGoBack() guard as account.js/subscription.js's back
+          // buttons — a reload or a direct deep-link to /otp would
+          // otherwise leave back() silently doing nothing.
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/(auth)/login'))}
+          className="w-9 h-9 items-center justify-center rounded-xl"
+        >
           <BackIcon />
         </Pressable>
       </View>

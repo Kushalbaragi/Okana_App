@@ -1,6 +1,7 @@
 import { memo, useEffect, Fragment } from 'react';
 import Svg, { Line, Rect, Circle, Text as SvgText } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedProps, withDelay, withTiming, Easing } from 'react-native-reanimated';
+import { formatCurrency } from '../utils/format';
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -17,7 +18,7 @@ const CHART_W    = 264;
 const BAR_STAGGER_STEP_MS = 55;
 const BAR_STAGGER_CAP_MS  = 450;
 
-function Bar({ x, width, rx, targetHeight, delay, fill }) {
+function Bar({ x, width, rx, targetHeight, delay, fill, maskColor }) {
   // Animates the actual pixel height directly (not a 0-1 progress scaled by
   // targetHeight). Always grows from 0 — every period switch mounts a
   // genuinely fresh Bar instance (see the key in the render loop below),
@@ -44,7 +45,8 @@ function Bar({ x, width, rx, targetHeight, delay, fill }) {
   // `origin` prop (to avoid animating layout props every frame) — on native
   // it didn't anchor where expected, so bars grew from a fixed top edge
   // downward instead of from the baseline upward. Animating height/y
-  // directly is the reliable way to get "grows from the bottom" here.
+  // directly (here, via the path's own d string) is the reliable way to
+  // get "grows from the bottom" here.
   const animatedProps = useAnimatedProps(() => ({
     height: animatedHeight.value,
     y: BAR_HEIGHT - animatedHeight.value,
@@ -52,14 +54,19 @@ function Bar({ x, width, rx, targetHeight, delay, fill }) {
 
   // No onPress here — see the static touch-target Rect rendered alongside
   // this in BarChart below, and the comment on it explaining why.
+  //
+  // Two stacked rects, not one: `fill` is semi-transparent (the dim/active
+  // distinction), so on its own it lets whatever's drawn behind it —
+  // namely the average line — show through instead of being covered. The
+  // first rect is an opaque, background-colored mask in the exact same
+  // shape, painted first so it actually blocks the line; the real
+  // (semi-transparent) colored rect draws on top of that for the intended
+  // look, identical to before everywhere the mask has nothing to hide.
   return (
-    <AnimatedRect
-      x={x}
-      width={width}
-      rx={rx}
-      fill={fill}
-      animatedProps={animatedProps}
-    />
+    <Fragment>
+      <AnimatedRect x={x} width={width} rx={rx} fill={maskColor} animatedProps={animatedProps} />
+      <AnimatedRect x={x} width={width} rx={rx} fill={fill} animatedProps={animatedProps} />
+    </Fragment>
   );
 }
 
@@ -86,7 +93,7 @@ function NoSpendDot({ cx, cy, r, fill, delay }) {
 // don't correspond to a real period at all — those keep their empty slot's
 // spacing but lose the label, since a label there isn't "a day that hasn't
 // happened yet," it's not a period the account will ever have.
-function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false }) {
+function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, showAverage = false }) {
   const n       = values.length;
   const GROUP_W = CHART_W / n;
   const BAR_W   = Math.min(16, Math.max(6, GROUP_W - 10));
@@ -94,11 +101,53 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
   const svgH    = BAR_HEIGHT + 22;
   const noSpendDotColor = light ? 'rgba(34,197,94,0.7)' : 'rgba(74,222,128,0.75)';
 
-  const activeColor = isIncome ? 'rgba(22,163,74,0.95)' : 'rgba(255,59,48,0.92)';
-  const dimColor    = isIncome ? 'rgba(22,163,74,0.62)' : 'rgba(255,59,48,0.56)';
+  // Matches LineChart's own income/expense colors (#4ade80 / rgba(248,113,
+  // 113,...)) — bars previously used a darker green (#16A34A) and the iOS
+  // system red (255,59,48), neither of which matched the rest of the app.
+  const activeColor = isIncome ? 'rgba(74,222,128,0.95)' : 'rgba(239,68,68,0.92)';
+  const dimColor    = isIncome ? 'rgba(74,222,128,0.62)' : 'rgba(239,68,68,0.56)';
   const gridColor       = light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)';
   const labelActiveColor = light ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.85)';
   const labelDimColor    = light ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.22)';
+  // Same card background the bars themselves sit on (matches the bg/light
+  // pair used everywhere else in the app, e.g. TransactionItem) — used as
+  // an opaque mask under each bar so the average line actually disappears
+  // behind a taller bar instead of showing through its semi-transparent
+  // fill. See Bar's own comment.
+  const bgColor = light ? '#FAFAF8' : '#0a0a0a';
+  // A touch more visible than the baseline grid line (0.10) — it needs to
+  // read as an intentional reference mark, not another faint ruled line —
+  // but still clearly secondary to the bars themselves, which is also why
+  // it's drawn before them below: a bar taller than the average visually
+  // covers the line right where that's true, rather than the line cutting
+  // across on top of every bar regardless of whether that bar is the one
+  // the average is even about.
+  const avgLineColor  = light ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.12)';
+  const avgLabelColor = light ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.30)';
+
+  // Only real periods count — the same start/end bounds disabledBefore/
+  // AfterIndex already use to mark "before the account existed" and
+  // "hasn't happened yet" bars. A genuine no-spend day inside that range
+  // still counts as a real 0, same as it does everywhere else in the app;
+  // it's only padding outside the range that's excluded.
+  let avgY = null;
+  let avgLabel = null;
+  let avgLineEndX = CHART_W;
+  if (showAverage) {
+    const startIdx = disabledBeforeIndex ?? 0;
+    const endIdx = disabledAfterIndex ?? (n - 1);
+    if (endIdx >= startIdx) {
+      const realValues = values.slice(startIdx, endIdx + 1);
+      const avg = realValues.reduce((a, b) => a + b, 0) / realValues.length;
+      const avgH = Math.round(useSqrtScale ? Math.sqrt(avg / maxVal) * BAR_HEIGHT : (avg / maxVal) * BAR_HEIGHT);
+      avgY = BAR_HEIGHT - avgH;
+      avgLabel = `Avg ${formatCurrency(avg)}`;
+      // Rough per-character estimate at this fontSize (8) — the line stops
+      // short of the label's own width (plus a small gap) instead of
+      // running the dashes straight through the text underneath it.
+      avgLineEndX = CHART_W - avgLabel.length * 4.3 - 6;
+    }
+  }
 
   return (
     <Svg viewBox={`0 0 ${CHART_W} ${svgH}`} style={{ width: '100%', aspectRatio: CHART_W / svgH }}>
@@ -107,6 +156,15 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
       )}
 
       <Line x1={0} y1={BAR_HEIGHT + 2} x2={CHART_W} y2={BAR_HEIGHT + 2} stroke={gridColor} strokeWidth="0.8" strokeDasharray="2 3" />
+
+      {/* Just the line here, drawn before the bars below (not after) so it
+          renders behind them — see avgLineColor's comment above and Bar's
+          own mask-rect comment for how a taller bar actually hides it
+          instead of just showing through. The label itself is drawn last,
+          after every bar — see the block at the bottom of this Svg. */}
+      {avgY != null && (
+        <Line x1={0} y1={avgY} x2={avgLineEndX} y2={avgY} stroke={avgLineColor} strokeWidth="1" strokeDasharray="3 3" />
+      )}
 
       {values.map((v, i) => {
         const x          = i * GROUP_W + (GROUP_W - BAR_W) / 2;
@@ -144,6 +202,7 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
                 targetHeight={h}
                 delay={Math.min(i * BAR_STAGGER_STEP_MS, BAR_STAGGER_CAP_MS)}
                 fill={isActive ? activeColor : dimColor}
+                maskColor={bgColor}
               />
             ) : (
               <Rect x={x} y={BAR_HEIGHT - 2} width={BAR_W} height={2} rx={1} fill="transparent" />
@@ -203,6 +262,16 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
           </Fragment>
         );
       })}
+
+      {/* Drawn last, after every bar, so it stays legible even when the
+          last several days' bars are tall enough to reach into its row —
+          only the reference line itself (above) respects bar height, the
+          text is exempt from being covered. */}
+      {avgY != null && (
+        <SvgText x={CHART_W} y={avgY + 3} textAnchor="end" fontSize="8" fill={avgLabelColor}>
+          {avgLabel}
+        </SvgText>
+      )}
     </Svg>
   );
 }

@@ -977,7 +977,12 @@ export default function AccountPage() {
       <ScrollView showsVerticalScrollIndicator={false}>
         <View className="flex-row items-center gap-2 px-4 pt-14 pb-4">
           <Pressable
-            onPress={() => router.back()}
+            // canGoBack() guards against a genuinely empty stack — reached
+            // this screen with nothing behind it (a reload mid-navigation
+            // in dev, or in production a deep-link that lands here
+            // directly) — back() would otherwise silently no-op, leaving a
+            // dead-looking button with no dev warning to notice by.
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/(app)'))}
             className="w-9 h-9 items-center justify-center rounded-xl"
             accessibilityRole="button"
             accessibilityLabel="Go back"
