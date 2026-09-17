@@ -42,7 +42,8 @@
       "expo-document-picker",
       "expo-notifications",
       "expo-audio",
-      "@sentry/react-native/expo"
+      "@sentry/react-native/expo",
+      "expo-localization"
     ],
     "extra": {
       "router": {},

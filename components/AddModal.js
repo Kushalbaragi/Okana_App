@@ -1,9 +1,9 @@
 import { memo, useCallback, useState, useEffect, useRef } from 'react';
-import { Modal, View, Text, TextInput, Pressable, ScrollView, StyleSheet, Keyboard, useWindowDimensions } from 'react-native';
+import { Modal, View, Text, TextInput, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, Easing } from 'react-native-reanimated';
 import Svg, { Rect, Line } from 'react-native-svg';
 import { today, shiftDate } from '../utils/format';
 import CalendarPicker from './CalendarPicker';
@@ -12,19 +12,24 @@ import { NumericKeypad, nextAmountValue } from './NumericKeypad';
 import { AmountRow, SETTLE_EASING } from './AmountField';
 import { useShake } from '../hooks/useShake';
 
-// How far (px) or how fast (px/s) a downward drag on the handle needs to go
-// before it counts as "dismiss" rather than snapping back.
-const DISMISS_DISTANCE = 120;
-const DISMISS_VELOCITY = 800;
-// Larger than any real screen height — used as the "well off-screen" target
-// for the dismiss-drag's finishing slide, without needing to measure the
-// actual window height just for this.
-const OFF_SCREEN_Y = 1200;
 // The sheet covers most, not all, of the screen — a real bottom sheet with
 // a dimmed backdrop above it, rather than a full-screen takeover.
-const SHEET_HEIGHT_RATIO = 0.95;
-// Max backdrop opacity at full open — a soft dark tint, not pure black.
+const SHEET_HEIGHT_RATIO = 0.855;
+// Backdrop opacity while open — a soft dark tint, not pure black.
 const BACKDROP_MAX_OPACITY = 0.55;
+// Plain, fixed slide — same shape both ways as the calendar's own slide
+// (Easing.out on the way in, Easing.inOut on the way out), just scaled up
+// for the much longer distance this sheet travels versus the calendar's
+// ~420px. A drag-dismiss's release animates with these same two constants
+// too, not its own velocity-based curve — one consistent slide, always.
+const OPEN_DURATION = 560;
+const OPEN_EASING = Easing.out(Easing.cubic);
+const CLOSE_DURATION = 500;
+const CLOSE_EASING = Easing.inOut(Easing.cubic);
+// How far (px) or how fast (px/s) a downward drag needs to go before it
+// counts as "dismiss" rather than snapping back open.
+const DISMISS_DISTANCE = 120;
+const DISMISS_VELOCITY = 800;
 
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatDisplay(dateStr) {
@@ -70,6 +75,37 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
   const [date, setDate] = useState(today());
   const [description, setDescription] = useState('');
   const [calOpen, setCalOpen] = useState(false);
+  // Mirrors `visible` on the outer sheet — stays mounted through its own
+  // close animation instead of vanishing the instant calOpen flips false.
+  const [calendarVisible, setCalendarVisible] = useState(false);
+  // Measured from the CTA+keypad wrapper's onLayout — lets the calendar
+  // overlay's minHeight guarantee full coverage without hardcoding a
+  // number that drifts if that row/keypad's own sizing ever changes.
+  const [ctaKeypadHeight, setCtaKeypadHeight] = useState(0);
+  const calendarProgress = useSharedValue(0);
+  useEffect(() => {
+    // SETTLE_EASING (fast-start) compressed nearly all the motion into the
+    // first ~30% of the duration — read as "fade in place, then a quick
+    // jump" instead of a sustained slide. A plain smooth deceleration
+    // spreads the motion across the whole duration instead.
+    if (calOpen) {
+      setCalendarVisible(true);
+      calendarProgress.value = withTiming(1, { duration: 480, easing: Easing.out(Easing.cubic) });
+    } else if (calendarVisible) {
+      calendarProgress.value = withTiming(0, { duration: 480, easing: Easing.inOut(Easing.cubic) }, finished => {
+        if (finished) runOnJS(setCalendarVisible)(false);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calOpen]);
+  // A fixed slide distance, not a measured card height — this reads as a
+  // convincing "slides up from the bottom" regardless of how tall the
+  // calendar ends up being for a given month's row count. The keypad and
+  // CTA row underneath never react to this at all — this overlay covers
+  // them by stacking on top, not by coordinating with them.
+  const calendarCardStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: (1 - calendarProgress.value) * 420 }],
+  }));
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   // The CTA stays enabled at all times now (no disabled/greyed-out state) —
@@ -120,38 +156,49 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
   // as one transform — managed independently here instead so `visible`
   // stays mounted through the close animation and it can actually play.
   const [visible, setVisible] = useState(open);
-  const pageTranslateY = useSharedValue(windowHeight);
-  const dragY = useSharedValue(0);
+  // The sheet's one and only vertical offset — driven either by a live
+  // drag gesture or by a programmatic open/close withTiming, never both at
+  // once through separate values reconciled into each other (that hazard,
+  // and the ScrollView/gesture contention below, were the actual causes of
+  // the stutter chased through this file earlier — not the curve).
+  const translateY = useSharedValue(windowHeight);
+  // Snapshot of translateY at the moment a drag gesture starts, so onUpdate
+  // can apply the finger's movement as an offset from wherever the sheet
+  // actually is, not assume it starts at 0.
+  const dragStartY = useSharedValue(0);
 
   // Mirrors `submitting` on the UI thread — the drag gesture below runs as
   // a worklet and can't read React state directly. Without this, a fast
-  // drag-dismiss started right after tapping Add/Update closes the sheet
-  // (and eventually unmounts it) while onAdd/onEdit is still in flight;
-  // when that promise resolves, its result — success or a real error —
-  // lands on a component that's already gone, so a failure is silently
-  // lost and the user has no idea their entry wasn't actually saved.
+  // drag-dismiss started right after tapping Save closes the sheet (and
+  // eventually unmounts it) while onAdd/onEdit is still in flight; when
+  // that promise resolves, its result lands on a component that's already
+  // gone, silently losing a real failure.
   const submittingSV = useSharedValue(false);
   useEffect(() => { submittingSV.value = submitting; }, [submitting]);
 
-  // Defense-in-depth alongside the drag-block above: if the sheet somehow
-  // still gets closed and reopened while a submit is in flight (e.g. the
-  // Android hardware back button, which bypasses the drag gesture
-  // entirely via onRequestClose below), this tells a stale submit's
-  // eventual result apart from the fresh session that's now open, so it
-  // can't apply an error/success meant for a submission the user can no
-  // longer see to a screen they've since reopened from scratch.
+  // Defense-in-depth: if the sheet somehow gets closed and reopened while a
+  // submit is in flight (e.g. the Android hardware back button, which
+  // bypasses the drag gesture's own guard above), this tells a stale
+  // submit's eventual result apart from the fresh session that's now open.
   const sessionRef = useRef(0);
   useEffect(() => { if (open) sessionRef.current += 1; }, [open]);
+
+  // Set (from the pan gesture's worklet, via runOnJS) the instant a
+  // drag-dismiss starts its own close animation — lets the `open`-driven
+  // effect below know not to start a *second* one once React catches up
+  // and this prop actually flips to false.
+  const closingViaDragRef = useRef(false);
+  const markClosingViaDrag = useCallback(() => { closingViaDragRef.current = true; }, []);
 
   useEffect(() => {
     if (open) {
       setVisible(true);
-      dragY.value = 0;
-      pageTranslateY.value = withTiming(0, { duration: 950, easing: SETTLE_EASING });
-    } else {
-      pageTranslateY.value = withTiming(
+      closingViaDragRef.current = false;
+      translateY.value = withTiming(0, { duration: OPEN_DURATION, easing: OPEN_EASING });
+    } else if (!closingViaDragRef.current) {
+      translateY.value = withTiming(
         windowHeight,
-        { duration: 420, easing: SETTLE_EASING },
+        { duration: CLOSE_DURATION, easing: CLOSE_EASING },
         finished => {
           if (!finished) return;
           runOnJS(setVisible)(false);
@@ -233,61 +280,70 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
     onClose();
   }
 
-  // Ignored while a submit is in flight — see submittingSV above for why.
   function handleRequestClose() {
     if (submitting) return;
     onClose();
   }
 
-  // Drag-to-dismiss from anywhere on the card, not just the handle.
-  // activeOffsetY/failOffsetY are what make this safe to wrap around the
-  // ScrollView and every button/key without stealing normal taps or
-  // upward scrolling: the gesture only actually activates once a touch has
-  // clearly moved down (12px) — a tap's near-zero movement never crosses
-  // that, so it falls through to the Pressable underneath untouched — and
-  // it explicitly fails itself if the touch moves up first, leaving that
-  // to the ScrollView.
-  //
-  // That threshold alone isn't enough for touches that *start* inside the
-  // ScrollView, though — its native scroll responder claims those before
-  // this (a JS-thread RNGH gesture) gets a chance to see them, which is
-  // exactly why dragging worked from the keypad (a sibling, outside the
-  // ScrollView) but not from Amount/Date/Description above it. `nativeScroll`
-  // is the ScrollView's own gesture made explicit, and
-  // `simultaneousWithExternalGesture` tells RNGH the two are allowed to
-  // both recognize the same touch — so a touch inside the ScrollView can
-  // still reach this Pan and cross its activation threshold instead of
-  // being swallowed.
-  const nativeScroll = Gesture.Native();
+  // Drag-to-dismiss from anywhere on the sheet — the grabber, the blank
+  // space around the amount/toggle, the CTA row's gap between Date and
+  // Save, the keypad's own gaps between keys. Scoping this to *only* the
+  // grabber handle was tried and made most of the sheet undraggable, which
+  // is a worse trade than the actual remaining issue: starting a drag
+  // exactly on a keypad key or the Save button (a plain RN Pressable, not
+  // RNGH) can briefly contest ownership of that touch with this gesture
+  // right as it crosses its activation threshold — a narrower, rarer case
+  // than "can't drag from most of the sheet". activeOffsetY/failOffsetY
+  // are what keep it safe to wrap this widely without stealing normal
+  // taps: it only activates once a touch has clearly moved down (12px),
+  // and fails itself if the touch moves up first.
   const pan = Gesture.Pan()
     .activeOffsetY(12)
     .failOffsetY(-12)
-    .simultaneousWithExternalGesture(nativeScroll)
+    .onStart(() => {
+      dragStartY.value = translateY.value;
+    })
     .onUpdate(e => {
-      if (e.translationY > 0) dragY.value = e.translationY;
+      translateY.value = Math.max(0, dragStartY.value + e.translationY);
     })
     .onEnd(e => {
       const pastThreshold = e.translationY > DISMISS_DISTANCE || e.velocityY > DISMISS_VELOCITY;
       if (pastThreshold && !submittingSV.value) {
-        dragY.value = withTiming(OFF_SCREEN_Y, { duration: 420, easing: SETTLE_EASING });
+        // Start the close animation *right here* rather than only setting
+        // a static value and waiting for `onClose` to round-trip through
+        // React state back down as the `open` prop — that round-trip takes
+        // a frame or two with nothing animating, a visible freeze mid-close.
+        runOnJS(markClosingViaDrag)();
+        // The exact same fixed curve as every other close in this sheet —
+        // not a velocity-seeded spring. Consistency over cleverness here:
+        // that was tried, and it's what actually made it feel rushed.
+        translateY.value = withTiming(
+          windowHeight,
+          { duration: CLOSE_DURATION, easing: CLOSE_EASING },
+          finished => {
+            if (!finished) return;
+            runOnJS(setVisible)(false);
+            if (onClosed) runOnJS(onClosed)();
+          },
+        );
         runOnJS(onClose)();
       } else {
-        dragY.value = withTiming(0, { duration: 380, easing: SETTLE_EASING });
+        // Snap back open with the same curve/duration open itself uses —
+        // one consistent slide, whichever direction it ends up going.
+        translateY.value = withTiming(0, { duration: OPEN_DURATION, easing: OPEN_EASING });
       }
     });
 
   const pageStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: pageTranslateY.value + dragY.value }],
+    transform: [{ translateY: translateY.value }],
   }));
 
-  // Fades with the exact same slide/drag progress as the sheet — dragging
-  // the sheet down dims the backdrop proportionally instead of it just
-  // popping away once the sheet's gone. Capped at BACKDROP_MAX_OPACITY (a
-  // soft dark tint) rather than reaching pure black/opaque — no real blur
+  // Fades with the exact same slide progress as the sheet, capped at
+  // BACKDROP_MAX_OPACITY (a soft dark tint, not pure black) — no real blur
   // here (see Glass.js's own note on why BlurView was removed from this
   // app: muddy/inconsistent on Android's software-rendered blur path).
   const backdropStyle = useAnimatedStyle(() => ({
-    opacity: (1 - Math.min(1, Math.max(0, (pageTranslateY.value + dragY.value) / windowHeight))) * BACKDROP_MAX_OPACITY,
+    opacity: (1 - Math.min(1, Math.max(0, translateY.value / windowHeight))) * BACKDROP_MAX_OPACITY,
   }));
 
   // Unmount the whole tree while closed instead of just hiding it behind
@@ -297,10 +353,20 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={handleRequestClose}>
+      {/* RN's <Modal> renders its content in its own separate native view
+          hierarchy (a distinct window on iOS) — the GestureHandlerRootView
+          set up once at the app's root (app/_layout.js) doesn't extend
+          into it. Without a second one in here, react-native-gesture-
+          handler's Gesture.Pan below recognizes unreliably: it's the
+          documented cause of exactly the "drag starts fine, stalls
+          partway, then catches up" glitch chased through this file, and
+          why the backdrop's plain Pressable onPress (the old RN touch
+          responder, not RNGH) was never affected by it. */}
+      <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={{ flex: 1 }}>
         {/* Dimmed backdrop above the sheet — only needed now that the sheet
             covers part of the screen rather than all of it. Tapping it
-            dismisses, same as the drag gesture below. */}
+            dismisses. */}
         <Animated.View pointerEvents={open ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, { backgroundColor: '#000000' }, backdropStyle]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={handleRequestClose} />
         </Animated.View>
@@ -308,7 +374,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
         {/* RN's <Modal> stays fully touch-active for its whole lifetime —
             `visible` only flips to false once the close animation below has
             actually finished, so without this the FAB underneath (and
-            anything else on Dashboard) is unreachable for the ~600ms the
+            anything else on Dashboard) is unreachable for the ~450ms the
             content is sliding off-screen, even though it's already invisible.
             `open` (not `visible`) flips to false the instant a close starts,
             so touches fall through immediately instead of at the end. */}
@@ -320,7 +386,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
               // A step lighter than the app's own near-black background —
               // reads as the sheet sitting slightly elevated above the
               // backdrop instead of blending into it.
-              backgroundColor: light ? '#FAFAF8' : '#121212',
+              backgroundColor: light ? '#FAFAF8' : '#161616',
               borderTopLeftRadius: 28, borderTopRightRadius: 28,
               overflow: 'hidden',
             },
@@ -328,8 +394,19 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
           ]}
           pointerEvents={open ? 'auto' : 'none'}
         >
-      <GestureDetector gesture={pan}>
       <View style={{ flex: 1 }}>
+      {/* Drag-to-dismiss wraps the grabber + ScrollView content only, not
+          the CTA row/keypad below (see the sibling View after this one) —
+          starting a drag exactly on a keypad key or the Save button (a
+          plain RN Pressable, not RNGH) briefly contests ownership of that
+          touch with this gesture right as it crosses its activation
+          threshold, which is what the "freezes partway through" glitch
+          turned out to be. Excluding just those controls (not the whole
+          sheet, which broke dragging from everywhere else) keeps the
+          grabber, the blank space around the amount/toggle, and the
+          ScrollView's own gaps all draggable. */}
+      <GestureDetector gesture={pan}>
+      <View>
         <View style={{ paddingTop: 10, paddingBottom: 24, alignItems: 'center' }}>
           <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: light ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.2)' }} />
         </View>
@@ -337,15 +414,16 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
         {/* No flex:1 here — fixed margins around the amount below keep
             Date/Amount/Description close together instead of spread
             across however much space the device happens to have. */}
-        <GestureDetector gesture={nativeScroll}>
         <ScrollView
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 16 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 8 }}
+          bounces={false}
+          overScrollMode="never"
         >
           <View
             className="flex-row rounded-full p-[3px] mb-8"
-            style={{ backgroundColor: light ? '#EFEFED' : '#161616' }}
+            style={{ backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.15)' }}
             onLayout={e => setTypeToggleWidth(e.nativeEvent.layout.width)}
           >
             {typeToggleWidth > 0 && (
@@ -371,18 +449,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
             ))}
           </View>
 
-          <Pressable
-            onPress={() => { Keyboard.dismiss(); setCalOpen(true); }}
-            className="flex-row items-center self-center rounded-full mb-3"
-            style={{ paddingHorizontal: 16, paddingVertical: 10, marginTop: 6, backgroundColor: light ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)' }}
-          >
-            <CalIcon color={light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'} />
-            <Text className="text-[13px] ml-1.5" style={{ color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>
-              {formatDisplay(date)}
-            </Text>
-          </Pressable>
-
-          <Animated.View className="items-center" style={[{ marginTop: 10, marginBottom: 8 }, amountShake.style]}>
+          <Animated.View className="items-center" style={[{ marginTop: 24, marginBottom: 24 }, amountShake.style]}>
             <AmountRow
               amount={amount}
               prevAmountLength={prevAmountLength}
@@ -411,10 +478,10 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
               (was minWidth-only, growing/shrinking with content length). */}
           <View
             style={{
-              alignSelf: 'center', marginTop: 20, width: 260, height: 48,
+              alignSelf: 'center', marginTop: 40, minWidth: 130, height: 40,
               borderRadius: 9999, justifyContent: 'center',
-              backgroundColor: light ? '#FAFAF8' : '#161616',
-              borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.07)',
+              backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.15)',
+              borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)',
             }}
           >
             <TextInput
@@ -438,53 +505,107 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
             {!description && (
               <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' }}>
                 <Animated.Text className="text-base" style={[{ color: light ? '#b0b0b0' : '#4d4d4d' }, descriptionShake.style]}>
-                  What was this for?
+                  Description
                 </Animated.Text>
               </View>
             )}
           </View>
         </ScrollView>
-        </GestureDetector>
-
-        {!!error && <Text className="text-red-400 text-base text-center mx-5 mb-3">{error}</Text>}
-        <View style={{ paddingHorizontal: 20, paddingBottom: 20 }}>
-          <GlassPressable
-            variant="active"
-            radius={16}
-            disabled={submitting}
-            onPress={handleSubmit}
-            className="w-full py-4 items-center"
-          >
-            <Text className="text-black text-[15px] font-semibold">
-              {isEdit
-                ? (submitting ? 'Updating' : 'Update')
-                : (submitting ? 'Adding' : `Add ${type.charAt(0).toUpperCase() + type.slice(1)}`)}
-            </Text>
-          </GlassPressable>
-        </View>
-
-        {/* Fixed, always-present keypad for Amount — same permanent-layout
-            idea as the reference recording this was modeled on: no keyboard
-            lifecycle to sync with because there's no real keyboard involved. */}
-        <NumericKeypad onKeyPress={handleKeypadPress} insetBottom={insets.bottom} light={light} />
       </View>
       </GestureDetector>
-      </Animated.View>
 
-      {/* Calendar overlay — lives inside this same Modal (avoids nested-Modal
-          quirks on iOS). Anchored near the top rather than centered. */}
-      {calOpen && (
-        <Pressable
-          style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'flex-start', paddingHorizontal: 24, paddingTop: insets.top + 70 }]}
-          onPress={closeCalendar}
-        >
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: light ? 'rgba(0,0,0,0.4)' : '#000000' }]} />
-          <View style={{ width: '100%', maxWidth: 360 }}>
-            <CalendarPicker value={date} onChange={setDate} onClose={closeCalendar} light={light} />
+        {!!error && <Text className="text-red-400 text-base text-center mx-5 mb-3">{error}</Text>}
+        {/* Wraps the CTA row + keypad so the calendar overlay below can
+            measure this wrapper's real height and use it as a minHeight —
+            otherwise the calendar (bottom-anchored, sized to its own
+            content) is shorter than the CTA+keypad on months with fewer
+            week rows, leaving the keypad's top rows poking out above it. */}
+        <View onLayout={e => setCtaKeypadHeight(e.nativeEvent.layout.height)}>
+          {/* Date, sharing a row with the submit CTA — right above the
+              keypad. Always rendered exactly as-is, untouched by the
+              calendar — it doesn't move, fade, or hide; the calendar is a
+              fully independent overlay that slides up and visually covers
+              this and the keypad below, not something these react to. */}
+          <View className="flex-row items-center justify-between" style={{ paddingHorizontal: 32, paddingBottom: 20 }}>
+            <Pressable
+              onPress={() => setCalOpen(true)}
+              className="flex-row items-center"
+            >
+              <CalIcon color={light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'} />
+              <Text className="text-[15px] ml-1.5" style={{ color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>
+                {formatDisplay(date)}
+              </Text>
+            </Pressable>
+
+            <GlassPressable
+              variant="active"
+              radius={9999}
+              disabled={submitting}
+              onPress={handleSubmit}
+              className="px-8 py-3 items-center"
+            >
+              <Text className="text-black text-[15px] font-semibold">
+                {isEdit
+                  ? (submitting ? 'Updating' : 'Update')
+                  : (submitting ? 'Saving' : 'Save')}
+              </Text>
+            </GlassPressable>
           </View>
-        </Pressable>
-      )}
+
+          <NumericKeypad onKeyPress={handleKeypadPress} insetBottom={insets.bottom} light={light} />
+
+          {/* Tap-outside-to-dismiss — a plain, unanimated catcher behind
+              the calendar covering the whole wrapper, so touching
+              anywhere else on screen — including up in the amount/
+              description area above this wrapper — closes it. `top: -1000`
+              stretches it past the wrapper's own bounds to cover the
+              whole sheet; the sheet's own overflow:hidden clips it back
+              down to the visible area. The calendar itself renders after
+              this (same stacking context, higher zIndex), so it still
+              gets its own taps first. */}
+          {calendarVisible && (
+            <Pressable
+              style={{ position: 'absolute', top: -1000, left: 0, right: 0, bottom: 0, zIndex: 10, elevation: 10 }}
+              onPress={closeCalendar}
+            />
+          )}
+
+          {/* Independent overlay — bottom-anchored, sized to its own
+              content height by default (no empty band of background above
+              it), but with a measured minHeight so it can never end up
+              shorter than the CTA+keypad box it needs to cover, whatever
+              the current month's row count. They stay mounted and
+              unmoved underneath the whole time. */}
+          {calendarVisible && (
+            <Animated.View
+              style={[
+                {
+                  position: 'absolute', left: 0, right: 0, bottom: 0,
+                  minHeight: ctaKeypadHeight,
+                  zIndex: 20, elevation: 20,
+                  overflow: 'hidden',
+                  paddingTop: 16,
+                  paddingBottom: insets.bottom + 10,
+                  // Same tint as the description pill (rgba(0,0,0,0.15/0.05))
+                  // but composited to an OPAQUE solid here — a translucent
+                  // layer over the keypad/CTA let them bleed through as
+                  // ghost text once this became a full covering overlay,
+                  // instead of the small pill-on-opaque-sheet look it was
+                  // copied from.
+                  backgroundColor: light ? '#EDEDEC' : '#131313',
+                  borderTopLeftRadius: 24, borderTopRightRadius: 24,
+                },
+                calendarCardStyle,
+              ]}
+            >
+              <CalendarPicker value={date} onChange={setDate} onClose={closeCalendar} light={light} />
+            </Animated.View>
+          )}
+        </View>
       </View>
+      </Animated.View>
+      </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }

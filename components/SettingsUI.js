@@ -1,5 +1,6 @@
-import { View, Text, Pressable } from 'react-native';
+import { View, Text } from 'react-native';
 import { ChevronRight } from './icons';
+import { GlassPressable } from './Glass';
 
 // Shared list-building-block components for Account/Subscription — a grey
 // rounded Card containing Rows separated by hairline Dividers, each Row
@@ -63,12 +64,16 @@ export function Row({ label, value, onPress, right, labelColor, light = false, a
     </View>
   );
   return onPress ? (
-    <Pressable
+    // variant="field" — transparent background, same look as the plain
+    // Pressable this used to be, but with GlassPressable's animated
+    // press-opacity instead of no press feedback at all.
+    <GlassPressable
+      variant="field"
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel || label}
     >
       {content}
-    </Pressable>
+    </GlassPressable>
   ) : content;
 }

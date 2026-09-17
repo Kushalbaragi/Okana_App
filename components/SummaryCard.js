@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import { View, Text, Pressable, Platform } from 'react-native';
+import { View, Text, Platform } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withDelay, withSpring, withTiming, Easing } from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
 import BarChart from './BarChart';
@@ -164,13 +164,19 @@ function RangeSelector({ value, onChange, currentYear, currentMonth, light }) {
             <Text className="text-white text-base font-medium">{opt.label}</Text>
           </GlassPressable>
         ) : (
-          <Pressable
+          // variant="field" — transparent background (same look as before),
+          // but still gets GlassPressable's animated press-opacity instead
+          // of the plain Pressable this used to be, which had no press
+          // feedback at all.
+          <GlassPressable
             key={opt.id}
+            variant="field"
+            radius={9999}
             onPress={() => onChange(opt.id)}
-            className="px-3 py-1 rounded-full"
+            className="px-3 py-1"
           >
             <Text className="text-base font-medium" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>{opt.label}</Text>
-          </Pressable>
+          </GlassPressable>
         )
       ))}
     </View>

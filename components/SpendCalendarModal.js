@@ -1,7 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, View, Text, Pressable, ScrollView, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, runOnJS } from 'react-native-reanimated';
 import { addMonths, subMonths, startOfMonth, getDaysInMonth } from 'date-fns';
 import {
@@ -19,12 +18,8 @@ import { MONTH_NAMES as MONTHS } from '../utils/monthlyRecap';
 import BudgetStatusBar from './BudgetStatusBar';
 import { SETTLE_EASING } from './AmountField';
 import { TourHint } from './TourHint';
+import { BackIcon } from './icons';
 import { useTourStep } from '../hooks/useTourStep';
-
-// Same drag-to-dismiss thresholds as AddModal, for a consistent feel.
-const DISMISS_DISTANCE = 120;
-const DISMISS_VELOCITY = 800;
-const OFF_SCREEN_Y = 1200;
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // Monday-first
 
@@ -65,7 +60,7 @@ function DayTransactionRow({ tx, index, light }) {
 // the Dashboard (and the flows it opens) — see the matching comment in
 // Header.js.
 function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budget, light = false, userId }) {
-  const { height: windowHeight } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const now = new Date();
   const [view, setView] = useState(startOfMonth(now));
@@ -85,11 +80,14 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
   const [calendarTourActive, setCalendarTourActive] = useState(null); // 'legend' | 'tapDate' | 'budget' | null
 
   // Same pattern as AddModal — managed independently of RN's Modal
-  // animationType so `visible` stays mounted through the close animation,
-  // and the drag gesture below can share the same translateY.
+  // animationType so `visible` stays mounted through the close animation.
+  // Slides in from the right (like a pushed page) rather than up from the
+  // bottom — translateX/windowWidth, not translateY/windowHeight. No drag-
+  // to-dismiss any more — the back button below is the only way to close
+  // this now, so there's no gesture to reconcile with the day-list
+  // ScrollView's own vertical scrolling either.
   const [visible, setVisible] = useState(open);
-  const pageTranslateY = useSharedValue(windowHeight);
-  const dragY = useSharedValue(0);
+  const pageTranslateX = useSharedValue(windowWidth);
 
   useEffect(() => {
     if (open) {
@@ -102,11 +100,10 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
       // was last left instead of back on the actual current month — this
       // modal stays mounted across opens/closes, so nothing else resets it.
       setView(startOfMonth(now));
-      dragY.value = 0;
-      pageTranslateY.value = withTiming(0, { duration: 950, easing: SETTLE_EASING });
+      pageTranslateX.value = withTiming(0, { duration: 950, easing: SETTLE_EASING });
     } else {
-      pageTranslateY.value = withTiming(
-        windowHeight,
+      pageTranslateX.value = withTiming(
+        windowWidth,
         { duration: 700, easing: SETTLE_EASING },
         finished => {
           if (!finished) return;
@@ -150,30 +147,8 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
     setCalendarTourActive(null);
   }, [calendarTourActive, legendTour, tapDateTour, budgetTour]);
 
-  // Drag-to-dismiss from anywhere on the sheet — identical mechanics to
-  // AddModal's: the Pan only activates once a touch has clearly moved down
-  // (12px), so taps and upward scrolling fall through untouched, and it's
-  // simultaneous with the ScrollView's own native gesture so a drag that
-  // starts inside the ScrollView still reaches this Pan.
-  const nativeScroll = Gesture.Native();
-  const pan = Gesture.Pan()
-    .activeOffsetY(12)
-    .failOffsetY(-12)
-    .simultaneousWithExternalGesture(nativeScroll)
-    .onUpdate(e => {
-      if (e.translationY > 0) dragY.value = e.translationY;
-    })
-    .onEnd(e => {
-      if (e.translationY > DISMISS_DISTANCE || e.velocityY > DISMISS_VELOCITY) {
-        dragY.value = withTiming(OFF_SCREEN_Y, { duration: 700, easing: SETTLE_EASING });
-        runOnJS(onClose)();
-      } else {
-        dragY.value = withTiming(0, { duration: 420, easing: SETTLE_EASING });
-      }
-    });
-
   const pageStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: pageTranslateY.value + dragY.value }],
+    transform: [{ translateX: pageTranslateX.value }],
   }));
 
   const year = view.getFullYear();
@@ -241,10 +216,20 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
           fall through immediately instead of at the end. Same fix as
           AddModal's — see the comment there. */}
       <Animated.View className="flex-1" style={[{ backgroundColor: light ? '#FAFAF8' : '#0a0a0a' }, pageStyle]} pointerEvents={open ? 'auto' : 'none'}>
-        <GestureDetector gesture={pan}>
-          <View style={{ flex: 1 }}>
-            <View style={{ paddingTop: insets.top + 10, paddingBottom: 8, alignItems: 'center' }}>
-              <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: light ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.2)' }} />
+        <View style={{ flex: 1 }}>
+            {/* Replaces the old drag-handle pill (which read as a
+                bottom-sheet affordance that stopped making sense once this
+                became a side-slide page) — the back button is now the only
+                way to close this. */}
+            <View className="flex-row items-center px-4" style={{ paddingTop: insets.top + 10, paddingBottom: 8 }}>
+              <Pressable
+                onPress={onClose}
+                className="w-9 h-9 items-center justify-center rounded-xl"
+                accessibilityRole="button"
+                accessibilityLabel="Go back"
+              >
+                <BackIcon color={light ? 'rgba(0,0,0,0.7)' : undefined} />
+              </Pressable>
             </View>
 
             {/* Fixed — not inside any ScrollView, so it never scrolls or
@@ -375,19 +360,17 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                       You saved today - Nothing spent 🌿
                     </Text>
                   ) : (
-                    <GestureDetector gesture={nativeScroll}>
-                      <ScrollView
-                        showsVerticalScrollIndicator={false}
-                        style={{ flex: 1 }}
-                        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
-                      >
-                        <View style={{ gap: 12 }}>
-                          {dayTxs.map((tx, i) => (
-                            <DayTransactionRow key={tx.id} tx={tx} index={i} light={light} />
-                          ))}
-                        </View>
-                      </ScrollView>
-                    </GestureDetector>
+                    <ScrollView
+                      showsVerticalScrollIndicator={false}
+                      style={{ flex: 1 }}
+                      contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+                    >
+                      <View style={{ gap: 12 }}>
+                        {dayTxs.map((tx, i) => (
+                          <DayTransactionRow key={tx.id} tx={tx} index={i} light={light} />
+                        ))}
+                      </View>
+                    </ScrollView>
                   )}
                 </View>
               </View>
@@ -411,8 +394,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
               description="This shows what's left in your budget this month."
               onNext={advanceCalendarTour}
             />
-          </View>
-        </GestureDetector>
+        </View>
       </Animated.View>
     </Modal>
   );

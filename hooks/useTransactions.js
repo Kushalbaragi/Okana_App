@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Crypto from 'expo-crypto'
+import { usePostHog } from 'posthog-react-native'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNetwork } from '../context/NetworkContext'
@@ -89,6 +90,7 @@ async function flushQueue(userId) {
 export function useTransactions() {
   const { user } = useAuth()
   const { isOnline, isOnlineRef, notifyOffline } = useNetwork()
+  const posthog = usePostHog()
   const [transactions, setTransactions] = useState([])
   // Starts true (not false) so consumers that gate a once-a-day decision on
   // `!loading` (Dashboard's monthly-recap/budget-setup effects) never see a
@@ -196,6 +198,12 @@ export function useTransactions() {
       return updated
     })
     hapticAdded()
+    // Fired on the optimistic add, not after the server confirms it — this
+    // is the moment the user actually performed the action, same as the
+    // haptic above; a slow/offline sync shouldn't delay or lose the event.
+    // No amount — `type` is enough to understand usage without exporting
+    // exact figures to a third-party analytics tool.
+    posthog?.capture('transaction_added', { type })
 
     const payload = {
       id,

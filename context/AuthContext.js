@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import { usePostHog } from 'posthog-react-native';
 import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
@@ -15,6 +16,7 @@ const REVIEW_EMAIL = 'okanapreview@gmail.com';
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const posthog = usePostHog();
 
   useEffect(() => {
     // Load initial session — falls back to signed-out rather than hanging
@@ -101,6 +103,11 @@ export function AuthProvider({ children }) {
     const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
     if (error) throw error;
     const isNewUser = !data.user?.user_metadata?.name;
+    // Signup only, not every login — login_completed was mostly redundant
+    // with PostHog's own automatic app-opened event for a returning user.
+    // Not fired on the review-account bypass above — that's Apple's
+    // reviewer, not a real user, and would otherwise pollute the funnel.
+    if (isNewUser) posthog?.capture('signup_completed');
     return { isNewUser };
   }
 

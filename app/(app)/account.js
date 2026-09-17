@@ -13,6 +13,7 @@ import Svg, { Circle, Rect, Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, useAnimatedProps, withDelay, withSequence, withTiming, Easing } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { usePostHog } from 'posthog-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
 import { isConnectivityError, reportError } from '../../utils/errors';
@@ -431,6 +432,7 @@ export default function AccountPage() {
   const router = useRouter();
   const { user, profile, logout } = useAuth();
   const { isOnline, isOnlineRef, notifyOffline } = useNetwork();
+  const posthog = usePostHog();
   const { subscription, refresh: refreshSubscription } = useSubscription(user);
   const { transactions, importTransactions } = useTransactions();
 
@@ -608,6 +610,7 @@ export default function AccountPage() {
       // `profile.avatar` (from AuthContext) is already the new URL by the
       // time this fires — the check-fade-out below is what reveals it.
       setAvatarPhase('success');
+      posthog?.capture('profile_photo_uploaded');
       setTimeout(() => setAvatarPhase('idle'), AVATAR_SEQUENCE_MS);
     } catch (err) {
       setAvatarPhase('idle');
@@ -651,6 +654,7 @@ export default function AccountPage() {
         await AsyncStorage.removeItem(`okana_budget_setup_shown_${user.id}`);
       })()]);
       setActionFlow({ type: 'erase', phase: 'success' });
+      posthog?.capture('data_erased');
     } catch (err) {
       setActionFlow(null);
       if (isConnectivityError(err, isOnline)) { notifyOffline(); return; }
@@ -687,6 +691,11 @@ export default function AccountPage() {
         if (rpcError) throw rpcError;
       })()]);
       setActionFlow({ type: 'delete', phase: 'success' });
+      // Fired here, before the eventual sign-out resets PostHog's identity
+      // (useAnalyticsIdentity, keyed off `user` going null) — this is the
+      // last point the event can still land attributed to the account that
+      // was just deleted.
+      posthog?.capture('account_deleted');
     } catch (err) {
       setActionFlow(null);
       if (isConnectivityError(err, isOnline)) { notifyOffline(); return; }
@@ -818,6 +827,10 @@ export default function AccountPage() {
       await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: FileSystem.EncodingType.Base64 });
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri, { mimeType: XLSX_MIME, dialogTitle: 'Export transactions' });
+        // Confirms the file was written and handed to the OS share sheet —
+        // not that the user actually saved/sent it, which nothing client-side
+        // can observe once shareAsync hands off.
+        posthog?.capture('data_exported', { count: transactions.length });
       } else {
         setExportError('Sharing is not available on this device.');
       }
@@ -929,6 +942,7 @@ export default function AccountPage() {
         + (skipped.length ? ` — ${skipped.length} row${skipped.length === 1 ? '' : 's'} skipped` : '')
       );
       setImportStage('done');
+      posthog?.capture('data_imported', { count: res.imported });
 
       importRedirectTimeoutRef.current = setTimeout(() => {
         setImportStage('idle');
@@ -1114,11 +1128,11 @@ export default function AccountPage() {
           <View>
             <SectionLabel>Support</SectionLabel>
             <Card>
-              <Row label="Developer" onPress={() => setModal('developer')} />
+              <Row label="Developer" onPress={() => { posthog?.capture('developer_profile_seen'); setModal('developer'); }} />
               <Divider />
               <Row label="Support" onPress={() => setModal('feedback')} />
               <Divider />
-              <Row label="Rate Us" onPress={rateApp} />
+              <Row label="Rate Us" onPress={() => { posthog?.capture('rated_us'); rateApp(); }} />
             </Card>
           </View>
 

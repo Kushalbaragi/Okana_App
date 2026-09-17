@@ -116,6 +116,27 @@ export function CameraIcon({ size = 22, color = 'rgba(255,255,255,0.5)' }) {
   );
 }
 
+export function CloseIcon({ size = 18, color = 'rgba(255,255,255,0.5)' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <Line x1="3.5" y1="3.5" x2="12.5" y2="12.5" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+      <Line x1="12.5" y1="3.5" x2="3.5" y2="12.5" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+// A plain up arrow — stands in for "new version above the one you have"
+// rather than a literal download/box icon, echoing TrendArrowIcon's own
+// diagonal-arrow-as-status-glyph language elsewhere in the app.
+export function UpdateIcon({ size = 18, color = '#4ade80' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 18 18" fill="none">
+      <Line x1="9" y1="14.5" x2="9" y2="4" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+      <Path d="M4.5 8.5L9 4l4.5 4.5" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
 export function CalendarIcon({ size = 18, color = 'rgba(255,255,255,0.7)' }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 18 18" fill="none">
@@ -123,6 +144,25 @@ export function CalendarIcon({ size = 18, color = 'rgba(255,255,255,0.7)' }) {
       <Line x1="1.5" y1="7" x2="16.5" y2="7" stroke={color} strokeWidth="1.4" />
       <Line x1="5" y1="1" x2="5" y2="4.5" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
       <Line x1="13" y1="1" x2="13" y2="4.5" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+// The keypad's delete key — a plain left-pointing arrow instead of the
+// Unicode '⌫' character NumericKeypad used to render directly as text,
+// which several platform fonts draw as a plain boxed cross rather than
+// anything reading as "delete".
+export function BackspaceIcon({ size = 22, color = '#ffffff' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M15 6l-6 6 6 6"
+        stroke={color}
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
     </Svg>
   );
 }

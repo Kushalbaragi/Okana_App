@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring, withDelay, Easing, LinearTransition } from 'react-native-reanimated';
 
@@ -85,7 +85,7 @@ function digitExiting() {
 // *old* value gone at once so the *new* one's own entrance can start right
 // away, rather than waiting out a whole exit animation on a value the user
 // already moved on from.
-export function AmountDigit({ char, animateIn, color = '#ffffff', fontSize = 48, lineHeight = 56, fontWeight = '600', letterSpacing, delay = 0, instantExit = false }) {
+export function AmountDigit({ char, animateIn, color = '#ffffff', fontSize = 48, lineHeight = 56, fontWeight = '600', letterSpacing, delay = 0, instantExit = false, layoutReady = true }) {
   const fadeProgress = useSharedValue(animateIn ? 0 : 1);
 
   useEffect(() => {
@@ -116,7 +116,7 @@ export function AmountDigit({ char, animateIn, color = '#ffffff', fontSize = 48,
 
   return (
     <Animated.Text
-      layout={AMOUNT_LAYOUT_TRANSITION}
+      layout={layoutReady ? AMOUNT_LAYOUT_TRANSITION : undefined}
       exiting={instantExit ? undefined : digitExiting}
       style={[
         {
@@ -187,6 +187,18 @@ const SCALE_END_DIGITS = 8; // matches nextAmountValue's entry cap
 const MIN_SCALE = 0.65;
 
 export function AmountRow({ amount, prevAmountLength, skipDigitAnim, digitFontSize = 48, lineHeight = 56, light = false, zeroColor, weight = '600' }) {
+  // The row's `layout` transition (AMOUNT_LAYOUT_TRANSITION) is meant for
+  // keystroke-driven re-centering, not the very first layout pass — a
+  // modal that slides/resizes into place (Add Transaction's own sheet
+  // open) can settle this row into its real width a beat after mount,
+  // and with the transition live from the start that settle plays as a
+  // spring slide, reading as the amount field animating in on its own
+  // instead of just sitting fixed while the sheet moves. Holding the
+  // transition off until one render after mount lets that first settle
+  // happen instantly, with no prior layout for Reanimated to animate from.
+  const [layoutReady, setLayoutReady] = useState(false);
+  useEffect(() => { setLayoutReady(true); }, []);
+
   const digitColor = zeroColor ?? (light ? '#111111' : '#ffffff');
   const emptyColor = zeroColor ?? (light ? '#cccccc' : '#333333');
   const fontWeight = weight;
@@ -212,9 +224,9 @@ export function AmountRow({ amount, prevAmountLength, skipDigitAnim, digitFontSi
   const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   return (
-    <Animated.View layout={AMOUNT_LAYOUT_TRANSITION} style={scaleStyle} className="flex-row items-center justify-center">
+    <Animated.View layout={layoutReady ? AMOUNT_LAYOUT_TRANSITION : undefined} style={scaleStyle} className="flex-row items-center justify-center">
       <Animated.Text
-        layout={AMOUNT_LAYOUT_TRANSITION}
+        layout={layoutReady ? AMOUNT_LAYOUT_TRANSITION : undefined}
         style={{ fontSize: symbolFontSize, lineHeight, fontWeight: '400', marginRight: 4, color: symbolColor, opacity: 0.7, fontFamily: ROUNDED_FONT }}
       >
         ₹
@@ -229,6 +241,7 @@ export function AmountRow({ amount, prevAmountLength, skipDigitAnim, digitFontSi
             lineHeight={lineHeight}
             color={digitColor}
             fontWeight={fontWeight}
+            layoutReady={layoutReady}
           />
         ))
       ) : (

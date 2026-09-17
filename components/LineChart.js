@@ -133,7 +133,7 @@ function LineChart({ incomeData, expenseData, labels, light = false, activeIndex
               <Path d={incomeArea}  fill="url(#ig)" />
               <Path d={expenseArea} fill="url(#eg)" />
 
-              <Path d={expenseLine} stroke="rgba(239,68,68,0.65)" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              <Path d={expenseLine} stroke="rgba(239,68,68,0.56)" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
               <Path d={incomeLine}  stroke="rgba(74,222,128,0.75)"  strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
               {/* A vertical guide pinpointing the tapped period — only once

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import { usePostHog } from 'posthog-react-native'
 import { supabase } from '../lib/supabase'
 import { useNetwork } from '../context/NetworkContext'
 import { isConnectivityError, reportError } from '../utils/errors'
@@ -86,6 +87,7 @@ async function flushPendingBudget(userId, currentMonthStart) {
 
 export function useBudget(user, transactions) {
   const { isOnline, isOnlineRef, notifyOffline } = useNetwork()
+  const posthog = usePostHog()
   const { month, year } = currentMonthYear()
   const monthStart = monthStartStr(month, year)
   const { month: prevMonth, year: prevYear } = prevMonthYear(month, year)
@@ -188,6 +190,10 @@ export function useBudget(user, transactions) {
 
   const setBudget = useCallback(async (amountNumber) => {
     if (!user) return { success: false, error: 'Not signed in' }
+    // Fired on the attempt, not gated on the online/offline branches below
+    // succeeding — same reasoning as useTransactions' own events: this is
+    // the moment the user actually performed the action.
+    posthog?.capture('budget_set')
 
     if (!isOnlineRef.current) {
       setBudgetRow(prev => ({ ...(prev || {}), user_id: user.id, month_start: monthStart, budget_amount: amountNumber, _pending: true }))

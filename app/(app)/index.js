@@ -5,6 +5,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { usePostHog } from 'posthog-react-native';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../hooks/useTransactions';
@@ -18,6 +19,8 @@ import AddModal from '../../components/AddModal';
 import SpendCalendarModal from '../../components/SpendCalendarModal';
 import MonthlyRecapModal from '../../components/MonthlyRecapModal';
 import BudgetSetupModal from '../../components/BudgetSetupModal';
+import { UpdateSheet } from '../../components/UpdateSheet';
+import { useAppUpdate } from '../../hooks/useAppUpdate';
 import { AnimatedModal } from '../../components/AnimatedModal';
 import { TourHint } from '../../components/TourHint';
 import { useTourStep } from '../../hooks/useTourStep';
@@ -90,7 +93,25 @@ export default function Dashboard() {
   const budget = useBudget(user, transactions);
   const { subscription, loading: subLoading, refresh: refreshSubscription } = useSubscription(user);
   const trialInfo = useMemo(() => getSubscriptionDisplayStatus(subscription, today()), [subscription]);
+  const posthog = usePostHog();
+  // Fires once, exactly on the transition into 'expired' — not on every
+  // render while already expired, and not on a cold launch that's already
+  // expired (there's no "previous" status to compare against yet, so a
+  // genuinely-new transition can't be told apart from "was always this
+  // way"). Anchored here specifically (not account.js/subscription.js,
+  // which also call useSubscription) because Dashboard is the one screen
+  // guaranteed to mount exactly once per session — see the comment below
+  // on why — so this can't double-fire across multiple mounted instances.
+  const prevSubStatusRef = useRef(undefined);
+  useEffect(() => {
+    const prev = prevSubStatusRef.current;
+    prevSubStatusRef.current = trialInfo.status;
+    if (prev != null && prev !== 'expired' && trialInfo.status === 'expired') {
+      posthog?.capture('subscription_expired', { was_trial: !!subscription?.is_trial });
+    }
+  }, [trialInfo.status, subscription, posthog]);
   const transactionListRef = useRef(null);
+  const { showUpdate, dismiss: dismissUpdate } = useAppUpdate();
 
   // Scale-in-and-fade on mount — Dashboard only ever mounts once per app
   // session (it stays mounted underneath Settings/Subscription when
@@ -520,6 +541,14 @@ export default function Dashboard() {
   // their own separate tour, triggered from SpendCalendarModal.js instead,
   // for the same "only show it once it's real" reason.)
   const fabRef = useRef(null);
+  // The FAB had zero press feedback at all (a plain Pressable) — the most
+  // frequently-tapped button on the whole screen deserved better than
+  // nothing. A scale-down on press-in, spring back on release, same shape
+  // as NumericKeypad's own per-key feedback.
+  const fabScale = useSharedValue(1);
+  const fabAnimStyle = useAnimatedStyle(() => ({ transform: [{ scale: fabScale.value }] }));
+  const handleFabPressIn = useCallback(() => { fabScale.value = withTiming(0.92, { duration: 90 }); }, [fabScale]);
+  const handleFabPressOut = useCallback(() => { fabScale.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.back(1.6)) }); }, [fabScale]);
   const tabToggleRef = useRef(null);
   const firstRowRef = useRef(null);
   const addTxTour = useTourStep(user?.id, 'add_transaction');
@@ -626,16 +655,22 @@ export default function Dashboard() {
         firstRowRef={firstRowRef}
       />
 
-      <Pressable
+      <Animated.View
         ref={fabRef}
-        onPress={openAdd}
         className="absolute bottom-20 self-center w-[68px] h-[68px] rounded-full items-center justify-center"
-        style={{ backgroundColor: PILL_ACTIVE_COLOR, left: '50%', marginLeft: -34, zIndex: 50, elevation: 50 }}
-        accessibilityRole="button"
-        accessibilityLabel="Add transaction"
+        style={[{ backgroundColor: PILL_ACTIVE_COLOR, left: '50%', marginLeft: -34, zIndex: 50, elevation: 50 }, fabAnimStyle]}
       >
-        <PlusIcon size={30} color="#ffffff" />
-      </Pressable>
+        <Pressable
+          onPress={openAdd}
+          onPressIn={handleFabPressIn}
+          onPressOut={handleFabPressOut}
+          style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}
+          accessibilityRole="button"
+          accessibilityLabel="Add transaction"
+        >
+          <PlusIcon size={30} color="#ffffff" />
+        </Pressable>
+      </Animated.View>
 
       <TourHint
         visible={homeTourActive === 'fab'}
@@ -728,6 +763,16 @@ export default function Dashboard() {
           </Pressable>
         </View>
       </AnimatedModal>
+
+      {/* Gated on the same "nothing else is showing" set the tour hints use
+          above — two native <Modal>s mounted at once is broken on Android
+          (see AddModal/SpendCalendarModal's own notes on this), so this
+          only actually opens once every other popup has cleared, not the
+          instant the version check itself resolves. */}
+      <UpdateSheet
+        open={showUpdate && dailyPopupsResolved && !recapOpen && !budgetSetupOpen && !proRequired && !budgetCrossedOpen && !modalOpen}
+        onDismiss={dismissUpdate}
+      />
     </Animated.View>
   );
 }

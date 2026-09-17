@@ -1,6 +1,12 @@
 import { memo } from 'react';
-import { View, Pressable } from 'react-native';
+import { View, Pressable, Platform } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
+import { BackspaceIcon } from './icons';
+
+// Same 'ui-rounded' identifier used for the amount fields elsewhere in the
+// app — 'SF Pro Rounded' isn't a resolvable name and silently falls back to
+// plain SF Pro (see AmountField.js's own ROUNDED_FONT comment).
+const ROUNDED_FONT = Platform.OS === 'ios' ? 'ui-rounded' : undefined;
 
 // Default layout — Amount entry (digits + decimal point). Screens that only
 // need digits (e.g. an OTP code) pass their own `rows` with a blank spacer
@@ -55,7 +61,7 @@ function KeypadKey({ label, onPress, color = '#ffffff' }) {
     pressProgress.value = withTiming(0, { duration: 160, easing: Easing.out(Easing.cubic) });
   }
 
-  const labelStyle = useAnimatedStyle(() => ({
+  const animStyle = useAnimatedStyle(() => ({
     opacity: 1 - pressProgress.value * 0.5,
     transform: [{ scale: 1 - pressProgress.value * 0.15 }],
   }));
@@ -69,9 +75,15 @@ function KeypadKey({ label, onPress, color = '#ffffff' }) {
       accessibilityRole="button"
       accessibilityLabel={label === 'backspace' ? 'Delete' : label}
     >
-      <Animated.Text style={[{ color, fontSize: label === 'backspace' ? 24 : 30, fontWeight: '400' }, labelStyle]}>
-        {label === 'backspace' ? '⌫' : label}
-      </Animated.Text>
+      {label === 'backspace' ? (
+        <Animated.View style={animStyle}>
+          <BackspaceIcon size={24} color={color} />
+        </Animated.View>
+      ) : (
+        <Animated.Text style={[{ color, fontSize: 30, fontWeight: '600', fontFamily: ROUNDED_FONT }, animStyle]}>
+          {label}
+        </Animated.Text>
+      )}
     </Pressable>
   );
 }

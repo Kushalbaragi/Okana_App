@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { Linking, Platform } from 'react-native';
+import { usePostHog } from 'posthog-react-native';
 import { reportError } from '../utils/errors';
 
 const API_KEY = Platform.select({
@@ -17,6 +18,7 @@ const API_KEY = Platform.select({
 // so the web preview never touches it.
 export function usePurchases(userId) {
   const configuredForRef = useRef(null);
+  const posthog = usePostHog();
 
   useEffect(() => {
     if (Platform.OS === 'web' || !userId || configuredForRef.current === userId) return;
@@ -51,6 +53,7 @@ export function usePurchases(userId) {
     try {
       const Purchases = require('react-native-purchases').default;
       const { customerInfo } = await Purchases.purchasePackage(pkg);
+      posthog?.capture('subscription_purchased', { package: pkg?.identifier });
       return { success: true, customerInfo };
     } catch (err) {
       if (err.userCancelled) return { success: false, cancelled: true };

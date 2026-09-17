@@ -6,12 +6,15 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { setAudioModeAsync } from 'expo-audio';
 import * as Sentry from '@sentry/react-native';
+import { PostHogProvider } from 'posthog-react-native';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { NetworkProvider } from '../context/NetworkContext';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { usePushToken } from '../hooks/usePushToken';
 import { useNotificationRouting } from '../hooks/useNotificationRouting';
 import { usePurchases } from '../hooks/usePurchases';
+import { useAnalyticsIdentity } from '../hooks/useAnalyticsIdentity';
+import { useScreenTracking } from '../hooks/useScreenTracking';
 
 // A blank DSN makes Sentry.init a documented no-op (it just logs a warning
 // and every later Sentry.* call is silently skipped) — safe for local dev
@@ -31,6 +34,8 @@ function AppShell() {
   usePushToken(user?.id);
   useNotificationRouting();
   usePurchases(user?.id);
+  useAnalyticsIdentity(user);
+  useScreenTracking();
 
   // expo-audio's default session requests exclusive audio focus — the
   // keypad's click sound (NumericKeypad) and the success chime
@@ -77,11 +82,33 @@ function CrashFallback() {
 function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <NetworkProvider>
-        <AuthProvider>
-          <AppShell />
-        </AuthProvider>
-      </NetworkProvider>
+      {/* A blank apiKey makes PostHogProvider a documented no-op — same
+          "safe before the env var is filled in" shape as Sentry.init above,
+          so there's no separate "is analytics configured" branch needed
+          anywhere else. captureScreens/captureTouches are both off:
+          expo-router doesn't expose the navigation container autocapture
+          needs (see useScreenTracking, which does this manually via the
+          router's own pathname instead), and touches are tracked as
+          purposeful named events at their call sites rather than raw
+          autocaptured taps. captureAppLifecycleEvents is also off — the
+          "Application Installed/Opened/Backgrounded" events it sends by
+          default were judged more noise than signal; the custom events
+          fired throughout the app (useTransactions, useBudget,
+          AuthContext, account.js, index.js) already cover what matters. */}
+      <PostHogProvider
+        apiKey={process.env.EXPO_PUBLIC_POSTHOG_API_KEY}
+        options={{
+          host: process.env.EXPO_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com',
+          captureAppLifecycleEvents: false,
+        }}
+        autocapture={{ captureScreens: false, captureTouches: false }}
+      >
+        <NetworkProvider>
+          <AuthProvider>
+            <AppShell />
+          </AuthProvider>
+        </NetworkProvider>
+      </PostHogProvider>
     </GestureHandlerRootView>
   );
 }

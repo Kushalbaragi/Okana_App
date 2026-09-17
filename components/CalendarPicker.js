@@ -1,7 +1,7 @@
 import { memo, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { addMonths, subMonths, startOfMonth, getDaysInMonth, parseISO } from 'date-fns';
-import { GlassView, GlassPressable } from './Glass';
+import { GlassPressable } from './Glass';
 import { MONTH_NAMES as MONTHS } from '../utils/monthlyRecap';
 import { toDateStr as toStr } from '../utils/format';
 
@@ -56,7 +56,7 @@ function CalendarPicker({ value, onChange, onClose, light = false }) {
   const dim = (opacity) => light ? `rgba(0,0,0,${opacity})` : `rgba(255,255,255,${opacity})`;
 
   return (
-    <GlassView variant="glass" radius={16} className="p-4 w-full" style={light ? { backgroundColor: '#F0F0EE' } : null}>
+    <View className="py-4 w-full" style={{ paddingHorizontal: 24 }}>
       <View className="flex-row items-center justify-between mb-4">
         <GlassPressable variant="glass" radius={9999} onPress={prev} className="w-8 h-8 items-center justify-center" style={light ? { backgroundColor: 'rgba(0,0,0,0.05)' } : null}>
           <Text className="text-lg" style={{ color: dim(0.6) }}>‹</Text>
@@ -135,7 +135,7 @@ function CalendarPicker({ value, onChange, onClose, light = false }) {
           })}
         </View>
       ))}
-    </GlassView>
+    </View>
   );
 }
 
