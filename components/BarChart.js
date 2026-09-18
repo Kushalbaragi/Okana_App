@@ -144,11 +144,15 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
   const svgH    = BAR_HEIGHT + 22;
   const noSpendDotColor = light ? 'rgba(34,197,94,0.7)' : 'rgba(74,222,128,0.75)';
 
-  // Matches LineChart's own income/expense colors (#4ade80 / rgba(248,113,
-  // 113,...)) — bars previously used a darker green (#16A34A) and the iOS
-  // system red (255,59,48), neither of which matched the rest of the app.
-  const activeColor = isIncome ? 'rgba(74,222,128,0.95)' : 'rgba(239,68,68,0.92)';
-  const dimColor    = isIncome ? 'rgba(74,222,128,0.62)' : 'rgba(239,68,68,0.56)';
+  // Kept in step with LineChart's own income/expense colours, so Overview
+  // and the bar tabs read as the same two series. The expense red is
+  // #ef4444 lifted about 10% (each channel x1.1, red clamped at 255) — at
+  // these alphas the original sat a touch dark against pure black. Note
+  // this is NOT the danger red used on destructive UI (248,113,113), nor
+  // the delete button's own systemRed; both of those are button states
+  // rather than data, and are deliberately left alone.
+  const activeColor = isIncome ? 'rgba(74,222,128,0.95)' : 'rgba(255,75,75,0.92)';
+  const dimColor    = isIncome ? 'rgba(74,222,128,0.62)' : 'rgba(255,75,75,0.56)';
   const gridColor       = light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)';
   const labelActiveColor = light ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.85)';
   const labelDimColor    = light ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.22)';

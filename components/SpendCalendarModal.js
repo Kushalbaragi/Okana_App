@@ -23,6 +23,16 @@ import { useTourStep } from '../hooks/useTourStep';
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // Monday-first
 
+// Exported so app/(app)/index.js can drive the Home screen's own parallax
+// slide with the exact same timing, rather than a second hardcoded number
+// slowly drifting out of sync with this one. The two aren't wired through a
+// single shared value — Home animates its own useSharedValue, started in
+// the same callback that flips `open` here — but same duration + easing,
+// triggered in the same tick, is what actually makes them read as one
+// synchronized motion rather than two independent slides that happen to be
+// close. Matches the ~300-350ms a native Stack push settles in.
+export const CALENDAR_SLIDE_DURATION = 350;
+
 // Each row slides up and fades in with a small stagger, rather than the
 // whole day's list appearing at once.
 function DayTransactionRow({ tx, index, light }) {
@@ -100,11 +110,11 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
       // was last left instead of back on the actual current month — this
       // modal stays mounted across opens/closes, so nothing else resets it.
       setView(startOfMonth(now));
-      pageTranslateX.value = withTiming(0, { duration: 950, easing: SETTLE_EASING });
+      pageTranslateX.value = withTiming(0, { duration: CALENDAR_SLIDE_DURATION, easing: SETTLE_EASING });
     } else {
       pageTranslateX.value = withTiming(
         windowWidth,
-        { duration: 700, easing: SETTLE_EASING },
+        { duration: CALENDAR_SLIDE_DURATION, easing: SETTLE_EASING },
         finished => {
           if (!finished) return;
           runOnJS(setVisible)(false);
@@ -124,8 +134,9 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
     // pointing at a row that's now sliding off-screen with the sheet.
     if (!open) { setCalendarTourActive(null); return; }
     if (!userId || calendarTourActive) return;
-    // Waits out the sheet's own opening slide (950ms above) so the tour
-    // doesn't spotlight something that's still animating into place.
+    // Waits out the sheet's own opening slide (CALENDAR_SLIDE_DURATION
+    // above) so the tour doesn't spotlight something that's still animating
+    // into place.
     const t = setTimeout(() => {
       if (!legendTour.seen) { setCalendarTourActive('legend'); return; }
       // Deferred until there's an actual spent day to point at — same
@@ -136,7 +147,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
       // deferred (not skipped outright) until one does, same "only show it
       // once it's real" rule as the Home-screen tour's swipe step.
       if (!budgetTour.seen && budget?.hasBudget) setCalendarTourActive('budget');
-    }, 1000);
+    }, CALENDAR_SLIDE_DURATION + 150);
     return () => clearTimeout(t);
   }, [open, userId, calendarTourActive, legendTour.seen, tapDateTour.seen, spentDayStr, budgetTour.seen, budget?.hasBudget]);
 
@@ -333,7 +344,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                       <Text style={{ fontSize: 10, color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>No spend</Text>
                     </View>
                     <View className="flex-row items-center" style={{ gap: 4 }}>
-                      <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(239,68,68,0.5)' }} />
+                      <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(255,75,75,0.5)' }} />
                       <Text style={{ fontSize: 10, color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>Spent</Text>
                     </View>
                   </View>

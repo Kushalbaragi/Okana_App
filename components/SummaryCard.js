@@ -421,7 +421,7 @@ function SummaryCard({
         <Text className="text-base text-center mb-2" style={{ color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.40)' }}>{periodLabel}</Text>
 
         <View className="items-center justify-center mb-8">
-          <AnimatedAmount value={Math.abs(displayAmount)} color={isOverview ? (netPositive ? '#4ade80' : 'rgba(239,68,68,0.92)') : (light ? '#111111' : '#ffffff')} />
+          <AnimatedAmount value={Math.abs(displayAmount)} color={isOverview ? (netPositive ? '#4ade80' : 'rgba(255,75,75,0.92)') : (light ? '#111111' : '#ffffff')} />
         </View>
 
         <View className="mt-4">
