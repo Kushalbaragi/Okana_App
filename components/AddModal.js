@@ -7,10 +7,15 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, Easing
 import Svg, { Rect, Line } from 'react-native-svg';
 import { today, shiftDate } from '../utils/format';
 import CalendarPicker from './CalendarPicker';
-import { GlassPressable, PILL_ACTIVE_COLOR } from './Glass';
+import { GlassPressable, PILL_ACTIVE_COLOR, INPUT_TEXT_STYLE } from './Glass';
 import { NumericKeypad, nextAmountValue } from './NumericKeypad';
 import { AmountRow, SETTLE_EASING } from './AmountField';
 import { useShake } from '../hooks/useShake';
+
+// Height of the description pill. Shared by the pill itself, the input
+// inside it and the placeholder overlay on top, so all three are centring
+// text within the exact same box — see the comment at the pill's render.
+const DESCRIPTION_PILL_H = 40;
 
 // The sheet covers most, not all, of the screen — a real bottom sheet with
 // a dimmed backdrop above it, rather than a full-screen takeover.
@@ -486,48 +491,59 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
               unexplained gap between them; being a direct, tightly-margined
               neighbor here guarantees there's no room for anything to
               insert space between the two. */}
-          {/* Fixed width/height pill — not content-sized (minWidth only) —
-              with vertical centering handled entirely by this View's own
-              justifyContent, not the TextInput's internal one. The
-              TextInput carries no vertical padding/height of its own, just
-              its natural single-line height, which this View then centers
-              exactly like it already centers the placeholder overlay below
-              it — same mechanism for both, so they can't ever land
-              differently. Also stops the pill itself resizing as you type
-              (was minWidth-only, growing/shrinking with content length). */}
+          {/* The input fills the pill's full height and centres its own text
+              inside it, rather than the pill centring an auto-height input.
+              A TextInput's natural height isn't its text's height — it
+              reserves extra room for the editing caret — so centring that
+              box put the text off-centre. Height also has to be explicit
+              rather than padding-derived: with zero padding and no height
+              the box hugs the text and clips descenders. */}
           <View
             style={{
-              alignSelf: 'center', marginTop: 40, minWidth: 130, height: 40,
+              alignSelf: 'center', marginTop: 40, minWidth: 130, height: DESCRIPTION_PILL_H,
               borderRadius: 9999, justifyContent: 'center',
               backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.15)',
               borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)',
             }}
           >
-            <TextInput
-              value={description}
-              onChangeText={setDescription}
-              // The `transactions.description` column is plain text with no
-              // server-side length constraint — this is the only cap it
-              // gets, since it's a short label ("Netflix", "Electricity
-              // bill"), not free-form notes.
-              maxLength={140}
-              className="px-4 text-base text-center"
-              style={{ color: light ? '#111111' : '#ffffff' }}
-            />
-            {/* A real TextInput's `placeholder` is drawn internally by the
-                native view itself — there's no way to animate just that
-                text independently of the whole input box. This fake
-                placeholder sits on top instead (hidden the instant real
-                text exists, and ignoring touches so a tap still focuses
-                the real input underneath), so only the wording shakes on
-                an invalid submit, not the box around it. */}
-            {!description && (
-              <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' }}>
-                <Animated.Text className="text-base" style={[{ color: light ? '#b0b0b0' : '#4d4d4d' }, descriptionShake.style]}>
-                  Description
-                </Animated.Text>
-              </View>
-            )}
+            {/* The shake rides on this wrapper, not on the pill: the pill's
+                background and border belong to the View above, and the
+                input itself is transparent, so translating this moves only
+                the text and caret — the same "only the wording shakes, not
+                the box around it" this used to get from a separate
+                placeholder overlay. The shake only ever fires while the
+                field is empty (see the submit guard above), so what
+                visibly shakes is still the placeholder. */}
+            <Animated.View style={descriptionShake.style}>
+              <TextInput
+                value={description}
+                onChangeText={setDescription}
+                // The native placeholder, NOT a <Text> drawn on top. An
+                // overlay is a different text renderer than the one drawing
+                // the input's own value, and the two don't agree on where
+                // the baseline sits inside a given box — which is why the
+                // text appeared to drop a couple of pixels the moment you
+                // typed. Matching their padding, height and centring can
+                // get close but never exact; one view drawing both states
+                // is the only arrangement where they can't disagree.
+                placeholder="Description"
+                placeholderTextColor={light ? '#b0b0b0' : '#4d4d4d'}
+                // The `transactions.description` column is plain text with no
+                // server-side length constraint — this is the only cap it
+                // gets, since it's a short label ("Netflix", "Electricity
+                // bill"), not free-form notes.
+                maxLength={140}
+                className="px-4 text-base text-center"
+                style={[
+                  INPUT_TEXT_STYLE,
+                  {
+                    color: light ? '#111111' : '#ffffff',
+                    height: DESCRIPTION_PILL_H,
+                    paddingVertical: 0,
+                  },
+                ]}
+              />
+            </Animated.View>
           </View>
         </ScrollView>
       </View>

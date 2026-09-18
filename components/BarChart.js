@@ -5,6 +5,8 @@ import { formatCurrency } from '../utils/format';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const AnimatedLine = Animated.createAnimatedComponent(Line);
+const AnimatedSvgText = Animated.createAnimatedComponent(SvgText);
 
 const BAR_HEIGHT = 110;
 const CHART_W    = 264;
@@ -17,6 +19,18 @@ const CHART_W    = 264;
 // (like "All Time") from taking forever for the *later* ones to start.
 const BAR_STAGGER_STEP_MS = 55;
 const BAR_STAGGER_CAP_MS  = 450;
+
+// The average line rises into place from slightly below and drops back down
+// on its way out, fading as it goes — so it reads as settling onto the
+// chart rather than being switched on. Small on purpose: it's a reference
+// mark, and a long travel would pull attention off the bars it annotates.
+const AVG_SLIDE_PX = 10;
+const AVG_FADE_MS  = 300;
+// Slightly longer than the fade so the movement is still finishing as the
+// line reaches full opacity, rather than arriving and then continuing to
+// visibly drift.
+const AVG_MOVE_MS  = 360;
+const AVG_EASING   = Easing.out(Easing.cubic);
 
 function Bar({ x, width, rx, targetHeight, delay, fill, maskColor }) {
   // Animates the actual pixel height directly (not a 0-1 progress scaled by
@@ -113,6 +127,52 @@ function Bar({ x, width, rx, targetHeight, delay, fill, maskColor }) {
   );
 }
 
+// The average mark is two separate elements because they sit at different
+// depths in the SVG — the line is drawn before the bars so a taller bar
+// covers it, the label after them so text is never obscured. Both read from
+// the SAME two shared values (owned by BarChart below) rather than each
+// running its own copy of the animation, so the label can't drift a frame
+// out of step with the line it belongs to.
+function AverageLineMark({ progress, lineY, endX, color }) {
+  const animatedProps = useAnimatedProps(() => ({
+    y1: lineY.value,
+    y2: lineY.value,
+    opacity: progress.value,
+  }));
+
+  return (
+    <AnimatedLine
+      x1={0}
+      x2={endX}
+      stroke={color}
+      strokeWidth="1"
+      strokeDasharray="3 3"
+      animatedProps={animatedProps}
+    />
+  );
+}
+
+function AverageLineLabel({ progress, lineY, label, color }) {
+  // +3 keeps the text optically centred on the line, matching where the
+  // static version sat.
+  const animatedProps = useAnimatedProps(() => ({
+    y: lineY.value + 3,
+    opacity: progress.value,
+  }));
+
+  return (
+    <AnimatedSvgText
+      x={CHART_W}
+      textAnchor="end"
+      fontSize="8"
+      fill={color}
+      animatedProps={animatedProps}
+    >
+      {label}
+    </AnimatedSvgText>
+  );
+}
+
 // Fades in on the same stagger schedule as the Bar it stands in for, and
 // the same "no special-casing" reasoning as Bar above — see its comment.
 function NoSpendDot({ cx, cy, r, fill, delay }) {
@@ -201,6 +261,57 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
     }
   }
 
+  // Held so the line/label can animate OUT after avgY has already gone
+  // null — without this the text would blank and the line snap to full
+  // width the instant the data went away, mid-fade.
+  const lastAvgRef = useRef({ label: '', endX: CHART_W });
+  if (avgLabel != null) lastAvgRef.current = { label: avgLabel, endX: avgLineEndX };
+  const shownAvgLabel = avgLabel ?? lastAvgRef.current.label;
+  const shownAvgEndX  = avgLabel != null ? avgLineEndX : lastAvgRef.current.endX;
+
+  const avgProgress = useSharedValue(0);
+  const avgLineY    = useSharedValue(BAR_HEIGHT);
+  const avgShownRef = useRef(false);
+  const prevAnimKeyRef = useRef(animKey);
+  // Waits out the bars' own stagger so the reference line settles on top of
+  // a chart that's already there, instead of racing the data it describes.
+  const avgRevealDelay = Math.min((n - 1) * BAR_STAGGER_STEP_MS, BAR_STAGGER_CAP_MS) + 80;
+
+  useEffect(() => {
+    // A period switch regrows every bar from 0 (see the animKey in the
+    // render loop's key below), so the line re-reveals with them rather
+    // than gliding from the old period's height to the new one — that
+    // glide reads as the line meaning something continuous across two
+    // periods that have nothing to do with each other.
+    if (prevAnimKeyRef.current !== animKey) {
+      prevAnimKeyRef.current = animKey;
+      avgShownRef.current = false;
+      avgProgress.value = 0;
+    }
+
+    if (avgY != null) {
+      if (!avgShownRef.current) {
+        avgShownRef.current = true;
+        // Parked below the target first (instantly, still invisible), then
+        // released so it rises into place as it fades in.
+        avgLineY.value = avgY + AVG_SLIDE_PX;
+        avgLineY.value = withDelay(avgRevealDelay, withTiming(avgY, { duration: AVG_MOVE_MS, easing: AVG_EASING }));
+        avgProgress.value = withDelay(avgRevealDelay, withTiming(1, { duration: AVG_FADE_MS, easing: AVG_EASING }));
+      } else {
+        // Already on screen and the average itself moved — slide straight
+        // to the new height, no re-fade.
+        avgLineY.value = withTiming(avgY, { duration: AVG_MOVE_MS, easing: AVG_EASING });
+        avgProgress.value = withTiming(1, { duration: AVG_FADE_MS, easing: AVG_EASING });
+      }
+    } else if (avgShownRef.current) {
+      // Nothing to average any more — drop away and fade out.
+      avgShownRef.current = false;
+      avgProgress.value = withTiming(0, { duration: AVG_FADE_MS, easing: AVG_EASING });
+      avgLineY.value = withTiming(avgLineY.value + AVG_SLIDE_PX, { duration: AVG_MOVE_MS, easing: AVG_EASING });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avgY, animKey, avgRevealDelay]);
+
   return (
     <Svg viewBox={`0 0 ${CHART_W} ${svgH}`} style={{ width: '100%', aspectRatio: CHART_W / svgH }}>
       {onDeselect && (
@@ -214,8 +325,13 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
           own mask-rect comment for how a taller bar actually hides it
           instead of just showing through. The label itself is drawn last,
           after every bar — see the block at the bottom of this Svg. */}
-      {avgY != null && (
-        <Line x1={0} y1={avgY} x2={avgLineEndX} y2={avgY} stroke={avgLineColor} strokeWidth="1" strokeDasharray="3 3" />
+      {showAverage && (
+        <AverageLineMark
+          progress={avgProgress}
+          lineY={avgLineY}
+          endX={shownAvgEndX}
+          color={avgLineColor}
+        />
       )}
 
       {values.map((v, i) => {
@@ -319,10 +435,13 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
           last several days' bars are tall enough to reach into its row —
           only the reference line itself (above) respects bar height, the
           text is exempt from being covered. */}
-      {avgY != null && (
-        <SvgText x={CHART_W} y={avgY + 3} textAnchor="end" fontSize="8" fill={avgLabelColor}>
-          {avgLabel}
-        </SvgText>
+      {showAverage && (
+        <AverageLineLabel
+          progress={avgProgress}
+          lineY={avgLineY}
+          label={shownAvgLabel}
+          color={avgLabelColor}
+        />
       )}
     </Svg>
   );

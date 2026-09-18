@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Pressable, useWindowDimensions } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
@@ -16,8 +16,7 @@ import Header from '../../components/Header';
 import SummaryCard from '../../components/SummaryCard';
 import TransactionList from '../../components/TransactionList';
 import AddModal from '../../components/AddModal';
-import SpendCalendarModal, { CALENDAR_SLIDE_DURATION } from '../../components/SpendCalendarModal';
-import { SETTLE_EASING } from '../../components/AmountField';
+import SpendCalendarModal from '../../components/SpendCalendarModal';
 import MonthlyRecapModal from '../../components/MonthlyRecapModal';
 import BudgetSetupModal from '../../components/BudgetSetupModal';
 import { UpdateSheet } from '../../components/UpdateSheet';
@@ -113,7 +112,6 @@ export default function Dashboard() {
   }, [trialInfo.status, subscription, posthog]);
   const transactionListRef = useRef(null);
   const { showUpdate, dismiss: dismissUpdate } = useAppUpdate();
-  const { width: windowWidth } = useWindowDimensions();
 
   // Scale-in-and-fade on mount — Dashboard only ever mounts once per app
   // session (it stays mounted underneath Settings/Subscription when
@@ -124,29 +122,15 @@ export default function Dashboard() {
     entranceProgress.value = withTiming(1, { duration: 480, easing: Easing.bezier(0.16, 1, 0.3, 1) });
   }, []);
 
-  // Home's half of the Calendar page's own slide-in — see openCalendar/
-  // closeCalendar below and CALENDAR_SLIDE_DURATION's own comment in
-  // SpendCalendarModal.js for why this is a second shared value on the same
-  // timing rather than one shared between the two components. 0 = Home at
-  // rest, 1 = Home pushed fully off-screen to the left, in step with the
-  // Calendar sliding fully into that space from the right — a synchronized
-  // swap, not a subtle parallax, matching how Settings (pushed via the
-  // Stack navigator) moves both screens together.
-  const calendarSlideProgress = useSharedValue(0);
-  // Closing the calendar isn't only closeCalendar below — openRecapFromCalendar
-  // and openBudgetSetupFromCalendar further down also close it themselves
-  // (to chain into a different modal via onClosed/pendingAfterCalendarClose).
-  // Routing every close through this one helper is what keeps Home's slide
-  // from getting left stranded off-screen by one of those other paths.
-  const bringHomeBack = useCallback(() => {
-    calendarSlideProgress.value = withTiming(0, { duration: CALENDAR_SLIDE_DURATION, easing: SETTLE_EASING });
-  }, [calendarSlideProgress]);
+  // Home stays static while the Calendar page slides in/out on top of it —
+  // an earlier version also pushed Home off-screen in lockstep (a
+  // synchronized swap, matching how Settings pushed via the Stack navigator
+  // moves both screens together), but that read as glittery/janky rather
+  // than smooth, so it was removed. Only SpendCalendarModal's own page
+  // animates now.
   const entranceStyle = useAnimatedStyle(() => ({
     opacity: entranceProgress.value,
-    transform: [
-      { scale: 0.94 + entranceProgress.value * 0.06 },
-      { translateX: -calendarSlideProgress.value * windowWidth },
-    ],
+    transform: [{ scale: 0.94 + entranceProgress.value * 0.06 }],
   }));
 
   // Erase Data / other changes made from Account (a separate stacked screen)
@@ -429,8 +413,7 @@ export default function Dashboard() {
     setRecapMonthName(MONTH_NAMES[prev.month]);
     pendingAfterCalendarClose.current = 'recap';
     setCalendarOpen(false);
-    bringHomeBack();
-  }, [bringHomeBack]);
+  }, []);
 
   const handleCalendarClosed = useCallback(() => {
     const pending = pendingAfterCalendarClose.current;
@@ -462,8 +445,7 @@ export default function Dashboard() {
   const openBudgetSetupFromCalendar = useCallback(() => {
     pendingAfterCalendarClose.current = 'budget';
     setCalendarOpen(false);
-    bringHomeBack();
-  }, [bringHomeBack]);
+  }, []);
 
   const budgetForCalendar = useMemo(() => ({
     loading: budget.loading,
@@ -613,21 +595,8 @@ export default function Dashboard() {
   // each of those subtrees, AddModal being the heaviest of them.
   const openMenu = useCallback(() => router.push('/(app)/account'), [router]);
 
-  // Sets the calendar's `open` prop AND kicks off Home's own slide in the
-  // same tick SpendCalendarModal's effect reacts to that same prop change —
-  // same duration/easing on both sides (CALENDAR_SLIDE_DURATION,
-  // SETTLE_EASING) is what keeps the two readable as one motion. Shared
-  // values are stable refs, so listing calendarSlideProgress/bringHomeBack
-  // here doesn't break these callbacks' own identity stability (see the
-  // comment above Header/SummaryCard's memo dependence on that).
-  const openCalendar = useCallback(() => {
-    setCalendarOpen(true);
-    calendarSlideProgress.value = withTiming(1, { duration: CALENDAR_SLIDE_DURATION, easing: SETTLE_EASING });
-  }, [calendarSlideProgress]);
-  const closeCalendar = useCallback(() => {
-    setCalendarOpen(false);
-    bringHomeBack();
-  }, [bringHomeBack]);
+  const openCalendar = useCallback(() => setCalendarOpen(true), []);
+  const closeCalendar = useCallback(() => setCalendarOpen(false), []);
   const closeAddModal = useCallback(() => setModalOpen(false), []);
   const handleAddModalClosed = useCallback(() => setAddModalClosed(true), []);
 

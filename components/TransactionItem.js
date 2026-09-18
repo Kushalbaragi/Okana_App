@@ -1,8 +1,8 @@
-import { memo, useCallback, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import * as Haptics from 'expo-haptics';
-import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import { formatCurrencyFull, dateBoxParts } from '../utils/format';
 import { TrashIcon } from './icons';
 import { CARD_COLOR } from './Glass';
@@ -76,11 +76,13 @@ function RightActions({ drag, onDelete }) {
 // the Dashboard — see the matching comment in Header.js.
 // `swipeable` is how the list keeps a tab/period switch cheap. Mounting
 // ReanimatedSwipeable costs real gesture-handler + worklet setup per row,
-// and a switch remounts every visible row at once (~12 of them) — that was
-// the single biggest chunk of the 264-411ms a switch used to spend in this
-// list. So the list paints rows flat first and flips this to true once the
-// commit has settled (see `settled` in TransactionList), moving the setup
-// off the critical path instead of removing the feature.
+// and a switch remounts every row at once — that was the single biggest
+// chunk of the 264-411ms a switch used to spend in this list, and it
+// matters more now the list isn't virtualized (it renders a whole month's
+// rows, not just the visible ones — see the card's own comment in
+// TransactionList). So the list paints rows flat first and flips this to
+// true once the commit has settled (see `settled` in TransactionList),
+// moving the setup off the critical path instead of removing the feature.
 function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, onSwipeOpen, onCardPress, light = false, swipeable = true, cardColor = CARD_COLOR }) {
   const swipeableRef = useRef(null);
 
@@ -105,32 +107,57 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
     onEdit(tx);
   }, [tx, onCardPress, onEdit]);
 
+  // Crossfades the row's inner content (date, description, amount) whenever
+  // the transaction's own visible fields change — e.g. after editing it —
+  // instead of the new values just popping in. The card itself (the
+  // Pressable below: background, padding, position in the list) never
+  // moves; only this inner layer dips out and back in. Skipped on the very
+  // first mount, when there's no "old" content to fade from.
+  const contentOpacity = useSharedValue(1);
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+    // React has already committed the new text by the time this runs, so
+    // the fade-in half of this sequence reveals the new values — the dip to
+    // 0 is what hides the old ones on the way out.
+    contentOpacity.value = withSequence(
+      withTiming(0, { duration: 140 }),
+      withTiming(1, { duration: 220 }),
+    );
+  }, [tx.description, tx.amount, tx.date, isIncome, contentOpacity]);
+  const contentStyle = useAnimatedStyle(() => ({ opacity: contentOpacity.value }));
+
   const row = (
     <Pressable
       onPress={handleCardPress}
-      className="flex-row items-center justify-between py-4 px-4"
+      className="py-4 px-4"
       style={{ backgroundColor: cardColor }}
     >
-      <View className="flex-row items-center flex-1 pr-3">
-        <DateBox dateStr={tx.date} light={light} />
-        <Text numberOfLines={1} className="text-base flex-shrink" style={{ color: light ? '#111111' : '#ffffff' }}>
-          {tx.description || (isIncome ? 'Income' : 'Expense')}
-        </Text>
-      </View>
+      <Animated.View className="flex-row items-center justify-between" style={contentStyle}>
+        <View className="flex-row items-center flex-1 pr-3">
+          <DateBox dateStr={tx.date} light={light} />
+          <Text numberOfLines={1} className="text-base flex-shrink" style={{ color: light ? '#111111' : '#ffffff' }}>
+            {tx.description || (isIncome ? 'Income' : 'Expense')}
+          </Text>
+        </View>
 
-      <View className="flex-row items-center shrink-0" style={{ gap: 6 }}>
-        {/* Not yet synced to the server — sitting in the offline queue,
-            or an insert/update still in flight. */}
-        {tx._pending && (
-          <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: light ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }} />
-        )}
-        <Text
-          className="text-base font-medium"
-          style={{ color: isIncome ? 'rgba(74,222,128,0.8)' : light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}
-        >
-          {isIncome ? '+' : '-'}{formatCurrencyFull(tx.amount)}
-        </Text>
-      </View>
+        <View className="flex-row items-center shrink-0" style={{ gap: 6 }}>
+          {/* Not yet synced to the server — sitting in the offline queue,
+              or an insert/update still in flight. */}
+          {tx._pending && (
+            <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: light ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }} />
+          )}
+          <Text
+            className="text-base font-medium"
+            style={{ color: isIncome ? 'rgba(74,222,128,0.8)' : light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}
+          >
+            {isIncome ? '+' : '-'}{formatCurrencyFull(tx.amount)}
+          </Text>
+        </View>
+      </Animated.View>
     </Pressable>
   );
 

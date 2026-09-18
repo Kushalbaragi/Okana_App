@@ -23,15 +23,12 @@ import { useTourStep } from '../hooks/useTourStep';
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // Monday-first
 
-// Exported so app/(app)/index.js can drive the Home screen's own parallax
-// slide with the exact same timing, rather than a second hardcoded number
-// slowly drifting out of sync with this one. The two aren't wired through a
-// single shared value — Home animates its own useSharedValue, started in
-// the same callback that flips `open` here — but same duration + easing,
-// triggered in the same tick, is what actually makes them read as one
-// synchronized motion rather than two independent slides that happen to be
-// close. Matches the ~300-350ms a native Stack push settles in.
-export const CALENDAR_SLIDE_DURATION = 350;
+// How long this page takes to slide in or out. Home used to animate in
+// lockstep with it (sliding off to the left as this came in from the
+// right), which is why this was once exported — that turned out to read as
+// juddery rather than synchronized, so Home now stays put and only this
+// page moves.
+const CALENDAR_SLIDE_DURATION = 480;
 
 // Each row slides up and fades in with a small stagger, rather than the
 // whole day's list appearing at once.
@@ -98,10 +95,14 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
   // ScrollView's own vertical scrolling either.
   const [visible, setVisible] = useState(open);
   const pageTranslateX = useSharedValue(windowWidth);
+  // Guards handleModalShow below so it only ever drives the slide-in for an
+  // actual open, never fires stale from some earlier mount.
+  const openingRef = useRef(false);
 
   useEffect(() => {
     if (open) {
       setVisible(true);
+      openingRef.current = true;
       // Defaults to today so its transactions are visible right away
       // instead of an empty grid the user has to tap into first.
       setSelectedDate(today());
@@ -110,8 +111,14 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
       // was last left instead of back on the actual current month — this
       // modal stays mounted across opens/closes, so nothing else resets it.
       setView(startOfMonth(now));
-      pageTranslateX.value = withTiming(0, { duration: CALENDAR_SLIDE_DURATION, easing: SETTLE_EASING });
+      // The slide-in itself is kicked off from handleModalShow below, not
+      // here: starting it in the same tick as setVisible(true) races the
+      // native <Modal> window's own presentation, so the first frame or two
+      // of the slide can be dropped. onShow fires once the modal is
+      // actually up, which is the earliest point the transform is
+      // guaranteed to be applied to something on screen.
     } else {
+      openingRef.current = false;
       pageTranslateX.value = withTiming(
         windowWidth,
         { duration: CALENDAR_SLIDE_DURATION, easing: SETTLE_EASING },
@@ -128,6 +135,14 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Fired by the native <Modal> once it has actually finished presenting —
+  // see the comment above the `open` effect for why the slide-in waits for
+  // this instead of starting immediately.
+  const handleModalShow = useCallback(() => {
+    if (!openingRef.current) return;
+    pageTranslateX.value = withTiming(0, { duration: CALENDAR_SLIDE_DURATION, easing: SETTLE_EASING });
+  }, [pageTranslateX]);
 
   useEffect(() => {
     // Resets immediately on close so a tour hint mid-flow doesn't linger
@@ -217,7 +232,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} onShow={handleModalShow}>
       {/* RN's <Modal> stays fully touch-active for its whole lifetime —
           `visible` only flips to false once the close animation below has
           actually finished, so without this the calendar icon (and anything

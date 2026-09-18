@@ -16,7 +16,12 @@ export default function AppLayout() {
   if (!user) return <Redirect href="/(auth)/login" />;
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    // contentStyle's background matters: React Navigation's own default is
+    // white, and it shows through in any gap a screen's own background
+    // doesn't cover — which is how opening the calendar (a page sliding in
+    // over Dashboard) flashed white for a frame. Matches the root layout's
+    // Stack, and every screen in here is dark anyway.
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }}>
       {/* Opened from the hamburger icon, not a forward drill-down — slides
           in from the left to read as a side menu, unlike every other
           pushed screen here (subscription, etc.) which keeps the default

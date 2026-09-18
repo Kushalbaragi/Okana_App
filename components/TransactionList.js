@@ -1,6 +1,15 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { View, Text, FlatList, Pressable, InteractionManager, StyleSheet } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withDelay, withTiming, LinearTransition, SlideInRight, SlideInLeft, FadeIn } from 'react-native-reanimated';
+import { View, Text, ScrollView, Pressable, InteractionManager, StyleSheet, useWindowDimensions } from 'react-native';
+import Animated, {
+  Easing,
+  useSharedValue,
+  useAnimatedStyle,
+  withDelay,
+  withTiming,
+  LinearTransition,
+  FadeIn,
+  FadeOut,
+} from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
 import TransactionItem from './TransactionItem';
 import { formatCurrency } from '../utils/format';
@@ -53,11 +62,24 @@ const DIVIDER_INSET = 58;
 // padding instead — still aligned with where that row's label begins.
 const DRILL_DIVIDER_INSET = 16;
 
-// How long a step deeper (or back out) takes to slide across.
-const NAV_SLIDE_MS = 260;
-// Shorter than the slide — a tab switch should feel immediate, and the
-// content underneath has already been replaced by the time it plays.
-const TAB_FADE_MS = 190;
+// How long a step deeper (or back out) takes to slide across. The outgoing
+// and incoming content are on screen together for this whole window — one
+// sliding out, one sliding in — so it reads as the card's contents being
+// swapped sideways rather than the card itself being replaced.
+const NAV_SLIDE_MS = 340;
+// How far the OUTGOING content travels, as a fraction of the incoming one's
+// distance. Both move the same way; the old one just lags behind instead of
+// keeping pace — the depth cue that makes a push read as one layer sliding
+// over another rather than two unrelated panels swapping places.
+const NAV_PARALLAX = 0.28;
+// A tab/range switch is a change of subject, not a move through anything,
+// so its content crossfades in place instead of sliding.
+const TAB_FADE_MS = 220;
+// How long the card takes to grow/shrink to a new content height. Matched
+// to the slide so a step that also changes the row count settles as one
+// motion rather than two.
+const CARD_HEIGHT_MS = 340;
+const CARD_HEIGHT_EASING = Easing.inOut(Easing.ease);
 
 // Slides up + fades in on mount. Only ever plays for the list's very first
 // paint (see `revealing` in TransactionList) — switching tabs/periods
@@ -79,19 +101,10 @@ function RevealRow({ index, children }) {
   return <Animated.View style={style}>{children}</Animated.View>;
 }
 
-// Corner radii are per-row rather than on a shared wrapper, so the stack of
-// rows reads as one card while each row stays its own independently
-// virtualized cell. Same approach the transaction rows use.
-function cardShape(isFirst, isLast, cardColor) {
-  return {
-    backgroundColor: cardColor,
-    overflow: 'hidden',
-    borderTopLeftRadius: isFirst ? CARD_RADIUS : 0,
-    borderTopRightRadius: isFirst ? CARD_RADIUS : 0,
-    borderBottomLeftRadius: isLast ? CARD_RADIUS : 0,
-    borderBottomRightRadius: isLast ? CARD_RADIUS : 0,
-  };
-}
+// Rows are flat now — the card container below owns the corner radius and
+// clips them, so the rounding no longer has to be reconstructed per row.
+// That's what lets the container stay mounted (and keep its shape) while
+// the rows inside it slide or fade out from under it.
 
 // Same size, radius and tint as TransactionItem's own DateBox, so a month's
 // leading marker reads as part of the same family as the date chip on the
@@ -115,9 +128,9 @@ function MonthBox({ n, light }) {
 // padding, card corners, divider treatment) so drilling in doesn't feel
 // like moving between two differently-designed lists. The chevron is the
 // only thing marking it as a step rather than a leaf.
-function DrillRow({ label, total, leading, dividerInset, isFirst, isLast, cardColor, dividerColor, light, amountColor, onPress }) {
+function DrillRow({ label, total, leading, dividerInset, isLast, cardColor, dividerColor, light, amountColor, onPress }) {
   return (
-    <View style={cardShape(isFirst, isLast, cardColor)}>
+    <View style={{ backgroundColor: cardColor }}>
       <Pressable
         onPress={onPress}
         className="flex-row items-center justify-between py-4 px-4"
@@ -202,6 +215,8 @@ function TransactionList({
   // own comment.
   justAddedId,
 }, ref) {
+  // Drives how far the sliding content travels — see navAnimations below.
+  const { width: windowWidth } = useWindowDimensions();
   // The raised surface the rows sit on. This used to be the same colour as
   // the page behind it, which meant the per-row corner radii had nothing to
   // show against and the list read as loose text rather than a card.
@@ -272,15 +287,32 @@ function TransactionList({
   // travel, a tab/range switch crossfades (it's a change of subject, not a
   // move through anything), and the very first paint does neither.
   const [navMode, setNavMode] = useState('none');
-
-  // Switching tab or range starts a new browse from the top, rather than
-  // stranding the user at a depth that belonged to the previous view.
-  const contextKey = `${timeRange}|${activeTab}|${isOverview}|${year}`;
+  // A change of *subject* — the Expense/Income/Overview tab, or the
+  // Month/Year/All Time range. Starts a new browse from the top rather than
+  // stranding the user at a depth that belonged to the previous view, and
+  // crossfades, since it isn't a move along anything.
+  const contextKey = `${timeRange}|${activeTab}|${isOverview}`;
   const [prevContextKey, setPrevContextKey] = useState(contextKey);
-  if (contextKey !== prevContextKey) {
+  const contextChanged = contextKey !== prevContextKey;
+  if (contextChanged) {
     setPrevContextKey(contextKey);
     setDrill({ year: null, month: null });
     setNavMode('switch');
+  }
+
+  // A change of *period* — a different month, year or day of the same view.
+  // That's a move along a timeline, so it slides in the direction of
+  // travel: a later period comes in from the right, an earlier one from the
+  // left. `periodOrder` is just a sortable stamp for deciding which way.
+  // Skipped when the subject changed in the same pass (that's a fade, and
+  // the period usually moves along with it) — prevPeriod is still synced so
+  // the *next* move compares against the right thing.
+  const periodKey = `${year}|${selectedMonth ?? ''}|${selectedDay ?? ''}`;
+  const periodOrder = (year ?? 0) * 10000 + ((selectedMonth ?? 0) + 1) * 100 + (selectedDay ?? 0);
+  const [prevPeriod, setPrevPeriod] = useState({ key: periodKey, order: periodOrder });
+  if (periodKey !== prevPeriod.key) {
+    setPrevPeriod({ key: periodKey, order: periodOrder });
+    if (!contextChanged) setNavMode(periodOrder >= prevPeriod.order ? 'deeper' : 'back');
   }
 
   // Tapping a point on the Overview curve still filters this list — it just
@@ -423,16 +455,17 @@ function TransactionList({
     return () => handle.cancel();
   }, [settled, filterKey]);
 
-  // Hoisted out of the list's props. Inline arrows were recreated on every
-  // render, which meant VirtualizedList's CellRenderer could never bail out
-  // of a cell and memo(TransactionItem) never got a chance to do its job.
+  // Hoisted rather than inlined at the call site so memo(TransactionItem)
+  // keeps getting stable props and can actually bail out of re-rendering
+  // rows that haven't changed.
   const renderTransaction = useCallback(({ item, index }) => {
     const isLast = index === items.length - 1;
     const card = (
       <Animated.View
+        key={item.id}
         layout={settled ? ROW_LAYOUT_TRANSITION : undefined}
         entering={item.id === justAddedId ? rowEntering : undefined}
-        style={cardShape(index === 0, isLast, cardColor)}
+        style={{ backgroundColor: cardColor }}
       >
         <TransactionItem
           tx={item}
@@ -458,7 +491,7 @@ function TransactionList({
     // Only the first paint's top rows animate — once `revealing` flips,
     // every later render, for any reason, just shows the card directly.
     const shouldAnimate = revealing && index < REVEAL_ANIMATE_MAX;
-    return shouldAnimate ? <RevealRow index={index}>{card}</RevealRow> : card;
+    return shouldAnimate ? <RevealRow key={item.id} index={index}>{card}</RevealRow> : card;
   }, [items.length, settled, revealing, justAddedId, cardColor, dividerColor, isOverview, isIncome, onEdit, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light]);
 
   const drillAmountColor = isIncome && !isOverview
@@ -467,12 +500,12 @@ function TransactionList({
 
   const renderYear = useCallback(({ item, index }) => (
     <DrillRow
+      key={item.year}
       label={String(item.year)}
       total={Math.abs(item.total)}
       // No leading marker — a year row's label is already the number, so a
       // chip beside it would just be the same information twice.
       dividerInset={DRILL_DIVIDER_INSET}
-      isFirst={index === 0}
       isLast={index === yearRows.length - 1}
       cardColor={cardColor}
       dividerColor={dividerColor}
@@ -484,6 +517,7 @@ function TransactionList({
 
   const renderMonth = useCallback(({ item, index }) => (
     <DrillRow
+      key={item.month}
       label={MONTH_NAMES[item.month]}
       total={Math.abs(item.total)}
       leading={<MonthBox n={item.month + 1} light={light} />}
@@ -491,7 +525,6 @@ function TransactionList({
       // width and margin as their DateBox, so the dividers line up straight
       // through a drill-in.
       dividerInset={DIVIDER_INSET}
-      isFirst={index === 0}
       isLast={index === monthRows.length - 1}
       cardColor={cardColor}
       dividerColor={dividerColor}
@@ -519,79 +552,177 @@ function TransactionList({
     />
   );
 
-  // Keyed per level AND per position within it, so each step in or out
-  // mounts a fresh view and plays the slide. Nothing slides on the first
-  // paint — see navMode. The context is part of the key, not just the
-  // depth, so switching Expense/Income/Overview (or the range) remounts
-  // this too and gets its own crossfade, rather than silently swapping the
-  // rows underneath a view that never changed identity.
-  const levelKey = `${contextKey}|${level}|${drill.year ?? ''}|${drill.month ?? ''}`;
+  // Identifies the content currently inside the card. Changing it swaps the
+  // inner layer (and plays the transition below); the card container itself
+  // is outside this and never remounts, which is the whole point — the
+  // shell stays put while its contents are replaced.
+  const contentKey = `${contextKey}|${periodKey}|${level}|${drill.year ?? ''}|${drill.month ?? ''}`;
+
+  // The ScrollView lives outside the keyed layer above (it has to — it's
+  // part of the card's shell, not its contents), so it keeps its offset
+  // across a navigation. That offset belongs to content that no longer
+  // exists: drilling Year → Month from halfway down the year's list opened
+  // the month already scrolled into the middle of it. Every contentKey
+  // change is a completely different list, so every one of them starts at
+  // the top.
+  //
+  // Not animated, deliberately: the reset has to be instantaneous so it
+  // doesn't read as a second motion competing with the slide. It lands
+  // while the outgoing layer is still fading out, which is what keeps it
+  // from being visible as a jump.
+  const scrollRef = useRef(null);
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [contentKey]);
+
+  // Built by hand rather than using Reanimated's SlideIn*/SlideOut*
+  // presets. Those animate `originX` — the element's layout position —
+  // which fights the absolute left:0/right:0 pinning these layers need in
+  // order to overlap, and left the outgoing content travelling the opposite
+  // way to the incoming one. A translateX is independent of layout, and
+  // lets the outgoing layer move a fraction of the distance for the
+  // parallax.
+  const navAnimations = useMemo(() => {
+    const full = windowWidth;
+    const lag = windowWidth * NAV_PARALLAX;
+    const cfg = { duration: NAV_SLIDE_MS, easing: SETTLE_EASING };
+    const enterFrom = from => () => {
+      'worklet';
+      return {
+        initialValues: { transform: [{ translateX: from }] },
+        animations: { transform: [{ translateX: withTiming(0, cfg) }] },
+      };
+    };
+    // The outgoing layer fades as it goes: the two overlap inside the
+    // card, and nothing here controls which of them the platform paints on
+    // top, so letting the old one dissolve keeps the handover clean either
+    // way round.
+    const exitTo = to => () => {
+      'worklet';
+      return {
+        initialValues: { transform: [{ translateX: 0 }], opacity: 1 },
+        animations: {
+          transform: [{ translateX: withTiming(to, cfg) }],
+          opacity: withTiming(0, cfg),
+        },
+      };
+    };
+    return {
+      // Forward: the new content comes in from the right and the old one
+      // lags away to the left — both travelling left, together.
+      enterForward: enterFrom(full),
+      exitForward: exitTo(-lag),
+      // Back: the exact reverse, both travelling right.
+      enterBack: enterFrom(-lag),
+      exitBack: exitTo(full),
+    };
+  }, [windowWidth]);
+
+  // A step through the hierarchy slides; a tab/range switch crossfades in
+  // place (it's a change of subject, not a move through anything); the very
+  // first paint does neither.
   const entering =
-    navMode === 'deeper' ? SlideInRight.duration(NAV_SLIDE_MS) :
-    navMode === 'back' ? SlideInLeft.duration(NAV_SLIDE_MS) :
+    navMode === 'deeper' ? navAnimations.enterForward :
+    navMode === 'back' ? navAnimations.enterBack :
     navMode === 'switch' ? FadeIn.duration(TAB_FADE_MS) :
     undefined;
+  const exiting =
+    navMode === 'deeper' ? navAnimations.exitForward :
+    navMode === 'back' ? navAnimations.exitBack :
+    navMode === 'switch' ? FadeOut.duration(TAB_FADE_MS) :
+    undefined;
 
-  // The header sits OUTSIDE the animated wrapper below, not in the lists as
-  // a ListHeaderComponent. Only the card's contents should travel on a
-  // drill-in; sliding the section label and the Back control along with
-  // them made the whole panel look like it was being replaced, rather than
-  // one level handing off to the next underneath a heading that stays put.
-  // It also keeps Back fixed in place instead of scrolling away.
-  const listProps = {
-    onScrollBeginDrag: closeOpenRow,
-    contentContainerStyle: { paddingHorizontal: 16, paddingBottom: 112 },
-    showsVerticalScrollIndicator: false,
-    style: { flex: 1 },
-  };
+  // Every content layer is absolutely positioned so the outgoing and
+  // incoming ones can overlap during a transition — which means the
+  // container has no intrinsic height of its own and has to be told one.
+  // The active layer reports its natural height via onLayout and the
+  // container animates to it, so adding/removing rows (or landing on a
+  // month with a different number of them) grows or shrinks the card
+  // smoothly instead of jumping. The first measurement is applied without
+  // animating, since there's no previous height to travel from.
+  const cardHeight = useSharedValue(0);
+  const measuredRef = useRef(false);
+  const contentKeyRef = useRef(contentKey);
+  contentKeyRef.current = contentKey;
+  const onContentLayout = useCallback((key, e) => {
+    // A layer that's on its way out can still fire onLayout; only the one
+    // actually being shown should drive the card's height.
+    if (key !== contentKeyRef.current) return;
+    const h = e.nativeEvent.layout.height;
+    if (h === 0) return;
+    if (!measuredRef.current) {
+      measuredRef.current = true;
+      cardHeight.value = h;
+      return;
+    }
+    cardHeight.value = withTiming(h, { duration: CARD_HEIGHT_MS, easing: CARD_HEIGHT_EASING });
+  }, [cardHeight]);
+  const cardHeightStyle = useAnimatedStyle(() => ({ height: cardHeight.value }));
 
-  let body;
+  let rows;
   if (level === 'years' || level === 'months') {
     const data = level === 'years' ? yearRows : monthRows;
-    body = (
-      <FlatList
-        {...listProps}
-        data={data}
-        keyExtractor={row => String(level === 'years' ? row.year : row.month)}
-        renderItem={level === 'years' ? renderYear : renderMonth}
-      />
-    );
+    const renderRow = level === 'years' ? renderYear : renderMonth;
+    rows = data.map((item, index) => renderRow({ item, index }));
   } else if (items.length === 0) {
-    body = (
-      <View className="px-4">
-        <View className="items-center justify-center py-14 px-4">
-          <Text className="text-base text-center" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.25)' }}>
-            No Transaction yet
-          </Text>
-          <Text className="text-base mt-1" style={{ color: light ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.15)' }}>Tap + to add Transactions</Text>
-        </View>
+    rows = (
+      <View className="items-center justify-center py-14 px-4">
+        <Text className="text-base text-center" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.25)' }}>
+          No Transaction yet
+        </Text>
+        <Text className="text-base mt-1" style={{ color: light ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.15)' }}>Tap + to add Transactions</Text>
       </View>
     );
   } else {
-    body = (
-      <FlatList
-        {...listProps}
-        data={items}
-        keyExtractor={tx => tx.id}
-        renderItem={renderTransaction}
-        // Six, not twelve — a phone screen shows roughly this many rows
-        // below the chart, and every extra one is a full row mount paid
-        // synchronously on the switch. The rest stream in via
-        // maxToRenderPerBatch as usual.
-        initialNumToRender={6}
-        maxToRenderPerBatch={10}
-        windowSize={7}
-        removeClippedSubviews
-      />
-    );
+    rows = items.map((item, index) => renderTransaction({ item, index }));
   }
 
+  // The header sits OUTSIDE the card, not inside it. Only the card's
+  // contents should travel on a drill-in; sliding the section label and the
+  // Back control along with them made the whole panel look like it was
+  // being replaced, rather than one level handing off to the next
+  // underneath a heading that stays put.
   return (
     <Pressable onPress={closeOpenRow} style={{ flex: 1 }}>
       <View style={{ paddingHorizontal: 16 }}>{header}</View>
-      <Animated.View key={levelKey} entering={entering} style={{ flex: 1 }}>
-        {body}
-      </Animated.View>
+      <ScrollView
+        ref={scrollRef}
+        onScrollBeginDrag={closeOpenRow}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 112 }}
+        showsVerticalScrollIndicator={false}
+        style={{ flex: 1 }}
+      >
+        {/* The card. Stays mounted and keeps its shape across every switch
+            and every step through the hierarchy — only its height animates
+            and its contents change. `overflow: hidden` is what clips the
+            sliding layers to the card's rounded edges instead of letting
+            them travel across the rest of the screen.
+
+            This is a ScrollView over mapped rows rather than a FlatList,
+            which does cost the virtualization a FlatList gave: an outgoing
+            and an incoming layer have to overlap for the slide, and the
+            active one has to report a natural height for the card to
+            animate to — neither of which a virtualized, self-scrolling list
+            can do. The blast radius is bounded: every path through the
+            hierarchy ends inside a single month, so the longest this ever
+            renders is one month of transactions. */}
+        <Animated.View
+          style={[
+            { backgroundColor: cardColor, borderRadius: CARD_RADIUS, overflow: 'hidden' },
+            cardHeightStyle,
+          ]}
+        >
+          <Animated.View
+            key={contentKey}
+            entering={entering}
+            exiting={exiting}
+            onLayout={e => onContentLayout(contentKey, e)}
+            style={{ position: 'absolute', left: 0, right: 0, top: 0 }}
+          >
+            {rows}
+          </Animated.View>
+        </Animated.View>
+      </ScrollView>
     </Pressable>
   );
 }

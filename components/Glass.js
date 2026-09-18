@@ -16,6 +16,18 @@ export const PILL_ACTIVE_COLOR = '#3a3a3a';
 // the app uses.
 export const CARD_COLOR = '#161616';
 
+// Baseline text metrics for every single-line TextInput in the app. Android
+// otherwise lays a TextInput's text out inside the font's own ascender/
+// descender padding, which is asymmetric — so centring the input's box
+// doesn't actually centre the text inside it. Both properties are
+// Android-only and ignored on iOS.
+//
+// Note this only makes an input's text sit centred in its own box. Making a
+// placeholder line up with an entered value is a separate problem, and the
+// answer there is to use the input's native `placeholder` rather than
+// drawing a <Text> over it — see the description field in AddModal.
+export const INPUT_TEXT_STYLE = { includeFontPadding: false, textAlignVertical: 'center' };
+
 const BG = {
   glass: CARD_COLOR,  // regular cards, secondary buttons/pills
   modal: CARD_COLOR,  // bottom sheets / modal surfaces — same solid surface color throughout, deliberately
@@ -115,7 +127,7 @@ export function GlassTextInput({ radius = RADIUS.xl, style, className, inputClas
     >
       <TextInput
         placeholderTextColor="#4d4d4d"
-        textAlignVertical="center"
+        style={INPUT_TEXT_STYLE}
         className={inputClassName || "text-white text-base px-4 py-3.5"}
         {...props} />
     </View>
