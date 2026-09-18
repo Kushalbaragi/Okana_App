@@ -1,10 +1,12 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { View, Text, SectionList, Pressable, InteractionManager, StyleSheet } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withDelay, withTiming, LinearTransition } from 'react-native-reanimated';
+import { View, Text, FlatList, Pressable, InteractionManager, StyleSheet } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withDelay, withTiming, LinearTransition, SlideInRight, SlideInLeft, FadeIn } from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
 import TransactionItem from './TransactionItem';
-import { monthLabel } from '../utils/format';
+import { formatCurrency } from '../utils/format';
+import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { CARD_COLOR } from './Glass';
+import { ChevronRight, BackIcon } from './icons';
 import { SETTLE_EASING } from './AmountField';
 
 // Same spring shape as AmountField's AMOUNT_LAYOUT_TRANSITION (proven
@@ -30,18 +32,6 @@ function rowEntering() {
   };
 }
 
-function ListHeaderFor(light) {
-  return (
-    // No px-1 — the section headers below don't have it, so the 4px put
-    // this label out of line with both them and the card edge underneath.
-    // The list's own paddingHorizontal is the only inset either should get.
-    <Text
-      className="text-sm font-medium uppercase tracking-wide mt-4 mb-3"
-      style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.25)' }}>
-      Transactions
-    </Text>
-  );
-}
 // Per-row stagger, capped so a long list doesn't take forever to finish
 // revealing — rows past the cap all settle together at the tail instead of
 // queuing further out.
@@ -59,6 +49,15 @@ const CARD_RADIUS = 24;
 // the row's own horizontal padding (16) + the date box (32) + its right
 // margin (10). Keep in step with TransactionItem's px-4 / w-8 / mr-2.5.
 const DIVIDER_INSET = 58;
+// Drill rows have no date box, so their divider starts at the row's own
+// padding instead — still aligned with where that row's label begins.
+const DRILL_DIVIDER_INSET = 16;
+
+// How long a step deeper (or back out) takes to slide across.
+const NAV_SLIDE_MS = 260;
+// Shorter than the slide — a tab switch should feel immediate, and the
+// content underneath has already been replaced by the time it plays.
+const TAB_FADE_MS = 190;
 
 // Slides up + fades in on mount. Only ever plays for the list's very first
 // paint (see `revealing` in TransactionList) — switching tabs/periods
@@ -78,6 +77,108 @@ function RevealRow({ index, children }) {
   }));
 
   return <Animated.View style={style}>{children}</Animated.View>;
+}
+
+// Corner radii are per-row rather than on a shared wrapper, so the stack of
+// rows reads as one card while each row stays its own independently
+// virtualized cell. Same approach the transaction rows use.
+function cardShape(isFirst, isLast, cardColor) {
+  return {
+    backgroundColor: cardColor,
+    overflow: 'hidden',
+    borderTopLeftRadius: isFirst ? CARD_RADIUS : 0,
+    borderTopRightRadius: isFirst ? CARD_RADIUS : 0,
+    borderBottomLeftRadius: isLast ? CARD_RADIUS : 0,
+    borderBottomRightRadius: isLast ? CARD_RADIUS : 0,
+  };
+}
+
+// Same size, radius and tint as TransactionItem's own DateBox, so a month's
+// leading marker reads as part of the same family as the date chip on the
+// transactions one level down — and lands at the same x, which is why a
+// month row can share their divider inset exactly.
+function MonthBox({ n, light }) {
+  return (
+    <View
+      className="items-center justify-center w-8 h-8 rounded shrink-0 mr-2.5"
+      style={{ backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)' }}
+    >
+      <Text className="text-[13px] font-semibold" style={{ color: light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)' }}>
+        {n}
+      </Text>
+    </View>
+  );
+}
+
+// One step in the hierarchy — a year in All Time, or a month inside a year.
+// Deliberately the same shape as a transaction row (same type scale,
+// padding, card corners, divider treatment) so drilling in doesn't feel
+// like moving between two differently-designed lists. The chevron is the
+// only thing marking it as a step rather than a leaf.
+function DrillRow({ label, total, leading, dividerInset, isFirst, isLast, cardColor, dividerColor, light, amountColor, onPress }) {
+  return (
+    <View style={cardShape(isFirst, isLast, cardColor)}>
+      <Pressable
+        onPress={onPress}
+        className="flex-row items-center justify-between py-4 px-4"
+        accessibilityRole="button"
+        accessibilityLabel={label}
+      >
+        <View className="flex-row items-center flex-1 pr-3">
+          {leading}
+          <Text className="text-base" style={{ color: light ? '#111111' : '#ffffff' }}>{label}</Text>
+        </View>
+
+        <View className="flex-row items-center shrink-0" style={{ gap: 6 }}>
+          <Text className="text-base font-medium" style={{ color: amountColor }}>{formatCurrency(total)}</Text>
+          <ChevronRight color={light ? 'rgba(0,0,0,0.25)' : undefined} />
+        </View>
+      </Pressable>
+      {!isLast && (
+        <View style={{ height: StyleSheet.hairlineWidth, marginLeft: dividerInset, backgroundColor: dividerColor }} />
+      )}
+    </View>
+  );
+}
+
+// At the root of a view this is just the section label the list always had.
+// One level deeper it becomes the Back control, with where-you-are on the
+// right — one row doing both jobs rather than stacking a breadcrumb above
+// the label.
+function ListHeader({ backLabel, currentLabel, onBack, light }) {
+  const labelColor = light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.25)';
+  if (!onBack) {
+    return (
+      // No px-1 — the card below doesn't have it, so the 4px put this label
+      // out of line with the card edge. The list's own paddingHorizontal is
+      // the only inset it should get.
+      <Text className="text-sm font-medium uppercase tracking-wide mt-4 mb-3" style={{ color: labelColor }}>
+        Transactions
+      </Text>
+    );
+  }
+  return (
+    <View className="flex-row items-center justify-between mt-4 mb-3">
+      <Pressable
+        onPress={onBack}
+        hitSlop={10}
+        className="flex-row items-center"
+        accessibilityRole="button"
+        accessibilityLabel={`Back to ${backLabel}`}
+      >
+        <BackIcon size={15} color={light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)'} />
+        <Text
+          className="text-sm font-medium uppercase tracking-wide ml-1"
+          style={{ color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}
+        >
+          {backLabel}
+        </Text>
+      </Pressable>
+      <Text className="text-sm font-medium uppercase tracking-wide" style={{ color: labelColor }}>
+        {currentLabel}
+      </Text>
+    </View>
+  );
 }
 
 // `light` is a one-off experimental prop for trying a light theme on just
@@ -101,12 +202,9 @@ function TransactionList({
   // own comment.
   justAddedId,
 }, ref) {
-  // Two distinct colors now, where there used to be one. `bgColor` is the
-  // page behind the list; `cardColor` is the raised surface the rows sit on.
-  // They were identical before, which meant the per-row corner radii had
-  // nothing to show against and the list read as loose text on the page
-  // rather than a card.
-  const bgColor = light ? '#FAFAF8' : '#000000';
+  // The raised surface the rows sit on. This used to be the same colour as
+  // the page behind it, which meant the per-row corner radii had nothing to
+  // show against and the list read as loose text rather than a card.
   const cardColor = light ? '#FFFFFF' : CARD_COLOR;
   const dividerColor = light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)';
   const isOverview = chartTab === 'overview';
@@ -114,7 +212,7 @@ function TransactionList({
 
   // Coordinates "only one swiped-open row at a time" across the whole list —
   // refs rather than state, since none of this should ever trigger a
-  // SectionList re-render of its own.
+  // re-render of its own.
   const swipeRefs = useRef(new Map());
   const openIdRef = useRef(null);
 
@@ -152,7 +250,139 @@ function TransactionList({
   // — none of which are descendants of TransactionList.
   useImperativeHandle(ref, () => ({ closeOpenRow }), [closeOpenRow]);
 
-  const shouldGroup = isOverview || timeRange === '5y';
+  // ---------------------------------------------------------------------
+  // Hierarchy
+  //
+  // Years of history is far too much to reach by scrolling, so Year and All
+  // Time no longer render every transaction at once. They render the level
+  // above instead, and drill down a step at a time:
+  //
+  //   Month     -> transactions                    (unchanged)
+  //   Year      -> months -> transactions
+  //   All Time  -> years  -> months -> transactions
+  //
+  // `drill` is local state on purpose. It's a browsing position, not a data
+  // selection: moving through it must not change what the chart above is
+  // showing, which is what would happen if it were lifted into the screen's
+  // own selectedMonth/selectedPeriod.
+  // ---------------------------------------------------------------------
+  const [drill, setDrill] = useState({ year: null, month: null });
+  // What kind of move produced the level currently on screen, which decides
+  // how it arrives: a step through the hierarchy slides in the direction of
+  // travel, a tab/range switch crossfades (it's a change of subject, not a
+  // move through anything), and the very first paint does neither.
+  const [navMode, setNavMode] = useState('none');
+
+  // Switching tab or range starts a new browse from the top, rather than
+  // stranding the user at a depth that belonged to the previous view.
+  const contextKey = `${timeRange}|${activeTab}|${isOverview}|${year}`;
+  const [prevContextKey, setPrevContextKey] = useState(contextKey);
+  if (contextKey !== prevContextKey) {
+    setPrevContextKey(contextKey);
+    setDrill({ year: null, month: null });
+    setNavMode('switch');
+  }
+
+  // Tapping a point on the Overview curve still filters this list — it just
+  // expresses itself as a jump to that depth now. Keyed on the selection's
+  // value, not fired on every render, so pressing Back can't be instantly
+  // undone by a selection that is merely still set.
+  const lastSyncedSelRef = useRef(null);
+  useEffect(() => {
+    const sel =
+      timeRange === 'year' && selectedMonth != null ? `y:${year}-${selectedMonth}` :
+      timeRange === '5y' && selectedPeriod != null ? `p:${selectedPeriod.year}-${selectedPeriod.month ?? ''}` :
+      null;
+    if (sel === lastSyncedSelRef.current) return;
+    lastSyncedSelRef.current = sel;
+    if (!sel) return;
+    setNavMode('deeper');
+    if (timeRange === 'year') setDrill({ year, month: selectedMonth });
+    else setDrill({ year: selectedPeriod.year, month: selectedPeriod.month ?? null });
+  }, [timeRange, selectedMonth, selectedPeriod, year]);
+
+  const level =
+    timeRange === 'month' ? 'transactions' :
+    timeRange === 'year' ? (drill.month == null ? 'months' : 'transactions') :
+    drill.year == null ? 'years' : drill.month == null ? 'months' : 'transactions';
+
+  // Year view's year is fixed by the range selector; All Time's comes from
+  // whichever year was drilled into.
+  const scopeYear = timeRange === 'year' ? year : drill.year;
+
+  const openYear = useCallback(y => { setNavMode('deeper'); setDrill({ year: y, month: null }); }, []);
+  const openMonth = useCallback(m => { setNavMode('deeper'); setDrill(d => ({ ...d, month: m })); }, []);
+  const goBack = useCallback(() => {
+    closeOpenRow();
+    setNavMode('back');
+    setDrill(d => (d.month != null ? { ...d, month: null } : { year: null, month: null }));
+  }, [closeOpenRow]);
+
+  // Every year/month that actually has something in it, with its total, in
+  // one pass. Only populated levels are ever listed — an empty month is a
+  // dead end the user shouldn't be able to tap into.
+  const buckets = useMemo(() => {
+    const years = new Map();
+    for (const tx of transactions) {
+      if (!isOverview && tx.type !== activeTab) continue;
+      // parseISO, not `new Date(tx.date)` — tx.date is a plain "YYYY-MM-DD",
+      // and the native constructor parses a date-only string as UTC midnight
+      // rather than local midnight, which can shift the month or year it
+      // lands in depending on timezone. See shiftDate in utils/format.js.
+      const d = parseISO(tx.date);
+      const y = d.getFullYear();
+      const m = d.getMonth();
+      // Overview lists both types, so its total is the net; a single-type
+      // tab just accumulates that type.
+      const signed = isOverview ? (tx.type === 'income' ? tx.amount : -tx.amount) : tx.amount;
+
+      let yb = years.get(y);
+      if (!yb) { yb = { year: y, total: 0, months: new Map() }; years.set(y, yb); }
+      yb.total += signed;
+
+      let mb = yb.months.get(m);
+      if (!mb) { mb = { month: m, total: 0 }; yb.months.set(m, mb); }
+      mb.total += signed;
+    }
+    return years;
+  }, [transactions, activeTab, isOverview]);
+
+  // Newest first, matching how transactions themselves are ordered and how
+  // the month sections used to be — the most recent period is the one being
+  // looked for most often, and for the current year it's the only one with
+  // anything in it yet.
+  const yearRows = useMemo(
+    () => [...buckets.values()].sort((a, b) => b.year - a.year),
+    [buckets],
+  );
+  const monthRows = useMemo(
+    () => [...(buckets.get(scopeYear)?.months.values() ?? [])].sort((a, b) => b.month - a.month),
+    [buckets, scopeYear],
+  );
+
+  // One flat list now, never sectioned: every path through the hierarchy
+  // ends inside a single month, so there is nothing left to group by.
+  const items = useMemo(() => {
+    if (level !== 'transactions') return [];
+
+    function matches(tx, d) {
+      if (!isOverview && tx.type !== activeTab) return false;
+      if (timeRange === 'month') {
+        if (d.getFullYear() !== year || d.getMonth() !== selectedMonth) return false;
+        return selectedDay == null || d.getDate() === selectedDay;
+      }
+      return d.getFullYear() === scopeYear && d.getMonth() === drill.month;
+    }
+
+    const rows = [];
+    for (const tx of transactions) {
+      const d = parseISO(tx.date);
+      if (!matches(tx, d)) continue;
+      rows.push({ tx, ts: d.getTime(), cts: new Date(tx.createdAt).getTime() });
+    }
+    rows.sort((a, b) => b.ts - a.ts || b.cts - a.cts);
+    return rows.map(r => r.tx);
+  }, [level, transactions, activeTab, isOverview, timeRange, year, selectedMonth, selectedDay, scopeYear, drill.month]);
 
   // True only while the list's very first paint is still revealing. This is
   // state rather than a ref-flipped-on-mount deliberately: `settled` below
@@ -167,67 +397,12 @@ function TransactionList({
     return () => clearTimeout(t);
   }, []);
 
-  // Filter, sort, and group in one pass instead of three (filter -> map ->
-  // sort -> map, then a separate pass over the result to group) — each of
-  // those previously re-parsed `new Date(tx.date)` from scratch (up to 3x
-  // per transaction total, once here, once for the sort key, once again
-  // for the group key), real, avoidable cost that scales with how many
-  // transactions a switch pulls in (worst case "All Time", every
-  // transaction the account has ever had). One parse per transaction,
-  // reused for the filter check, the sort key, and the group key.
-  const sections = useMemo(() => {
-    function matches(tx, d) {
-      if (timeRange === 'month' && selectedDay != null) {
-        if (d.getDate() !== selectedDay || d.getMonth() !== selectedMonth || d.getFullYear() !== year) return false;
-        if (!isOverview && tx.type !== activeTab) return false;
-        return true;
-      }
-      if (!isOverview && tx.type !== activeTab) return false;
-      if (timeRange === '5y') {
-        if (selectedPeriod != null) {
-          if (selectedPeriod.month != null) return d.getFullYear() === selectedPeriod.year && d.getMonth() === selectedPeriod.month;
-          return d.getFullYear() === selectedPeriod.year;
-        }
-        return true;
-      }
-      if (timeRange === 'year' && selectedMonth == null) return d.getFullYear() === year;
-      return d.getMonth() === selectedMonth && d.getFullYear() === year;
-    }
-
-    const items = [];
-    for (const tx of transactions) {
-      // parseISO, not `new Date(tx.date)` — tx.date is a plain "YYYY-MM-DD",
-      // and the native constructor parses a date-only string as UTC
-      // midnight rather than local midnight, which can shift getDate()/
-      // getMonth()/getFullYear() by a day depending on timezone. See the
-      // matching comment on shiftDate in utils/format.js.
-      const d = parseISO(tx.date);
-      if (!matches(tx, d)) continue;
-      items.push({ tx, d, ts: d.getTime(), cts: new Date(tx.createdAt).getTime() });
-    }
-    items.sort((a, b) => b.ts - a.ts || b.cts - a.cts);
-
-    // Single source of truth for both render paths — SectionList just gets
-    // one untitled section when the view isn't grouped, so there's only one
-    // rendering strategy (and one set of virtualization knobs) to reason
-    // about instead of two diverging FlatList branches.
-    if (!shouldGroup) {
-      return items.length ? [{ key: 'all', title: null, data: items.map(it => it.tx) }] : [];
-    }
-    const map = {};
-    for (const it of items) {
-      const key = `${it.d.getFullYear()}-${String(it.d.getMonth()).padStart(2, '0')}`;
-      if (!map[key]) map[key] = { key, title: monthLabel(it.d.getMonth(), it.d.getFullYear()), data: [] };
-      map[key].data.push(it.tx);
-    }
-    return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
-  }, [transactions, activeTab, isOverview, selectedMonth, year, timeRange, selectedPeriod, selectedDay, shouldGroup]);
-
   // Everything that makes a switch a *switch* — a whole new filtered set,
-  // every visible row unmounting and a new one mounting. Deliberately not
-  // including `transactions`: adding or deleting a row isn't a switch, and
-  // shouldn't cost that row its entrance animation (see `settled`).
-  const filterKey = `${activeTab}|${isOverview}|${timeRange}|${year}|${selectedMonth}|${selectedDay}|${selectedPeriod?.year}-${selectedPeriod?.month}`;
+  // every visible row unmounting and a new one mounting. Drilling counts:
+  // it swaps the entire list contents just like a tab change does.
+  // Deliberately not including `transactions`: adding or deleting a row
+  // isn't a switch, and shouldn't cost that row its entrance animation.
+  const filterKey = `${activeTab}|${isOverview}|${timeRange}|${year}|${selectedMonth}|${selectedDay}|${drill.year}|${drill.month}`;
 
   // False for the first commit after a switch, true once that commit has
   // settled. Gates the two per-row costs that profiling showed dominate a
@@ -248,25 +423,16 @@ function TransactionList({
     return () => handle.cancel();
   }, [settled, filterKey]);
 
-  // Hoisted out of the SectionList's props. Inline arrows were recreated on
-  // every render, which meant VirtualizedList's CellRenderer could never
-  // bail out of a cell and memo(TransactionItem) never got a chance to do
-  // its job.
-  const firstSectionKey = sections[0]?.key;
-  const renderItem = useCallback(({ item, index, section }) => {
-    const isLast = index === section.data.length - 1;
+  // Hoisted out of the list's props. Inline arrows were recreated on every
+  // render, which meant VirtualizedList's CellRenderer could never bail out
+  // of a cell and memo(TransactionItem) never got a chance to do its job.
+  const renderTransaction = useCallback(({ item, index }) => {
+    const isLast = index === items.length - 1;
     const card = (
       <Animated.View
         layout={settled ? ROW_LAYOUT_TRANSITION : undefined}
         entering={item.id === justAddedId ? rowEntering : undefined}
-        style={{
-          backgroundColor: cardColor,
-          overflow: 'hidden',
-          borderTopLeftRadius: index === 0 ? CARD_RADIUS : 0,
-          borderTopRightRadius: index === 0 ? CARD_RADIUS : 0,
-          borderBottomLeftRadius: isLast ? CARD_RADIUS : 0,
-          borderBottomRightRadius: isLast ? CARD_RADIUS : 0,
-        }}
+        style={cardShape(index === 0, isLast, cardColor)}
       >
         <TransactionItem
           tx={item}
@@ -293,27 +459,106 @@ function TransactionList({
     // every later render, for any reason, just shows the card directly.
     const shouldAnimate = revealing && index < REVEAL_ANIMATE_MAX;
     return shouldAnimate ? <RevealRow index={index}>{card}</RevealRow> : card;
-  }, [settled, revealing, justAddedId, cardColor, dividerColor, isOverview, isIncome, onEdit, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light]);
+  }, [items.length, settled, revealing, justAddedId, cardColor, dividerColor, isOverview, isIncome, onEdit, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light]);
 
-  const renderSectionHeader = useCallback(({ section }) => (
-    section.title ? (
-      <View
-        className={`flex-row items-center justify-between mb-2 ${section.key === firstSectionKey ? 'mt-0' : 'mt-6'}`}
-        style={{ backgroundColor: bgColor }}
-      >
-        <Text className="text-sm font-medium uppercase tracking-wider" style={{ color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.35)' }}>
-          {section.title}
-        </Text>
-      </View>
-    ) : null
-  ), [firstSectionKey, bgColor, light]);
+  const drillAmountColor = isIncome && !isOverview
+    ? 'rgba(74,222,128,0.8)'
+    : light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)';
 
-  const listHeader = useMemo(() => ListHeaderFor(light), [light]);
+  const renderYear = useCallback(({ item, index }) => (
+    <DrillRow
+      label={String(item.year)}
+      total={Math.abs(item.total)}
+      // No leading marker — a year row's label is already the number, so a
+      // chip beside it would just be the same information twice.
+      dividerInset={DRILL_DIVIDER_INSET}
+      isFirst={index === 0}
+      isLast={index === yearRows.length - 1}
+      cardColor={cardColor}
+      dividerColor={dividerColor}
+      light={light}
+      amountColor={drillAmountColor}
+      onPress={() => openYear(item.year)}
+    />
+  ), [yearRows.length, cardColor, dividerColor, light, drillAmountColor, openYear]);
 
-  if (sections.length === 0) {
-    return (
-      <View className="px-4 pb-28">
-        {listHeader}
+  const renderMonth = useCallback(({ item, index }) => (
+    <DrillRow
+      label={MONTH_NAMES[item.month]}
+      total={Math.abs(item.total)}
+      leading={<MonthBox n={item.month + 1} light={light} />}
+      // Matches the transaction rows' inset exactly — MonthBox is the same
+      // width and margin as their DateBox, so the dividers line up straight
+      // through a drill-in.
+      dividerInset={DIVIDER_INSET}
+      isFirst={index === 0}
+      isLast={index === monthRows.length - 1}
+      cardColor={cardColor}
+      dividerColor={dividerColor}
+      light={light}
+      amountColor={drillAmountColor}
+      onPress={() => openMonth(item.month)}
+    />
+  ), [monthRows.length, cardColor, dividerColor, light, drillAmountColor, openMonth]);
+
+  // Back goes up exactly one level, and says where it lands rather than just
+  // "Back" — at the transactions level that's the year you came from, one
+  // step up in All Time it's the range itself.
+  const canGoBack =
+    (timeRange === 'year' && level === 'transactions') ||
+    (timeRange === '5y' && level !== 'years');
+  const backLabel = level === 'transactions' ? String(scopeYear) : 'All Time';
+  const currentLabel = level === 'transactions' ? MONTH_NAMES[drill.month] : String(drill.year);
+
+  const header = (
+    <ListHeader
+      backLabel={backLabel}
+      currentLabel={currentLabel}
+      onBack={canGoBack ? goBack : null}
+      light={light}
+    />
+  );
+
+  // Keyed per level AND per position within it, so each step in or out
+  // mounts a fresh view and plays the slide. Nothing slides on the first
+  // paint — see navMode. The context is part of the key, not just the
+  // depth, so switching Expense/Income/Overview (or the range) remounts
+  // this too and gets its own crossfade, rather than silently swapping the
+  // rows underneath a view that never changed identity.
+  const levelKey = `${contextKey}|${level}|${drill.year ?? ''}|${drill.month ?? ''}`;
+  const entering =
+    navMode === 'deeper' ? SlideInRight.duration(NAV_SLIDE_MS) :
+    navMode === 'back' ? SlideInLeft.duration(NAV_SLIDE_MS) :
+    navMode === 'switch' ? FadeIn.duration(TAB_FADE_MS) :
+    undefined;
+
+  // The header sits OUTSIDE the animated wrapper below, not in the lists as
+  // a ListHeaderComponent. Only the card's contents should travel on a
+  // drill-in; sliding the section label and the Back control along with
+  // them made the whole panel look like it was being replaced, rather than
+  // one level handing off to the next underneath a heading that stays put.
+  // It also keeps Back fixed in place instead of scrolling away.
+  const listProps = {
+    onScrollBeginDrag: closeOpenRow,
+    contentContainerStyle: { paddingHorizontal: 16, paddingBottom: 112 },
+    showsVerticalScrollIndicator: false,
+    style: { flex: 1 },
+  };
+
+  let body;
+  if (level === 'years' || level === 'months') {
+    const data = level === 'years' ? yearRows : monthRows;
+    body = (
+      <FlatList
+        {...listProps}
+        data={data}
+        keyExtractor={row => String(level === 'years' ? row.year : row.month)}
+        renderItem={level === 'years' ? renderYear : renderMonth}
+      />
+    );
+  } else if (items.length === 0) {
+    body = (
+      <View className="px-4">
         <View className="items-center justify-center py-14 px-4">
           <Text className="text-base text-center" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.25)' }}>
             No Transaction yet
@@ -322,29 +567,13 @@ function TransactionList({
         </View>
       </View>
     );
-  }
-
-  // "All Time" / Overview has no date bound — it can be every transaction
-  // the user has ever logged, potentially spanning years with many
-  // transactions per month. SectionList virtualizes per row across
-  // sections (unlike a hand-rolled "one FlatList item = one month's full
-  // unvirtualized sub-list", which still mounts every transaction in
-  // whichever months happen to be on screen). Rounded-card look is
-  // reproduced per-row via section-relative index instead of a shared
-  // non-virtualized wrapper.
-  return (
-    <Pressable onPress={closeOpenRow} style={{ flex: 1 }}>
-      <SectionList
-        sections={sections}
+  } else {
+    body = (
+      <FlatList
+        {...listProps}
+        data={items}
         keyExtractor={tx => tx.id}
-        onScrollBeginDrag={closeOpenRow}
-        renderItem={renderItem}
-        renderSectionHeader={renderSectionHeader}
-        ListHeaderComponent={listHeader}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 112 }}
-        showsVerticalScrollIndicator={false}
-        style={{ flex: 1 }}
-        stickySectionHeadersEnabled={false}
+        renderItem={renderTransaction}
         // Six, not twelve — a phone screen shows roughly this many rows
         // below the chart, and every extra one is a full row mount paid
         // synchronously on the switch. The rest stream in via
@@ -354,6 +583,15 @@ function TransactionList({
         windowSize={7}
         removeClippedSubviews
       />
+    );
+  }
+
+  return (
+    <Pressable onPress={closeOpenRow} style={{ flex: 1 }}>
+      <View style={{ paddingHorizontal: 16 }}>{header}</View>
+      <Animated.View key={levelKey} entering={entering} style={{ flex: 1 }}>
+        {body}
+      </Animated.View>
     </Pressable>
   );
 }

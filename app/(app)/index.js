@@ -655,7 +655,10 @@ export default function Dashboard() {
 
       <Animated.View
         ref={fabRef}
-        className="absolute bottom-20 self-center w-[68px] h-[68px] rounded-full items-center justify-center"
+        // bottom-12 (48px) is measured from the raw screen edge — this screen
+        // applies no safe-area inset — so it can't go much lower without
+        // crowding the ~34pt home-indicator area.
+        className="absolute bottom-12 self-center w-[68px] h-[68px] rounded-full items-center justify-center"
         style={[{ backgroundColor: PILL_ACTIVE_COLOR, left: '50%', marginLeft: -34, zIndex: 50, elevation: 50 }, fabAnimStyle]}
       >
         <Pressable

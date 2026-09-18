@@ -1,9 +1,9 @@
 import { memo, useEffect, useRef, Fragment } from 'react';
-import Svg, { Line, Rect, Circle, Text as SvgText } from 'react-native-svg';
+import Svg, { Line, Rect, Circle, Path, Text as SvgText } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedProps, withDelay, withTiming, Easing } from 'react-native-reanimated';
 import { formatCurrency } from '../utils/format';
 
-const AnimatedRect = Animated.createAnimatedComponent(Rect);
+const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const BAR_HEIGHT = 110;
@@ -67,28 +67,48 @@ function Bar({ x, width, rx, targetHeight, delay, fill, maskColor }) {
   // Tried anchoring a scaleY transform at the baseline via react-native-svg's
   // `origin` prop (to avoid animating layout props every frame) — on native
   // it didn't anchor where expected, so bars grew from a fixed top edge
-  // downward instead of from the baseline upward. Animating height/y
-  // directly (here, via the path's own d string) is the reliable way to
-  // get "grows from the bottom" here.
-  const animatedProps = useAnimatedProps(() => ({
-    height: animatedHeight.value,
-    y: BAR_HEIGHT - animatedHeight.value,
-  }));
+  // downward instead of from the baseline upward. Animating the path's own
+  // d string is the reliable way to get "grows from the bottom" here.
+  //
+  // A Path rather than a Rect because only the TOP corners are rounded: the
+  // bar sits ON the baseline, so rounding its bottom left a sliver of gap
+  // under each one and made them read as floating. SVG's Rect takes a
+  // single rx for all four corners and has no way to express that, so the
+  // shape is drawn by hand — up the left edge, an arc across each top
+  // corner, back down the right, and a straight close along the baseline.
+  const animatedProps = useAnimatedProps(() => {
+    const h = animatedHeight.value;
+    const y = BAR_HEIGHT - h;
+    // A corner can never be deeper than half the bar itself, or the two top
+    // arcs overlap and the shape turns inside out while it's still short —
+    // very visible during the grow-in, when every bar passes through that.
+    const r = Math.min(rx, h / 2);
+    const right = x + width;
+    return {
+      d: `M${x} ${BAR_HEIGHT}`
+        + `L${x} ${y + r}`
+        + `Q${x} ${y} ${x + r} ${y}`
+        + `L${right - r} ${y}`
+        + `Q${right} ${y} ${right} ${y + r}`
+        + `L${right} ${BAR_HEIGHT}`
+        + `Z`,
+    };
+  });
 
   // No onPress here — see the static touch-target Rect rendered alongside
   // this in BarChart below, and the comment on it explaining why.
   //
-  // Two stacked rects, not one: `fill` is semi-transparent (the dim/active
+  // Two stacked paths, not one: `fill` is semi-transparent (the dim/active
   // distinction), so on its own it lets whatever's drawn behind it —
   // namely the average line — show through instead of being covered. The
-  // first rect is an opaque, background-colored mask in the exact same
+  // first path is an opaque, background-colored mask in the exact same
   // shape, painted first so it actually blocks the line; the real
-  // (semi-transparent) colored rect draws on top of that for the intended
+  // (semi-transparent) colored path draws on top of that for the intended
   // look, identical to before everywhere the mask has nothing to hide.
   return (
     <Fragment>
-      <AnimatedRect x={x} width={width} rx={rx} fill={maskColor} animatedProps={animatedProps} />
-      <AnimatedRect x={x} width={width} rx={rx} fill={fill} animatedProps={animatedProps} />
+      <AnimatedPath fill={maskColor} animatedProps={animatedProps} />
+      <AnimatedPath fill={fill} animatedProps={animatedProps} />
     </Fragment>
   );
 }
@@ -183,7 +203,7 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
         <Rect x={0} y={0} width={CHART_W} height={BAR_HEIGHT} fill="transparent" onPress={onDeselect} />
       )}
 
-      <Line x1={0} y1={BAR_HEIGHT + 2} x2={CHART_W} y2={BAR_HEIGHT + 2} stroke={gridColor} strokeWidth="0.8" strokeDasharray="2 3" />
+      <Line x1={0} y1={BAR_HEIGHT} x2={CHART_W} y2={BAR_HEIGHT} stroke={gridColor} strokeWidth="0.8" strokeDasharray="2 3" />
 
       {/* Just the line here, drawn before the bars below (not after) so it
           renders behind them — see avgLineColor's comment above and Bar's
