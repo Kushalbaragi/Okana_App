@@ -1,4 +1,4 @@
-import { memo, useEffect, Fragment } from 'react';
+import { memo, useEffect, useRef, Fragment } from 'react';
 import Svg, { Line, Rect, Circle, Text as SvgText } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedProps, withDelay, withTiming, Easing } from 'react-native-reanimated';
 import { formatCurrency } from '../utils/format';
@@ -23,10 +23,10 @@ function Bar({ x, width, rx, targetHeight, delay, fill, maskColor }) {
   // targetHeight). Always grows from 0 — every period switch mounts a
   // genuinely fresh Bar instance (see the key in the render loop below),
   // so useSharedValue(0)'s own initial value is what gives the grow-in,
-  // with no explicit reset step or isNewPeriod branch needed here. A
-  // same-period value update (e.g. a live transaction landing) reuses the
-  // same instance instead, so that case still tweens smoothly from
-  // whatever height it's currently at rather than collapsing to 0.
+  // with no explicit reset step needed here. A same-period value update
+  // (e.g. a live transaction landing) reuses the same instance instead, so
+  // that case still tweens smoothly from whatever height it's currently at
+  // rather than collapsing to 0 — see the two branches below.
   //
   // Tried letting every switch reuse the same instance and just tween
   // straight to the new height, same as the same-period case — faster in
@@ -35,9 +35,32 @@ function Bar({ x, width, rx, targetHeight, delay, fill, maskColor }) {
   // reveal. A uniform grow-from-0 is calmer to watch even though more
   // pixels are moving.
   const animatedHeight = useSharedValue(0);
+  // Only the reveal — a genuinely fresh instance, i.e. a real period switch
+  // (see the animKey in the render loop's key below) — waits out the
+  // stagger, on a fast exp curve. Everything after that on the same
+  // instance is a value update, not a reveal: useTransactions loads in two
+  // waves (AsyncStorage cache, then the Supabase fetch), and a live add
+  // lands the same way. Those tween straight to the new height with no
+  // delay. Re-applying the stagger to them restarts the whole per-index
+  // wait (up to 450ms) from scratch, and withDelay cancels whatever is
+  // still mid-flight — so the bar freezes in place for that wait before
+  // resuming. Imperceptible on the early near-zero-delay bars; a visible
+  // hitch on everything past roughly index 8, and only when the two waves
+  // actually differ, which is what made it look intermittent.
+  const hasRevealedRef = useRef(false);
 
   useEffect(() => {
-    animatedHeight.value = withDelay(delay, withTiming(targetHeight, { duration: 260, easing: Easing.out(Easing.cubic) }));
+    if (!hasRevealedRef.current) {
+      hasRevealedRef.current = true;
+      // cubic, NOT exp. Easing.out(exp) is ~69% done 50ms in and ~90% at
+      // 100ms, so against the 55ms stagger every bar snaps to near-full
+      // before its neighbour has started — a row of discrete pops rather
+      // than a reveal. cubic is only ~47% at 50ms, so roughly five bars are
+      // visibly growing at once and it reads as one wave.
+      animatedHeight.value = withDelay(delay, withTiming(targetHeight, { duration: 260, easing: Easing.out(Easing.cubic) }));
+    } else {
+      animatedHeight.value = withTiming(targetHeight, { duration: 260, easing: Easing.out(Easing.cubic) });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetHeight]);
 
@@ -114,7 +137,7 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
   // an opaque mask under each bar so the average line actually disappears
   // behind a taller bar instead of showing through its semi-transparent
   // fill. See Bar's own comment.
-  const bgColor = light ? '#FAFAF8' : '#0a0a0a';
+  const bgColor = light ? '#FAFAF8' : '#000000';
   // A touch more visible than the baseline grid line (0.10) — it needs to
   // read as an intentional reference mark, not another faint ruled line —
   // but still clearly secondary to the bars themselves, which is also why
@@ -136,9 +159,14 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
   if (showAverage) {
     const startIdx = disabledBeforeIndex ?? 0;
     const endIdx = disabledAfterIndex ?? (n - 1);
-    if (endIdx >= startIdx) {
-      const realValues = values.slice(startIdx, endIdx + 1);
-      const avg = realValues.reduce((a, b) => a + b, 0) / realValues.length;
+    const realValues = endIdx >= startIdx ? values.slice(startIdx, endIdx + 1) : [];
+    const total = realValues.reduce((a, b) => a + b, 0);
+    // Nothing recorded in this period at all — an "Avg ₹0" pinned to the
+    // baseline is not a reference line, it's a second axis line sitting on
+    // top of the real one. This also covers the window before the first
+    // load resolves, when every value is still 0.
+    if (total > 0) {
+      const avg = total / realValues.length;
       const avgH = Math.round(useSqrtScale ? Math.sqrt(avg / maxVal) * BAR_HEIGHT : (avg / maxVal) * BAR_HEIGHT);
       avgY = BAR_HEIGHT - avgH;
       avgLabel = `Avg ${formatCurrency(avg)}`;

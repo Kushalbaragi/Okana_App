@@ -66,9 +66,14 @@ export function Row({ label, value, onPress, right, labelColor, light = false, a
   return onPress ? (
     // variant="field" — transparent background, same look as the plain
     // Pressable this used to be, but with GlassPressable's animated
-    // press-opacity instead of no press feedback at all.
+    // press-opacity instead of no press feedback at all. pressScale={false}
+    // because these rows sit flush inside a bordered Card: shrinking one
+    // pulls it visibly away from the card's own edges and the dividers
+    // above/below it, which the smaller controls this component was built
+    // for never had to contend with.
     <GlassPressable
       variant="field"
+      pressScale={false}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel || label}

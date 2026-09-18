@@ -675,7 +675,7 @@ function MonthlyRecapModal({ open, slides, onClose, onOpenBudgetSetup }) {
   }
 
   return (
-    <View className="absolute inset-0" style={{ backgroundColor: '#050505', zIndex: 70 }}>
+    <View className="absolute inset-0" style={{ backgroundColor: '#000000', zIndex: 70 }}>
       <View className="flex-row px-3 pt-14" style={{ gap: 6 }}>
         {slides.map((s, i) => (
           <ProgressSegment key={i} state={i < index ? 'done' : i === index ? 'active' : 'pending'} paused={paused} />

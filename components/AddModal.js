@@ -26,6 +26,13 @@ const OPEN_DURATION = 560;
 const OPEN_EASING = Easing.out(Easing.cubic);
 const CLOSE_DURATION = 500;
 const CLOSE_EASING = Easing.inOut(Easing.cubic);
+// Same duration as a tapped close, different curve. A tapped close starts
+// from a dead stop, so easing *in* is right there. A drag-release doesn't:
+// the finger was still moving when it lifted, and inOut's zero starting
+// velocity reads as the sheet braking hard the instant you let go before
+// taking off again. Easing.out puts its fastest moment at t=0, so the
+// slide picks up where the finger left off instead of restarting from rest.
+const DRAG_CLOSE_EASING = Easing.out(Easing.cubic);
 // How far (px) or how fast (px/s) a downward drag needs to go before it
 // counts as "dismiss" rather than snapping back open.
 const DISMISS_DISTANCE = 120;
@@ -314,19 +321,27 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
         // React state back down as the `open` prop — that round-trip takes
         // a frame or two with nothing animating, a visible freeze mid-close.
         runOnJS(markClosingViaDrag)();
-        // The exact same fixed curve as every other close in this sheet —
-        // not a velocity-seeded spring. Consistency over cleverness here:
-        // that was tried, and it's what actually made it feel rushed.
         translateY.value = withTiming(
           windowHeight,
-          { duration: CLOSE_DURATION, easing: CLOSE_EASING },
+          { duration: CLOSE_DURATION, easing: DRAG_CLOSE_EASING },
           finished => {
             if (!finished) return;
             runOnJS(setVisible)(false);
+            // onClose fires HERE, not the instant the drag ends — this is
+            // what the "stalls partway through the slide" bug actually
+            // was. Calling it up front flips `open` in the parent, and
+            // that re-render's native view commit lands on the UI thread
+            // one or two frames into this animation, competing with it for
+            // the same thread and dropping frames right at the start.
+            // Tapping to close never had the problem because there the
+            // commit happens *first* and the effect starts the animation
+            // afterwards — the exact asymmetry that made this look like an
+            // easing bug for so long. Deferring it to here keeps the whole
+            // slide on an otherwise-idle UI thread.
+            runOnJS(onClose)();
             if (onClosed) runOnJS(onClosed)();
           },
         );
-        runOnJS(onClose)();
       } else {
         // Snap back open with the same curve/duration open itself uses —
         // one consistent slide, whichever direction it ends up going.
@@ -372,12 +387,16 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
         </Animated.View>
 
         {/* RN's <Modal> stays fully touch-active for its whole lifetime —
-            `visible` only flips to false once the close animation below has
+            `visible` only flips to false once the close animation has
             actually finished, so without this the FAB underneath (and
-            anything else on Dashboard) is unreachable for the ~450ms the
-            content is sliding off-screen, even though it's already invisible.
-            `open` (not `visible`) flips to false the instant a close starts,
-            so touches fall through immediately instead of at the end. */}
+            anything else on Dashboard) would be unreachable for the whole
+            ~500ms the content spends sliding off-screen. Keyed off `open`,
+            which for a tapped close flips false the instant the close
+            starts, so touches fall through immediately rather than at the
+            end. A drag-dismiss is the one case where `open` instead flips
+            at the *end* of the slide (see the pan gesture's onEnd) — the
+            sheet is still visibly on screen for that whole window there,
+            so there's no invisible-but-blocking gap either way. */}
         <Animated.View
           style={[
             {
@@ -520,7 +539,15 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
             otherwise the calendar (bottom-anchored, sized to its own
             content) is shorter than the CTA+keypad on months with fewer
             week rows, leaving the keypad's top rows poking out above it. */}
-        <View onLayout={e => setCtaKeypadHeight(e.nativeEvent.layout.height)}>
+        {/* marginTop:auto pins this block to the bottom of the sheet. Nothing
+            above it has flex:1 (the ScrollView deliberately doesn't — see its
+            own comment), so without this the whole column is top-packed and
+            whatever height the sheet has spare falls below the keypad. That
+            gap is also what the calendar overlay inherits: it's absolutely
+            positioned against THIS wrapper, so its bottom:0 was the wrapper's
+            bottom rather than the screen's. Content above stays tight and
+            top-aligned exactly as before. */}
+        <View style={{ marginTop: 'auto' }} onLayout={e => setCtaKeypadHeight(e.nativeEvent.layout.height)}>
           {/* Date, sharing a row with the submit CTA — right above the
               keypad. Always rendered exactly as-is, untouched by the
               calendar — it doesn't move, fade, or hide; the calendar is a

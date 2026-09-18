@@ -35,7 +35,7 @@ import { useTourStep } from '../../hooks/useTourStep';
 // One-flag experiment: a light theme for just this screen. Flip back to
 // false to fully revert. Mirrors the same LIGHT_HOME flag in app/(app)/index.js.
 const LIGHT_SETTINGS = false;
-const SETTINGS_BG = LIGHT_SETTINGS ? '#FAFAF8' : '#0a0a0a';
+const SETTINGS_BG = LIGHT_SETTINGS ? '#FAFAF8' : '#000000';
 // Same lighter-scrim value AddModal/SpendCalendarModal already use behind a
 // light-mode sheet, so a modal here doesn't dim the light page to solid black.
 const MODAL_DIM = LIGHT_SETTINGS ? 0.4 : 1;

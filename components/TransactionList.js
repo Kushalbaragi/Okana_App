@@ -1,9 +1,10 @@
-import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
-import { View, Text, SectionList, Pressable } from 'react-native';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { View, Text, SectionList, Pressable, InteractionManager, StyleSheet } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withDelay, withTiming, LinearTransition } from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
 import TransactionItem from './TransactionItem';
 import { monthLabel } from '../utils/format';
+import { CARD_COLOR } from './Glass';
 import { SETTLE_EASING } from './AmountField';
 
 // Same spring shape as AmountField's AMOUNT_LAYOUT_TRANSITION (proven
@@ -31,8 +32,11 @@ function rowEntering() {
 
 function ListHeaderFor(light) {
   return (
+    // No px-1 — the section headers below don't have it, so the 4px put
+    // this label out of line with both them and the card edge underneath.
+    // The list's own paddingHorizontal is the only inset either should get.
     <Text
-      className="text-sm font-medium uppercase tracking-wide mt-4 mb-3 px-1"
+      className="text-sm font-medium uppercase tracking-wide mt-4 mb-3"
       style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.25)' }}>
       Transactions
     </Text>
@@ -48,8 +52,16 @@ const REVEAL_STAGGER_CAP_MS = 420;
 // the chart, not sixteen.
 const REVEAL_ANIMATE_MAX = 6;
 
+// Rounder than the 16 this started at — at that size the corner reads as a
+// softened square rather than the continuous curve iOS grouped lists use.
+const CARD_RADIUS = 24;
+// Lines the divider up with the description text rather than the card edge:
+// the row's own horizontal padding (16) + the date box (32) + its right
+// margin (10). Keep in step with TransactionItem's px-4 / w-8 / mr-2.5.
+const DIVIDER_INSET = 58;
+
 // Slides up + fades in on mount. Only ever plays for the list's very first
-// paint (see hasRevealedRef in TransactionList) — switching tabs/periods
+// paint (see `revealing` in TransactionList) — switching tabs/periods
 // just swaps content in directly, no replay, since re-animating every
 // switch was real per-row Reanimated setup cost on top of the re-filter.
 function RevealRow({ index, children }) {
@@ -82,11 +94,6 @@ function TransactionList({
   onEdit,
   onDelete,
   light = false,
-  // Attached to whichever row ends up first overall (across sections) —
-  // lets the screen this list lives on target it for the "swipe to
-  // edit/delete" tour step. Optional; TransactionList itself doesn't know
-  // or care about tour state, it just exposes the target.
-  firstRowRef,
   // Id of a transaction that was just added — that one row plays
   // rowEntering (fade + rise) and everything below it pushes down via
   // ROW_LAYOUT_TRANSITION. Every other row's mount (e.g. a tab switch's
@@ -94,7 +101,14 @@ function TransactionList({
   // own comment.
   justAddedId,
 }, ref) {
-  const bgColor = light ? '#FAFAF8' : '#0a0a0a';
+  // Two distinct colors now, where there used to be one. `bgColor` is the
+  // page behind the list; `cardColor` is the raised surface the rows sit on.
+  // They were identical before, which meant the per-row corner radii had
+  // nothing to show against and the list read as loose text on the page
+  // rather than a card.
+  const bgColor = light ? '#FAFAF8' : '#000000';
+  const cardColor = light ? '#FFFFFF' : CARD_COLOR;
+  const dividerColor = light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)';
   const isOverview = chartTab === 'overview';
   const isIncome   = activeTab === 'income';
 
@@ -122,9 +136,14 @@ function TransactionList({
   }, []);
 
   // Tapping any card — including the currently-open row's own — closes an
-  // open swipe, same as tapping blank list space.
+  // open swipe, same as tapping blank list space. Returns whether it did:
+  // a tap that closed a row is spent on that and nothing else, so the row
+  // doesn't also open itself for editing behind the closing swipe (see
+  // TransactionItem's handleCardPress).
   const onCardPress = useCallback(() => {
-    if (openIdRef.current) closeOpenRow();
+    if (!openIdRef.current) return false;
+    closeOpenRow();
+    return true;
   }, [closeOpenRow]);
 
   // Exposed so the screen this list lives on can close an open swipe when
@@ -135,12 +154,17 @@ function TransactionList({
 
   const shouldGroup = isOverview || timeRange === '5y';
 
-  // Flips to true right after the list's first paint — renderItem reads it
-  // (not state, so flipping it doesn't itself trigger a re-render) to gate
-  // the reveal animation to that first paint only.
-  const hasRevealedRef = useRef(false);
+  // True only while the list's very first paint is still revealing. This is
+  // state rather than a ref-flipped-on-mount deliberately: `settled` below
+  // forces a re-render a frame or two after that first paint, and a ref
+  // that had already flipped would drop RevealRow's wrapper mid-animation,
+  // popping the rows into place. Held for the reveal's full duration
+  // instead, then flipped once — after which no switch ever mounts a
+  // RevealRow again.
+  const [revealing, setRevealing] = useState(true);
   useEffect(() => {
-    hasRevealedRef.current = true;
+    const t = setTimeout(() => setRevealing(false), REVEAL_STAGGER_CAP_MS + 300);
+    return () => clearTimeout(t);
   }, []);
 
   // Filter, sort, and group in one pass instead of three (filter -> map ->
@@ -199,10 +223,97 @@ function TransactionList({
     return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
   }, [transactions, activeTab, isOverview, selectedMonth, year, timeRange, selectedPeriod, selectedDay, shouldGroup]);
 
+  // Everything that makes a switch a *switch* — a whole new filtered set,
+  // every visible row unmounting and a new one mounting. Deliberately not
+  // including `transactions`: adding or deleting a row isn't a switch, and
+  // shouldn't cost that row its entrance animation (see `settled`).
+  const filterKey = `${activeTab}|${isOverview}|${timeRange}|${year}|${selectedMonth}|${selectedDay}|${selectedPeriod?.year}-${selectedPeriod?.month}`;
+
+  // False for the first commit after a switch, true once that commit has
+  // settled. Gates the two per-row costs that profiling showed dominate a
+  // switch — ReanimatedSwipeable's gesture/worklet setup and the layout
+  // transition — so the rows paint immediately and the animation machinery
+  // arrives a frame or two later, off the critical path. Once true it stays
+  // true until the next switch, so a later add/delete still animates
+  // normally.
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  const [settled, setSettled] = useState(false);
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey);
+    setSettled(false);
+  }
+  useEffect(() => {
+    if (settled) return undefined;
+    const handle = InteractionManager.runAfterInteractions(() => setSettled(true));
+    return () => handle.cancel();
+  }, [settled, filterKey]);
+
+  // Hoisted out of the SectionList's props. Inline arrows were recreated on
+  // every render, which meant VirtualizedList's CellRenderer could never
+  // bail out of a cell and memo(TransactionItem) never got a chance to do
+  // its job.
+  const firstSectionKey = sections[0]?.key;
+  const renderItem = useCallback(({ item, index, section }) => {
+    const isLast = index === section.data.length - 1;
+    const card = (
+      <Animated.View
+        layout={settled ? ROW_LAYOUT_TRANSITION : undefined}
+        entering={item.id === justAddedId ? rowEntering : undefined}
+        style={{
+          backgroundColor: cardColor,
+          overflow: 'hidden',
+          borderTopLeftRadius: index === 0 ? CARD_RADIUS : 0,
+          borderTopRightRadius: index === 0 ? CARD_RADIUS : 0,
+          borderBottomLeftRadius: isLast ? CARD_RADIUS : 0,
+          borderBottomRightRadius: isLast ? CARD_RADIUS : 0,
+        }}
+      >
+        <TransactionItem
+          tx={item}
+          isIncome={isOverview ? item.type === 'income' : isIncome}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          registerSwipeable={registerSwipeable}
+          onSwipeOpen={onSwipeOpen}
+          onCardPress={onCardPress}
+          light={light}
+          cardColor={cardColor}
+          swipeable={settled}
+        />
+        {/* Sibling of the swipeable, not a child of it, so it stays put while
+            a row is dragged open — the divider belongs to the card, not to
+            the row's sliding content. Inset to start where the label does
+            rather than running the full width. */}
+        {!isLast && (
+          <View style={{ height: StyleSheet.hairlineWidth, marginLeft: DIVIDER_INSET, backgroundColor: dividerColor }} />
+        )}
+      </Animated.View>
+    );
+    // Only the first paint's top rows animate — once `revealing` flips,
+    // every later render, for any reason, just shows the card directly.
+    const shouldAnimate = revealing && index < REVEAL_ANIMATE_MAX;
+    return shouldAnimate ? <RevealRow index={index}>{card}</RevealRow> : card;
+  }, [settled, revealing, justAddedId, cardColor, dividerColor, isOverview, isIncome, onEdit, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light]);
+
+  const renderSectionHeader = useCallback(({ section }) => (
+    section.title ? (
+      <View
+        className={`flex-row items-center justify-between mb-2 ${section.key === firstSectionKey ? 'mt-0' : 'mt-6'}`}
+        style={{ backgroundColor: bgColor }}
+      >
+        <Text className="text-sm font-medium uppercase tracking-wider" style={{ color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.35)' }}>
+          {section.title}
+        </Text>
+      </View>
+    ) : null
+  ), [firstSectionKey, bgColor, light]);
+
+  const listHeader = useMemo(() => ListHeaderFor(light), [light]);
+
   if (sections.length === 0) {
     return (
       <View className="px-4 pb-28">
-        {ListHeaderFor(light)}
+        {listHeader}
         <View className="items-center justify-center py-14 px-4">
           <Text className="text-base text-center" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.25)' }}>
             No Transaction yet
@@ -227,61 +338,18 @@ function TransactionList({
         sections={sections}
         keyExtractor={tx => tx.id}
         onScrollBeginDrag={closeOpenRow}
-        renderItem={({ item, index, section }) => {
-          // The swipe-hint tour step targets whichever row is literally
-          // first in the whole (possibly grouped) list, not just first
-          // within its own section.
-          const isFirstOverall = section === sections[0] && index === 0;
-          const card = (
-            <Animated.View
-              ref={isFirstOverall ? firstRowRef : undefined}
-              layout={ROW_LAYOUT_TRANSITION}
-              entering={item.id === justAddedId ? rowEntering : undefined}
-              style={{
-                backgroundColor: bgColor,
-                overflow: 'hidden',
-                borderTopLeftRadius: index === 0 ? 12 : 0,
-                borderTopRightRadius: index === 0 ? 12 : 0,
-                borderBottomLeftRadius: index === section.data.length - 1 ? 12 : 0,
-                borderBottomRightRadius: index === section.data.length - 1 ? 12 : 0,
-              }}
-            >
-              <TransactionItem
-                tx={item}
-                isIncome={isOverview ? item.type === 'income' : isIncome}
-                onEdit={onEdit}
-                onDelete={onDelete}
-                registerSwipeable={registerSwipeable}
-                onSwipeOpen={onSwipeOpen}
-                onCardPress={onCardPress}
-                light={light}
-              />
-            </Animated.View>
-          );
-          // Only the first paint's top rows animate — once hasRevealedRef
-          // flips (right after that first paint), every later render, for
-          // any reason, just shows the card directly.
-          const shouldAnimate = !hasRevealedRef.current && index < REVEAL_ANIMATE_MAX;
-          return shouldAnimate ? <RevealRow index={index}>{card}</RevealRow> : card;
-        }}
-        renderSectionHeader={({ section }) =>
-          section.title ? (
-            <View
-              className={`flex-row items-center justify-between mb-2 ${section.key === sections[0]?.key ? 'mt-0' : 'mt-6'}`}
-              style={{ backgroundColor: bgColor }}
-            >
-              <Text className="text-sm font-medium uppercase tracking-wider" style={{ color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.35)' }}>
-                {section.title}
-              </Text>
-            </View>
-          ) : null
-        }
-        ListHeaderComponent={ListHeaderFor(light)}
+        renderItem={renderItem}
+        renderSectionHeader={renderSectionHeader}
+        ListHeaderComponent={listHeader}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 112 }}
         showsVerticalScrollIndicator={false}
         style={{ flex: 1 }}
         stickySectionHeadersEnabled={false}
-        initialNumToRender={12}
+        // Six, not twelve — a phone screen shows roughly this many rows
+        // below the chart, and every extra one is a full row mount paid
+        // synchronously on the switch. The rest stream in via
+        // maxToRenderPerBatch as usual.
+        initialNumToRender={6}
         maxToRenderPerBatch={10}
         windowSize={7}
         removeClippedSubviews

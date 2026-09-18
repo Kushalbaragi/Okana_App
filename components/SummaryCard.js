@@ -1,6 +1,6 @@
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Platform } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withDelay, withSpring, withTiming, Easing } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
 import BarChart from './BarChart';
 import LineChart from './LineChart';
@@ -30,133 +30,127 @@ const fmt = new Intl.NumberFormat('en-IN', {
 // to match the rounded numeral style elsewhere in the app.
 const ROUNDED_FONT = Platform.OS === 'ios' ? 'ui-rounded' : undefined;
 
-// Own local digit, not AmountField's shared AmountDigit — that one scales
-// in from its own center with a blur; this headline instead drops each
-// digit in from above into its resting spot. Kept separate so tuning this
-// doesn't also change the Add Transaction field's own already-tuned
-// animation.
+// Animates the number as ONE object: the old value fades out and drifts up
+// while the new one fades in from just below.
 //
-// Fade/blur and fall are driven by two separate values, not one — opacity
-// riding directly on the same spring as the bounce read as rough/uneven
-// (a spring's value isn't a smooth monotonic ramp, it overshoots and
-// wobbles, which is exactly what you want for a *position* bounce but not
-// for a fade). fadeProgress is a plain eased withTiming, so the fade/blur
-// resolve smoothly on their own; fallProgress is the spring, only ever
-// driving translateY, so its overshoot reads as a bounce in position, not
-// a flicker in opacity.
-const HEADLINE_FALL_DISTANCE = 4;
-const HEADLINE_BLUR_MAX = 14; // same soft-halo cap as AmountField's own tuning
-const HEADLINE_FADE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
-const HEADLINE_EXIT_DURATION = 220;
+// This replaced a per-digit version (each digit staggered in with its own
+// blur and spring, the row keyed on the formatted string). The problem was
+// structural, not tuning: a new key remounts the whole row, so the old
+// row's digits were still fading out — in the same flex-row, at their own
+// widths — while the new row's digits faded in behind them. With en-IN
+// grouping, "₹45,682" and "₹5,66,581" don't even have their commas in the
+// same places, so the two rows never lined up and composited into a single
+// unreadable number made of digits from both values, for the ~600ms the
+// stagger plus the 340ms per-digit animation took to resolve. That smear
+// is what read as the amount "lagging".
+//
+// Both copies here are absolutely positioned across a full-width box and
+// centred by textAlign, so they overlap EXACTLY rather than partially, and
+// a length change needs no handling at all — nothing slides, so the ₹ can't
+// jump and there's no width to animate.
+const HEADLINE_HEIGHT = 52;
+const HEADLINE_SWAP_RISE = 8;
+const HEADLINE_SWAP_EASING = Easing.bezier(0.16, 1, 0.3, 1);
+const HEADLINE_ENTER_DURATION = 220;
+// Shorter than the enter on purpose. Both copies are stacked, so a
+// symmetric crossfade leaves them equally visible through the middle of the
+// swap and two different numbers briefly overlap as a smear. Clearing the
+// old one out faster keeps the overlap dim and brief.
+const HEADLINE_EXIT_DURATION = 150;
 
-// A digit's own remount (key={str} on the row below unmounts every old
-// digit at once) used to just vanish outright — no exiting prop meant an
-// instant cut, at odds with how gently the entrance fades in. A plain
-// opacity fade-out here is what makes the old value read as dissolving
-// into/behind the new one rather than being yanked away.
-function headlineDigitExiting() {
+function headlineEntering() {
   'worklet';
   return {
-    initialValues: { opacity: 1 },
+    initialValues: { opacity: 0, transform: [{ translateY: HEADLINE_SWAP_RISE }] },
     animations: {
-      opacity: withTiming(0, { duration: HEADLINE_EXIT_DURATION, easing: Easing.out(Easing.cubic) }),
+      opacity: withTiming(1, { duration: HEADLINE_ENTER_DURATION, easing: HEADLINE_SWAP_EASING }),
+      transform: [{ translateY: withTiming(0, { duration: HEADLINE_ENTER_DURATION, easing: HEADLINE_SWAP_EASING }) }],
     },
   };
 }
 
-function HeadlineDigit({ char, delay, color, fontSize, lineHeight, fontWeight, letterSpacing }) {
-  const fadeProgress = useSharedValue(0);
-  const fallProgress = useSharedValue(0);
-
-  useEffect(() => {
-    fadeProgress.value = 0;
-    fallProgress.value = 0;
-    fadeProgress.value = withDelay(delay, withTiming(1, { duration: 340, easing: HEADLINE_FADE_EASING }));
-    // Underdamped on purpose — this is what makes it overshoot slightly
-    // past its resting position and settle back, the "subtle bounce" at
-    // the end of the fall, instead of arriving and stopping dead. Lower
-    // stiffness + a touch more damping than before — a snappier spring
-    // here made the overshoot feel like a sharp flick rather than a
-    // smooth settle.
-    fallProgress.value = withDelay(delay, withSpring(1, { damping: 14, stiffness: 110, mass: 0.6 }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [char]);
-
-  const style = useAnimatedStyle(() => {
-    const linearBlurT = Math.min(fadeProgress.value / 0.75, 1);
-    const blurT = linearBlurT * linearBlurT * (3 - 2 * linearBlurT);
-    // The spring driving the fall already overshoots past 1 before
-    // settling — reusing that same overshoot for a tiny scale pop (only
-    // once fallProgress passes 1) makes the bounce read clearly as a
-    // bounce instead of being a barely-visible few pixels of vertical
-    // motion on its own. Squared, not a plain linear clamp — a bare
-    // Math.max(0, x) has a sharp slope change right at the crossover
-    // (flat, then instantly ramping), which is exactly what read as a
-    // snap instead of a smooth pop. Squaring tapers the onset in gently.
-    const overshoot = Math.max(0, fallProgress.value - 1);
-    const scaleBounce = 1 + overshoot * overshoot * 2.2;
-    return {
-      opacity: fadeProgress.value,
-      transform: [
-        { translateY: (1 - fallProgress.value) * -HEADLINE_FALL_DISTANCE },
-        { scale: scaleBounce },
-      ],
-      textShadowRadius: Math.max(0, (1 - blurT) * HEADLINE_BLUR_MAX),
-    };
-  });
-
-  return (
-    <Animated.Text
-      exiting={headlineDigitExiting}
-      style={[
-        {
-          fontSize, lineHeight, fontWeight, color, letterSpacing, fontFamily: ROUNDED_FONT,
-          textShadowColor: color, textShadowOffset: { width: 0, height: 0 },
-        },
-        style,
-      ]}
-    >
-      {char}
-    </Animated.Text>
-  );
+function headlineExiting() {
+  'worklet';
+  return {
+    initialValues: { opacity: 1, transform: [{ translateY: 0 }] },
+    animations: {
+      opacity: withTiming(0, { duration: HEADLINE_EXIT_DURATION, easing: HEADLINE_SWAP_EASING }),
+      transform: [{ translateY: withTiming(-HEADLINE_SWAP_RISE, { duration: HEADLINE_EXIT_DURATION, easing: HEADLINE_SWAP_EASING }) }],
+    },
+  };
 }
 
-const HEADLINE_STAGGER_STEP_MS = 36;
-const HEADLINE_STAGGER_CAP_MS = 300;
+const HEADLINE_TEXT_STYLE = {
+  position: 'absolute',
+  left: 0,
+  right: 0,
+  textAlign: 'center',
+  fontSize: 44,
+  lineHeight: HEADLINE_HEIGHT,
+  fontWeight: '600',
+  letterSpacing: -1,
+  fontFamily: ROUNDED_FONT,
+};
 
 function AnimatedAmount({ value, color }) {
+  // False for the very first render only, so the headline doesn't play a
+  // swap on mount — the card has its own entrance and a second animation
+  // underneath it just muddies that.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
   const str = fmt.format(value);
+
   return (
-    <View className="flex-row" key={str}>
-      {[...str].map((char, i) => (
-        <HeadlineDigit
-          key={i}
-          char={char}
-          delay={Math.min(i * HEADLINE_STAGGER_STEP_MS, HEADLINE_STAGGER_CAP_MS)}
-          fontSize={44}
-          lineHeight={52}
-          fontWeight="600"
-          letterSpacing={-1}
-          color={color}
-        />
-      ))}
+    // alignSelf stretch + a fixed height: the box is the full width of the
+    // card and never changes size, so the two stacked copies overlap exactly
+    // and nothing below the number can shift during a swap.
+    <View style={{ alignSelf: 'stretch', height: HEADLINE_HEIGHT }}>
+      <Animated.Text
+        // Keyed on the formatted string — that is what makes this a swap at
+        // all. A new key mounts a new Text (entering) and unmounts the old
+        // one (exiting); an unchanged value keeps the same key and so does
+        // not animate, which is the cheap and correct no-op.
+        key={str}
+        numberOfLines={1}
+        entering={mounted ? headlineEntering : undefined}
+        exiting={mounted ? headlineExiting : undefined}
+        style={[HEADLINE_TEXT_STYLE, { color }]}
+      >
+        {str}
+      </Animated.Text>
     </View>
   );
 }
 
-function RangeSelector({ value, onChange, currentYear, currentMonth, light }) {
-  const options = [
-    { id: 'month', label: MONTH_NAMES[currentMonth] },
-    { id: 'year',  label: String(currentYear) },
-    { id: '5y',    label: 'All Time' },
-  ];
+// Fixed range names rather than the actual current month/year ("September",
+// "2026"), so the control reads as a range picker at a glance instead of
+// three unrelated proper nouns. Static now, so it lives out here rather
+// than being rebuilt every render — and RangeSelector no longer needs the
+// current month/year passed in at all. The period being shown is still
+// spelled out in full above the amount (see periodLabel).
+const RANGE_OPTIONS = [
+  { id: 'month', label: 'Month' },
+  { id: 'year',  label: 'Year' },
+  { id: '5y',    label: 'All' },
+];
+
+function RangeSelector({ value, onChange, light }) {
   return (
     <View className="flex-row items-center justify-center mt-6" style={{ gap: 8 }}>
-      {options.map(opt => (
+      {RANGE_OPTIONS.map(opt => (
         value === opt.id ? (
+          // "glass", not "pillActive", even though this is the selected
+          // state of a segmented control. pillActive (#3a3a3a) is tuned for
+          // Header's chart tabs, which sit INSIDE a #161616 container and so
+          // need to be lighter than it to read as raised. These pills sit
+          // directly on the page's pure black, where that same grey is a far
+          // bigger jump and reads as glaring. The standard raised-surface
+          // colour is the right lift against black, and matches every other
+          // card on the screen.
           <GlassPressable
             key={opt.id}
-            variant="pillActive"
+            variant="glass"
             radius={9999}
             onPress={() => onChange(opt.id)}
             className="px-3 py-1"
@@ -376,11 +370,17 @@ function SummaryCard({
   const animKey   = `${timeRange}-${year}-${chartTab}`;
   const labelStep = timeRange === 'month' ? 4 : (timeRange === '5y' && lifetimeGranularity === 'month' ? 6 : 1);
 
-  // BarChart is memo()-wrapped — inline arrows here would hand it a new
-  // onBarClick/onDeselect identity every render (this card re-renders on
-  // every transaction add/edit/delete) and defeat that memo entirely.
-  // Precomputed per-mode so each stays stable across renders that don't
-  // actually change its inputs, instead of just once per timeRange switch.
+  // Overview only — these reach LineChart and nothing else. Expense and
+  // Income bars are deliberately not clickable at any range (see the
+  // BarChart call below), so drilling into a day/month/period happens on
+  // the Overview curve and the other two tabs just reflect whatever is
+  // already selected.
+  //
+  // LineChart is memo()-wrapped — inline arrows here would hand it a new
+  // handler identity every render (this card re-renders on every
+  // transaction add/edit/delete) and defeat that memo entirely. Precomputed
+  // per-mode so each stays stable across renders that don't actually change
+  // its inputs, instead of just once per timeRange switch.
   const onBarClickMonth  = useCallback((i) => onDayChange(i + 1), [onDayChange]);
   const onBarClickPeriod = useCallback((i) => onPeriodChange(periodsList[i]), [onPeriodChange, periodsList]);
   const onDeselectMonth  = useCallback(() => onDayChange(null), [onDayChange]);
@@ -442,12 +442,16 @@ function SummaryCard({
               onDeselect={onDeselect}
             />
           ) : (
+            // No onBarClick/onDeselect: Expense and Income bars are a
+            // readout, not a drill-down, at every range. Omitting them is
+            // what actually removes the interaction — BarChart renders its
+            // per-bar touch-target Rects and the deselect-background Rect
+            // only when those props are present. activeIndex stays, so a
+            // selection made over in Overview still shows highlighted here.
             <BarChart
               values={barValues}
               labels={chartData.labels}
               activeIndex={chartActiveIndex}
-              onBarClick={onBarClick}
-              onDeselect={onDeselect}
               disabledAfterIndex={disabledAfterIndex}
               disabledBeforeIndex={disabledBeforeIndex}
               hideLabelAfterIndex={timeRange === '5y' && lifetimeGranularity === 'year' ? disabledAfterIndex : null}
@@ -455,7 +459,17 @@ function SummaryCard({
               animKey={animKey}
               labelStep={labelStep}
               useSqrtScale={timeRange === 'month'}
-              noSpendDots={timeRange === 'month' && chartTab === 'expense'}
+              // Not until there's actually data to say it about. On the
+              // first render transactions is still [], so every day reads
+              // as zero and the whole month fills with "no spend" dots —
+              // both a lie (nothing has loaded yet, that isn't the same as
+              // nothing was spent) and the source of the Expense-tab-only
+              // flicker: when the real values land, every day that turns
+              // out to have spending unmounts its dot and mounts a Bar in
+              // its place, kicking off a second staggered reveal partway
+              // through the first. Income never showed it because its
+              // zero-days render an invisible placeholder instead of a dot.
+              noSpendDots={timeRange === 'month' && chartTab === 'expense' && transactions.length > 0}
               showAverage={timeRange === 'month' || timeRange === 'year'}
               light={light}
             />
@@ -463,7 +477,7 @@ function SummaryCard({
         </View>
       </Animated.View>
 
-      <RangeSelector value={timeRange} onChange={onTimeRangeChange} currentYear={currYear} currentMonth={currMonth} light={light} />
+      <RangeSelector value={timeRange} onChange={onTimeRangeChange} light={light} />
     </View>
   );
 }

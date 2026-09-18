@@ -51,7 +51,7 @@ function AppShell() {
   return (
     <>
       <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0a0a0a' } }}>
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }}>
         {/* Entering the app (cold launch redirect, post-OTP, post-welcome)
             replaces the default slide-from-right with a plain crossfade —
             native-stack has no built-in scale/pop transition, so this pairs
@@ -70,7 +70,7 @@ function AppShell() {
 // ErrorBoundary reports the error automatically before showing this.
 function CrashFallback() {
   return (
-    <View className="flex-1 items-center justify-center px-8" style={{ backgroundColor: '#0a0a0a' }}>
+    <View className="flex-1 items-center justify-center px-8" style={{ backgroundColor: '#000000' }}>
       <Text className="text-white text-lg font-semibold text-center">Something went wrong</Text>
       <Text className="text-center mt-2" style={{ color: 'rgba(255,255,255,0.5)' }}>
         Restart the app to keep going. Your data is safe.

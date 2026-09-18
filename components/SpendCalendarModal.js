@@ -215,7 +215,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
           `visible`) flips to false the instant a close starts, so touches
           fall through immediately instead of at the end. Same fix as
           AddModal's — see the comment there. */}
-      <Animated.View className="flex-1" style={[{ backgroundColor: light ? '#FAFAF8' : '#0a0a0a' }, pageStyle]} pointerEvents={open ? 'auto' : 'none'}>
+      <Animated.View className="flex-1" style={[{ backgroundColor: light ? '#FAFAF8' : '#000000' }, pageStyle]} pointerEvents={open ? 'auto' : 'none'}>
         <View style={{ flex: 1 }}>
             {/* Replaces the old drag-handle pill (which read as a
                 bottom-sheet affordance that stopped making sense once this

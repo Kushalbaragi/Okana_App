@@ -10,10 +10,15 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 // tabs, AddModal's Expense/Income toggle) can share one source of truth
 // instead of duplicating the hex.
 export const PILL_ACTIVE_COLOR = '#3a3a3a';
+// Same reasoning as PILL_ACTIVE_COLOR: the transaction list builds its card
+// out of its own stacked rows rather than a GlassView, so it needs this hex
+// directly. Exported so it can't drift from the surface every other card in
+// the app uses.
+export const CARD_COLOR = '#161616';
 
 const BG = {
-  glass: '#161616',  // regular cards, secondary buttons/pills
-  modal: '#161616',  // bottom sheets / modal surfaces — same solid surface color throughout, deliberately
+  glass: CARD_COLOR,  // regular cards, secondary buttons/pills
+  modal: CARD_COLOR,  // bottom sheets / modal surfaces — same solid surface color throughout, deliberately
   active: '#d4d4d4', // primary CTAs — one consistent treatment app-wide
   pillActive: PILL_ACTIVE_COLOR, // "this option is selected" state on segmented pill toggles
   field: 'transparent', // bordered form-field surfaces (inputs, date pickers) — outline only, no fill
@@ -53,14 +58,18 @@ const PRESS_OUT_DURATION = 180;
 // same shrink-on-press feel NumericKeypad's own keys already use.
 const PRESS_SCALE = 0.96;
 
-export function GlassPressable({ variant = 'active', radius = RADIUS.xl, corners, style, className, children, disabled, onPressIn, onPressOut, ...props }) {
+// `pressScale={false}` keeps the opacity feedback but drops the shrink
+// entirely, for rows that should stay geometrically flat under a press —
+// a full-width list row visibly shrinking away from its own container
+// edges reads very differently from a small pill or key doing it.
+export function GlassPressable({ variant = 'active', radius = RADIUS.xl, corners, style, className, children, disabled, onPressIn, onPressOut, pressScale = true, ...props }) {
   const r = radiusStyle(radius, corners);
   const opacity = useSharedValue(1);
   const scale = useSharedValue(1);
 
   const handlePressIn = (e) => {
     opacity.value = withTiming(0.85, { duration: PRESS_IN_DURATION });
-    scale.value = withTiming(PRESS_SCALE, { duration: PRESS_IN_DURATION });
+    if (pressScale) scale.value = withTiming(PRESS_SCALE, { duration: PRESS_IN_DURATION });
     onPressIn?.(e);
   };
   const handlePressOut = (e) => {
@@ -68,7 +77,7 @@ export function GlassPressable({ variant = 'active', radius = RADIUS.xl, corners
     // A light spring back to 1 rather than a linear withTiming — it
     // overshoots slightly past full size before settling, reading as a
     // bit of "give" on release instead of a flat stop.
-    scale.value = withSpring(1, { damping: 12, stiffness: 220 });
+    if (pressScale) scale.value = withSpring(1, { damping: 12, stiffness: 220 });
     onPressOut?.(e);
   };
 

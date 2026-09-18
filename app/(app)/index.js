@@ -33,7 +33,7 @@ import { getMonthlyRecapSlides, hasAnyRecapData, prevMonthYear, MONTH_NAMES } fr
 // SummaryCard, TransactionList). Flip back to false to fully revert —
 // every other screen is untouched regardless of this value.
 const LIGHT_HOME = false;
-const HOME_BG = LIGHT_HOME ? '#FAFAF8' : '#0a0a0a';
+const HOME_BG = LIGHT_HOME ? '#FAFAF8' : '#000000';
 
 // Mirrors the local AsyncStorage "shown" tracking server-side, so the
 // check-monthly-summary cron (which has no access to any device's
@@ -550,11 +550,12 @@ export default function Dashboard() {
   const handleFabPressIn = useCallback(() => { fabScale.value = withTiming(0.92, { duration: 90 }); }, [fabScale]);
   const handleFabPressOut = useCallback(() => { fabScale.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.back(1.6)) }); }, [fabScale]);
   const tabToggleRef = useRef(null);
-  const firstRowRef = useRef(null);
   const addTxTour = useTourStep(user?.id, 'add_transaction');
   const tabsTour = useTourStep(user?.id, 'income_expense_tabs');
-  const swipeTour = useTourStep(user?.id, 'swipe_edit_delete');
-  const [homeTourActive, setHomeTourActive] = useState(null); // 'fab' | 'tabs' | 'swipe' | null
+  // No swipe step anymore: editing is reached by tapping a row, which needs
+  // no teaching, and the swipe is now only a shortcut to delete rather than
+  // the sole route to either action.
+  const [homeTourActive, setHomeTourActive] = useState(null); // 'fab' | 'tabs' | null
 
   useEffect(() => {
     if (!user || homeTourActive) return;
@@ -564,22 +565,20 @@ export default function Dashboard() {
     if (!dailyPopupsResolved || recapOpen || budgetSetupOpen || proRequired || budgetCrossedOpen || modalOpen) return;
     // A beat of breathing room before a hint appears — same idea as the
     // Calendar tour's own delay, so it never fires the instant the screen
-    // (or, for the swipe step, the row that was just added) lands, before
-    // the user has even had a chance to look around on their own.
+    // lands, before the user has even had a chance to look around on their
+    // own.
     const t = setTimeout(() => {
       if (!addTxTour.seen) { setHomeTourActive('fab'); return; }
-      if (!tabsTour.seen) { setHomeTourActive('tabs'); return; }
-      if (!swipeTour.seen && transactions.length > 0) { setHomeTourActive('swipe'); }
+      if (!tabsTour.seen) { setHomeTourActive('tabs'); }
     }, 1200);
     return () => clearTimeout(t);
-  }, [user, homeTourActive, dailyPopupsResolved, recapOpen, budgetSetupOpen, proRequired, budgetCrossedOpen, modalOpen, addTxTour.seen, tabsTour.seen, swipeTour.seen, transactions.length]);
+  }, [user, homeTourActive, dailyPopupsResolved, recapOpen, budgetSetupOpen, proRequired, budgetCrossedOpen, modalOpen, addTxTour.seen, tabsTour.seen]);
 
   const advanceHomeTour = useCallback(() => {
     if (homeTourActive === 'fab') addTxTour.markSeen();
     else if (homeTourActive === 'tabs') tabsTour.markSeen();
-    else if (homeTourActive === 'swipe') swipeTour.markSeen();
     setHomeTourActive(null);
-  }, [homeTourActive, addTxTour, tabsTour, swipeTour]);
+  }, [homeTourActive, addTxTour, tabsTour]);
 
   // Stable no-arg toggles for the modal props below — each was previously
   // an inline arrow function created fresh every render, which defeated
@@ -652,7 +651,6 @@ export default function Dashboard() {
         onEdit={openEdit}
         onDelete={deleteTransaction}
         light={LIGHT_HOME}
-        firstRowRef={firstRowRef}
       />
 
       <Animated.View
@@ -682,12 +680,6 @@ export default function Dashboard() {
         visible={homeTourActive === 'tabs'}
         targetRef={tabToggleRef}
         description="Switch between Expense, Income, and Overview here."
-        onNext={advanceHomeTour}
-      />
-      <TourHint
-        visible={homeTourActive === 'swipe'}
-        targetRef={firstRowRef}
-        description="Swipe left on a transaction to edit or delete it."
         onNext={advanceHomeTour}
       />
 

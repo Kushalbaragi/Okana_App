@@ -4,9 +4,22 @@ import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeabl
 import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { formatCurrencyFull, dateBoxParts } from '../utils/format';
-import { EditIcon, TrashIcon } from './icons';
+import { TrashIcon } from './icons';
+import { CARD_COLOR } from './Glass';
 
 const ACTION_WIDTH = 68;
+// A circular button floating in the revealed area, the way Reminders does
+// its swipe actions — the button is the shape, rather than the whole
+// revealed strip being a solid colour block.
+const DELETE_SIZE = 31;
+// Keeps the actual tap target at ~45px even though the circle is drawn at
+// 31 — below Apple's 44pt minimum the button looks right but gets fiddly
+// to actually hit, especially as the thumb is still coming off a swipe.
+const DELETE_HIT_SLOP = 7;
+// iOS systemRed as it renders in dark mode. Solid, not the translucent
+// wash the full-bleed block used — a small circle needs the full weight to
+// read as the destructive action at this size.
+const DELETE_RED = '#FF453A';
 
 function DateBox({ dateStr, light }) {
   const { day, month } = dateBoxParts(dateStr);
@@ -21,33 +34,38 @@ function DateBox({ dateStr, light }) {
   );
 }
 
-// Fades + scales the two action buttons in as the row is dragged open,
-// rather than having them sit fully-opaque under the card the whole time —
-// reads as a much cleaner reveal than a static layer just being uncovered.
-function RightActions({ drag, onEdit, onDelete, light }) {
+// Fades + scales the delete action in as the row is dragged open, rather
+// than having it sit fully-opaque under the card the whole time — reads as
+// a much cleaner reveal than a static layer just being uncovered.
+//
+// Delete only. Editing used to live here too, behind the same swipe, which
+// made a gesture the sole route to it — tapping the row now opens the edit
+// sheet instead, leaving the swipe as a shortcut for the one destructive
+// action rather than the only way to reach either.
+function RightActions({ drag, onDelete }) {
   const style = useAnimatedStyle(() => {
     const progress = Math.min(1, Math.max(0, -drag.value / ACTION_WIDTH));
     return { opacity: progress, transform: [{ scale: 0.7 + progress * 0.3 }] };
   });
 
   return (
-    <View style={{ flexDirection: 'row', height: '100%' }}>
-      <Animated.View style={[{ flexDirection: 'row' }, style]}>
-        <Pressable
-          onPress={onEdit}
-          style={{ width: ACTION_WIDTH, alignItems: 'center', justifyContent: 'center', backgroundColor: light ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)' }}
-          accessibilityRole="button"
-          accessibilityLabel="Edit transaction"
-        >
-          <EditIcon size={19} color={light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.85)'} />
-        </Pressable>
+    <View style={{ width: ACTION_WIDTH, height: '100%', alignItems: 'center', justifyContent: 'center' }}>
+      <Animated.View style={style}>
         <Pressable
           onPress={onDelete}
-          style={{ width: ACTION_WIDTH, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,59,48,0.56)' }}
+          hitSlop={DELETE_HIT_SLOP}
+          style={{
+            width: DELETE_SIZE,
+            height: DELETE_SIZE,
+            borderRadius: DELETE_SIZE / 2,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: DELETE_RED,
+          }}
           accessibilityRole="button"
           accessibilityLabel="Delete transaction"
         >
-          <TrashIcon size={19} color="#ffffff" />
+          <TrashIcon size={14} color="#ffffff" />
         </Pressable>
       </Animated.View>
     </View>
@@ -56,18 +74,20 @@ function RightActions({ drag, onEdit, onDelete, light }) {
 
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard — see the matching comment in Header.js.
-function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, onSwipeOpen, onCardPress, light = false }) {
+// `swipeable` is how the list keeps a tab/period switch cheap. Mounting
+// ReanimatedSwipeable costs real gesture-handler + worklet setup per row,
+// and a switch remounts every visible row at once (~12 of them) — that was
+// the single biggest chunk of the 264-411ms a switch used to spend in this
+// list. So the list paints rows flat first and flips this to true once the
+// commit has settled (see `settled` in TransactionList), moving the setup
+// off the critical path instead of removing the feature.
+function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, onSwipeOpen, onCardPress, light = false, swipeable = true, cardColor = CARD_COLOR }) {
   const swipeableRef = useRef(null);
 
   const setSwipeableRef = useCallback(r => {
     swipeableRef.current = r;
     registerSwipeable?.(tx.id, r);
   }, [tx.id, registerSwipeable]);
-
-  const handleEdit = useCallback(() => {
-    swipeableRef.current?.close();
-    onEdit(tx);
-  }, [tx, onEdit]);
 
   const handleDelete = useCallback(() => {
     swipeableRef.current?.close();
@@ -76,9 +96,49 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
     onDelete(tx.id);
   }, [tx.id, onDelete]);
 
+  // Tapping a row opens it for editing. An already-open swipe takes
+  // priority and swallows the tap (onCardPress returns true when it closed
+  // one), so dismissing a swiped-open row can't also fling the edit sheet
+  // open behind it.
   const handleCardPress = useCallback(() => {
-    onCardPress?.(tx.id);
-  }, [tx.id, onCardPress]);
+    if (onCardPress?.(tx.id)) return;
+    onEdit(tx);
+  }, [tx, onCardPress, onEdit]);
+
+  const row = (
+    <Pressable
+      onPress={handleCardPress}
+      className="flex-row items-center justify-between py-4 px-4"
+      style={{ backgroundColor: cardColor }}
+    >
+      <View className="flex-row items-center flex-1 pr-3">
+        <DateBox dateStr={tx.date} light={light} />
+        <Text numberOfLines={1} className="text-base flex-shrink" style={{ color: light ? '#111111' : '#ffffff' }}>
+          {tx.description || (isIncome ? 'Income' : 'Expense')}
+        </Text>
+      </View>
+
+      <View className="flex-row items-center shrink-0" style={{ gap: 6 }}>
+        {/* Not yet synced to the server — sitting in the offline queue,
+            or an insert/update still in flight. */}
+        {tx._pending && (
+          <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: light ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }} />
+        )}
+        <Text
+          className="text-base font-medium"
+          style={{ color: isIncome ? 'rgba(74,222,128,0.8)' : light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}
+        >
+          {isIncome ? '+' : '-'}{formatCurrencyFull(tx.amount)}
+        </Text>
+      </View>
+    </Pressable>
+  );
+
+  // Identical markup either way — the flat row is the exact same Pressable
+  // the swipeable would wrap, so arming the swipe later is invisible: no
+  // reflow, no flash, just the gesture becoming live a frame or two after
+  // the rows are already on screen.
+  if (!swipeable) return row;
 
   return (
     <ReanimatedSwipeable
@@ -87,36 +147,11 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
       rightThreshold={32}
       overshootRight={false}
       renderRightActions={(_progress, drag) => (
-        <RightActions drag={drag} onEdit={handleEdit} onDelete={handleDelete} light={light} />
+        <RightActions drag={drag} onDelete={handleDelete} />
       )}
       onSwipeableWillOpen={() => onSwipeOpen?.(tx.id)}
     >
-      <Pressable
-        onPress={handleCardPress}
-        className="flex-row items-center justify-between py-3 px-4"
-        style={{ backgroundColor: light ? '#FAFAF8' : '#0a0a0a' }}
-      >
-        <View className="flex-row items-center flex-1 pr-3">
-          <DateBox dateStr={tx.date} light={light} />
-          <Text numberOfLines={1} className="text-base flex-shrink" style={{ color: light ? '#111111' : '#ffffff' }}>
-            {tx.description || (isIncome ? 'Income' : 'Expense')}
-          </Text>
-        </View>
-
-        <View className="flex-row items-center shrink-0" style={{ gap: 6 }}>
-          {/* Not yet synced to the server — sitting in the offline queue,
-              or an insert/update still in flight. */}
-          {tx._pending && (
-            <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: light ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }} />
-          )}
-          <Text
-            className="text-base font-medium"
-            style={{ color: isIncome ? 'rgba(74,222,128,0.8)' : light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}
-          >
-            {isIncome ? '+' : '-'}{formatCurrencyFull(tx.amount)}
-          </Text>
-        </View>
-      </Pressable>
+      {row}
     </ReanimatedSwipeable>
   );
 }

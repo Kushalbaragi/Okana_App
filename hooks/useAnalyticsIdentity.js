@@ -17,7 +17,7 @@ export function useAnalyticsIdentity(user) {
 
     if (user) {
       if (identifiedForRef.current === user.id) return;
-      posthog.identify(user.id, { email: user.email });
+      posthog.identify(user.id);
       identifiedForRef.current = user.id;
     } else if (identifiedForRef.current) {
       posthog.reset();
