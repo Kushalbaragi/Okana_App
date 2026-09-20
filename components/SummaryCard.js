@@ -49,6 +49,11 @@ const ROUNDED_FONT = Platform.OS === 'ios' ? 'ui-rounded' : undefined;
 // a length change needs no handling at all — nothing slides, so the ₹ can't
 // jump and there's no width to animate.
 const HEADLINE_HEIGHT = 52;
+
+// Room above the bar chart (in its own units) so the average line and its label
+// aren't cut off when the average is as tall as the tallest bar. Always the same,
+// whatever the range, so the chart doesn't change height between them.
+const AVG_ROOM = 12;
 const HEADLINE_SWAP_RISE = 8;
 const HEADLINE_SWAP_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 const HEADLINE_ENTER_DURATION = 220;
@@ -473,6 +478,7 @@ function SummaryCard({
               // zero-days render an invisible placeholder instead of a dot.
               noSpendDots={timeRange === 'month' && chartTab === 'expense' && transactions.length > 0}
               showAverage={timeRange === 'month' || timeRange === 'year'}
+              topPad={AVG_ROOM}
               light={light}
             />
           )}

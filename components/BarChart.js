@@ -200,7 +200,12 @@ function NoSpendDot({ cx, cy, r, fill, delay }) {
 // don't correspond to a real period at all — those keep their empty slot's
 // spacing but lose the label, since a label there isn't "a day that hasn't
 // happened yet," it's not a period the account will ever have.
-function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, showAverage = false }) {
+// `topPad` (optional) is room left above the top of the bars, in chart units. The
+// average line sits at the top edge when the average is as tall as the tallest
+// bar, and its label is centred on the line, so with no room above them both are
+// half cut off. Callers that show the average pass it, and pass it for every
+// range so the chart doesn't change height as the line comes and goes.
+function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, showAverage = false, topPad = 0 }) {
   const n       = values.length;
   const GROUP_W = CHART_W / n;
   const BAR_W   = Math.min(16, Math.max(6, GROUP_W - 10));
@@ -252,7 +257,11 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
     // baseline is not a reference line, it's a second axis line sitting on
     // top of the real one. This also covers the window before the first
     // load resolves, when every value is still 0.
-    if (total > 0) {
+    //
+    // And nothing to average over a single period: the first day of a month, the
+    // first month of a year, or the day of the very first transaction. The line
+    // would just be drawn across the one bar it is the average of.
+    if (total > 0 && realValues.length >= 2) {
       const avg = total / realValues.length;
       const avgH = Math.round(useSqrtScale ? Math.sqrt(avg / maxVal) * BAR_HEIGHT : (avg / maxVal) * BAR_HEIGHT);
       avgY = BAR_HEIGHT - avgH;
@@ -316,7 +325,7 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
   }, [avgY, animKey, avgRevealDelay]);
 
   return (
-    <Svg viewBox={`0 0 ${CHART_W} ${svgH}`} style={{ width: '100%', aspectRatio: CHART_W / svgH }}>
+    <Svg viewBox={`0 ${-topPad} ${CHART_W} ${svgH + topPad}`} style={{ width: '100%', aspectRatio: CHART_W / (svgH + topPad) }}>
       {onDeselect && (
         <Rect x={0} y={0} width={CHART_W} height={BAR_HEIGHT} fill="transparent" onPress={onDeselect} />
       )}
