@@ -39,27 +39,46 @@ const CHART_MONTHS = 6;
 // ---------------------------------------------------------------------------
 export function useSavingsUI() {
   const [sheetOpen, setSheetOpen] = useState(false);
+  // False from the moment a sheet opens until it has finished sliding away.
+  // The list and goal page hold what they show for that whole stretch (see
+  // SavingsSection), so what a sheet just saved appears once the sheet is gone
+  // rather than changing behind it as it closes — the same beat as adding a
+  // transaction on the home screen.
+  const [sheetClosed, setSheetClosed] = useState(true);
+  const markSheetClosed = useCallback(() => setSheetClosed(true), []);
   // Kept separate from `sheetOpen` so the sheet's content stays put while it
   // animates closed instead of blanking mid-slide.
   const [sheetData, setSheetData] = useState(null);
 
   const openNewGoal = useCallback((initialName = '') => {
     setSheetData({ kind: 'goal', goalId: null, initialName });
+    setSheetClosed(false);
     setSheetOpen(true);
   }, []);
   const openEditGoal = useCallback((goalId) => {
     setSheetData({ kind: 'goal', goalId, initialName: '' });
+    setSheetClosed(false);
     setSheetOpen(true);
   }, []);
   const openMoney = useCallback((goalId, type) => {
     setSheetData({ kind: 'money', goalId, entryId: null, type });
+    setSheetClosed(false);
     setSheetOpen(true);
   }, []);
   const openEntry = useCallback((goalId, entryId) => {
     setSheetData({ kind: 'money', goalId, entryId, type: 'add' });
+    setSheetClosed(false);
     setSheetOpen(true);
   }, []);
   const closeSheet = useCallback(() => setSheetOpen(false), []);
+
+  // Backstop for a sheet that never reports finishing (the page it lives on
+  // closing under it, say) — the hold must not outlive it.
+  useEffect(() => {
+    if (sheetOpen) return;
+    const t = setTimeout(() => setSheetClosed(true), 600);
+    return () => clearTimeout(t);
+  }, [sheetOpen]);
 
   // The delete confirmation. Same split as the sheet: `confirmOpen` drives the
   // animation, `confirmData` keeps its text while it fades out.
@@ -76,7 +95,7 @@ export function useSavingsUI() {
   const closeConfirm = useCallback(() => setConfirmOpen(false), []);
 
   return {
-    sheetOpen, sheetData, openNewGoal, openEditGoal, openMoney, openEntry, closeSheet,
+    sheetOpen, sheetData, sheetClosed, markSheetClosed, openNewGoal, openEditGoal, openMoney, openEntry, closeSheet,
     confirmOpen, confirmData, openDeleteGoal, openDeleteEntry, closeConfirm,
   };
 }
@@ -145,6 +164,7 @@ export function SavingsSheetsHost({ savings, ui, light = false }) {
       <GoalSheet
         open={sheetOpen && sheetData?.kind === 'goal'}
         onClose={closeSheet}
+        onClosed={ui.markSheetClosed}
         goal={goal}
         initialName={sheetData?.initialName || ''}
         onSubmit={submitGoal}
@@ -153,6 +173,7 @@ export function SavingsSheetsHost({ savings, ui, light = false }) {
       <MoneySheet
         open={sheetOpen && sheetData?.kind === 'money'}
         onClose={closeSheet}
+        onClosed={ui.markSheetClosed}
         goalName={goal?.name || ''}
         entry={entry}
         initialType={sheetData?.type || 'add'}
@@ -431,7 +452,13 @@ function GoalDetail({ goal, savings, ui, light }) {
 // ---------------------------------------------------------------------------
 function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOpenGoal, onCloseGoal }) {
   const insets = useSafeAreaInsets();
-  const { goals, completedGoals, allGoals, totalSaved } = savings;
+  // What is shown is held while a sheet is open, and let go once it has
+  // finished closing. The held copy is whatever was current the last time no
+  // sheet was up, i.e. the moment before the one now open appeared.
+  const liveView = { goals: savings.goals, completedGoals: savings.completedGoals, allGoals: savings.allGoals, totalSaved: savings.totalSaved };
+  const heldViewRef = useRef(liveView);
+  if (ui.sheetClosed) heldViewRef.current = liveView;
+  const { goals, completedGoals, allGoals, totalSaved } = ui.sheetClosed ? liveView : heldViewRef.current;
   const [showCompleted, setShowCompleted] = useState(false);
 
   // Cheap, and the only way this reflects changes made elsewhere (Erase Data

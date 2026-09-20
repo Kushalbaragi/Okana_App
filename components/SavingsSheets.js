@@ -150,7 +150,7 @@ function FieldRow({ label, active, onPress, shake, light, children }) {
 // user nothing to adjust, and most goals are nearer a lakh than nothing.
 const DEFAULT_TARGET = 100000;
 
-export function GoalSheet({ open, onClose, goal, initialName = '', onSubmit, light = false }) {
+export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onSubmit, light = false }) {
   const isEdit = !!goal;
   const [name, setName] = useState('');
   const [target, setTarget] = useState(DEFAULT_TARGET);
@@ -206,7 +206,7 @@ export function GoalSheet({ open, onClose, goal, initialName = '', onSubmit, lig
   return (
     // Shorter than the sheets that carry a keypad — the ruler replaces it, and
     // a tall sheet with nothing in the bottom half reads as unfinished.
-    <InlineSheet open={open} onClose={handleClose} light={light} heightRatio={0.6}>
+    <InlineSheet open={open} onClose={handleClose} onClosed={onClosed} light={light} heightRatio={0.6}>
       <ScrollView
         style={{ flexGrow: 0 }}
         showsVerticalScrollIndicator={false}
@@ -324,7 +324,7 @@ function CalIcon({ color }) {
 // calendar over the button row and keypad) and keypad. It can't literally be
 // AddModal — that is its own native Modal, and this page is already inside
 // one — so it is built from the same pieces inside an InlineSheet instead.
-export function MoneySheet({ open, onClose, goalName, entry, initialType = 'add', maxWithdraw = 0, onSubmit, onRequestDelete, light = false }) {
+export function MoneySheet({ open, onClose, onClosed, goalName, entry, initialType = 'add', maxWithdraw = 0, onSubmit, onRequestDelete, light = false }) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const isEdit = !!entry;
@@ -410,7 +410,7 @@ export function MoneySheet({ open, onClose, goalName, entry, initialType = 'add'
   const toggleButtonWidth = Math.floor((windowWidth - 40 - 4) / 2);
 
   return (
-    <InlineSheet open={open} onClose={handleClose} light={light}>
+    <InlineSheet open={open} onClose={handleClose} onClosed={onClosed} light={light}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
