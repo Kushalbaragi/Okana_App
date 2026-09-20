@@ -51,6 +51,9 @@ const REVEAL_STAGGER_CAP_MS = 420;
 // the chart, not sixteen.
 const REVEAL_ANIMATE_MAX = 6;
 
+// How long the tour's demo swipe holds the delete button in view before closing.
+const DEMO_SWIPE_HOLD_MS = 1300;
+
 // Lines the divider up with the description text rather than the card edge:
 // the row's own horizontal padding (16) + the date box (32) + its right
 // margin (10). Keep in step with TransactionItem's px-4 / w-8 / mr-2.5.
@@ -240,6 +243,9 @@ function TransactionList({
   // full re-filter) stays exactly as cheap as before — see rowEntering's
   // own comment.
   justAddedId,
+  // Handed the card element the rows sit on, for a caller that wants to point
+  // at it (the tour outlines it).
+  cardRef,
 }, ref) {
   // Drives how far the sliding content travels — see navAnimations below.
   const { width: windowWidth } = useWindowDimensions();
@@ -289,7 +295,27 @@ function TransactionList({
   // the user taps something entirely outside this component — the chart's
   // Expense/Income/Overview tabs, the month/year/All Time pills, the header
   // — none of which are descendants of TransactionList.
-  useImperativeHandle(ref, () => ({ closeOpenRow }), [closeOpenRow]);
+  // Slides the first row open to show its delete button, holds a moment, and
+  // slides it shut — the tour uses it to show what swiping a transaction does.
+  // Says whether there was a row to do it on (rows only become swipeable a moment
+  // after a list paints, so the first try can find none).
+  const demoTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(demoTimerRef.current), []);
+  const demoSwipe = useCallback(() => {
+    const first = swipeRefs.current.entries().next();
+    if (first.done) return false;
+    const [id, swipeable] = first.value;
+    swipeable.openRight();
+    openIdRef.current = id;
+    clearTimeout(demoTimerRef.current);
+    demoTimerRef.current = setTimeout(() => {
+      swipeable.close();
+      if (openIdRef.current === id) openIdRef.current = null;
+    }, DEMO_SWIPE_HOLD_MS);
+    return true;
+  }, []);
+
+  useImperativeHandle(ref, () => ({ closeOpenRow, demoSwipe }), [closeOpenRow, demoSwipe]);
 
   // ---------------------------------------------------------------------
   // Hierarchy
@@ -777,6 +803,7 @@ function TransactionList({
             hierarchy ends inside a single month, so the longest this ever
             renders is one month of transactions. */}
         <Animated.View
+          ref={cardRef}
           style={[
             { backgroundColor: cardColor, borderRadius: CARD_RADIUS, ...SMOOTH, overflow: 'hidden' },
             cardHeightStyle,

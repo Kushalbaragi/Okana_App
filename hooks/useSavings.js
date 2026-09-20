@@ -35,6 +35,8 @@ function entryFromRow(row) {
 const EMPTY = { goals: [], entries: [] }
 const FALLBACK_MESSAGE = 'Something went wrong. Please try again.'
 
+const IMPORT_CHUNK_SIZE = 500
+
 const cacheKey = storageKeys.savings
 
 async function saveCache(userId, store) {
@@ -347,6 +349,73 @@ export function useSavings() {
     return result
   }, [write, user])
 
+  // Brings in goals and entries from a spreadsheet: `goals` are { name, target,
+  // completed } and `entries` are { goalName, type, amount, date, note }. An entry
+  // goes to the goal of that name — one the account already has, else one of
+  // `goals` — and a goal that already exists is left as it is, entries added to it.
+  // Goals go in before their entries, each in chunks, reporting progress as
+  // (done, total). Not optimistic and not rolled back: it stops at the first
+  // failure, reporting what went in, and either way ends with a refresh so the
+  // list shows what is really there.
+  const importSavings = useCallback(async (goals, entries, onProgress) => {
+    if (!user) return { success: false, error: 'Not signed in', goals: 0, entries: 0 }
+    if (!goals.length && !entries.length) return { success: true, goals: 0, entries: 0 }
+    if (!isOnlineRef.current) { notifyOffline(); return { success: false, offline: true, goals: 0, entries: 0 } }
+
+    const idByName = new Map(storeRef.current.goals.map(g => [g.name.toLowerCase(), g.id]))
+    const createdAt = new Date().toISOString()
+    const newGoals = []
+    for (const g of goals) {
+      const key = g.name.toLowerCase()
+      if (idByName.has(key)) continue
+      const id = Crypto.randomUUID()
+      idByName.set(key, id)
+      newGoals.push({
+        id, user_id: user.id, name: g.name, target_amount: g.target,
+        completed_at: g.completed ? createdAt : null,
+      })
+    }
+    const entryRows = entries.flatMap(e => {
+      const goalId = idByName.get(e.goalName.toLowerCase())
+      return goalId ? [{ goal_id: goalId, user_id: user.id, type: e.type, amount: e.amount, date: e.date, note: e.note }] : []
+    })
+
+    const total = newGoals.length + entryRows.length
+    const done = { goals: 0, entries: 0 }
+    const insertAll = async (table, rows, counter) => {
+      for (let i = 0; i < rows.length; i += IMPORT_CHUNK_SIZE) {
+        const chunk = rows.slice(i, i + IMPORT_CHUNK_SIZE)
+        const { error } = await supabase.from(table).insert(chunk)
+        if (error) return error
+        done[counter] += chunk.length
+        onProgress?.(done.goals + done.entries, total)
+      }
+      return null
+    }
+
+    writesInFlightRef.current += 1
+    let failure = null
+    try {
+      failure = await insertAll('savings_goals', newGoals, 'goals') || await insertAll('savings_entries', entryRows, 'entries')
+    } catch (err) {
+      failure = err
+    } finally {
+      writesInFlightRef.current -= 1
+    }
+    await refresh()
+
+    if (failure) {
+      if (isConnectivityError(failure, isOnlineRef.current)) {
+        notifyOffline()
+        return { success: false, offline: true, ...done }
+      }
+      reportError(failure)
+      return { success: false, error: failure.message || FALLBACK_MESSAGE, ...done }
+    }
+    hapticAdded()
+    return { success: true, ...done }
+  }, [user, isOnlineRef, notifyOffline, refresh])
+
   // Goals with their derived numbers attached, split into active / completed.
   // Money in a completed goal is treated as spent on the thing it was for, so
   // it isn't counted in the total.
@@ -392,5 +461,6 @@ export function useSavings() {
     addEntry,
     updateEntry,
     deleteEntry,
-  }), [derived, loading, refresh, addGoal, editGoal, deleteGoal, setGoalCompleted, addEntry, updateEntry, deleteEntry])
+    importSavings,
+  }), [derived, loading, refresh, addGoal, editGoal, deleteGoal, setGoalCompleted, addEntry, updateEntry, deleteEntry, importSavings])
 }

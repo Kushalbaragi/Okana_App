@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Platform } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
@@ -192,11 +192,8 @@ function SummaryCard({
   onTimeRangeChange,
   selectedMonth,
   year,
-  onMonthChange,
   selectedPeriod,
-  onPeriodChange,
   selectedDay,
-  onDayChange,
   light = false,
 }) {
   const { month: currMonth, year: currYear } = currentMonthYear();
@@ -375,27 +372,6 @@ function SummaryCard({
   const animKey   = `${timeRange}-${year}-${chartTab}`;
   const labelStep = timeRange === 'month' ? 4 : (timeRange === '5y' && lifetimeGranularity === 'month' ? 6 : 1);
 
-  // Overview only — these reach LineChart and nothing else. Expense and
-  // Income bars are deliberately not clickable at any range (see the
-  // BarChart call below), so drilling into a day/month/period happens on
-  // the Overview curve and the other two tabs just reflect whatever is
-  // already selected.
-  //
-  // LineChart is memo()-wrapped — inline arrows here would hand it a new
-  // handler identity every render (this card re-renders on every
-  // transaction add/edit/delete) and defeat that memo entirely. Precomputed
-  // per-mode so each stays stable across renders that don't actually change
-  // its inputs, instead of just once per timeRange switch.
-  const onBarClickMonth  = useCallback((i) => onDayChange(i + 1), [onDayChange]);
-  const onBarClickPeriod = useCallback((i) => onPeriodChange(periodsList[i]), [onPeriodChange, periodsList]);
-  const onDeselectMonth  = useCallback(() => onDayChange(null), [onDayChange]);
-  const onBarClick =
-    timeRange === 'month' ? onBarClickMonth :
-    timeRange === 'year' ? onMonthChange :
-    timeRange === '5y' ? onBarClickPeriod :
-    null;
-  const onDeselect = timeRange === 'month' ? onDeselectMonth : null;
-
   // Shared between BarChart (Expense/Income) and LineChart (Overview) — same
   // drill-down selection, just a different chart shape to show it on.
   const chartActiveIndex =
@@ -444,17 +420,13 @@ function SummaryCard({
               labels={lineChartData.labels}
               light={light}
               activeIndex={chartActiveIndex}
-              onPointClick={onBarClick}
-              onDeselect={onDeselect}
               revealKey={timeRange}
             />
           ) : (
-            // No onBarClick/onDeselect: Expense and Income bars are a
-            // readout, not a drill-down, at every range. Omitting them is
-            // what actually removes the interaction — BarChart renders its
-            // per-bar touch-target Rects and the deselect-background Rect
-            // only when those props are present. activeIndex stays, so a
-            // selection made over in Overview still shows highlighted here.
+            // No onBarClick/onDeselect: neither chart is a drill-down at any
+            // range. Omitting them is what removes the interaction — BarChart
+            // renders its per-bar touch-target Rects and the deselect-background
+            // Rect only when those props are present.
             <BarChart
               values={barValues}
               labels={chartData.labels}

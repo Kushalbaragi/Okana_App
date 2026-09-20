@@ -113,9 +113,6 @@ function Bar({ x, width, rx, targetHeight, delay, fill, maskColor }) {
     };
   });
 
-  // No onPress here — see the static touch-target Rect rendered alongside
-  // this in BarChart below, and the comment on it explaining why.
-  //
   // Two stacked paths, not one: `fill` is semi-transparent (the dim/active
   // distinction), so on its own it lets whatever's drawn behind it —
   // namely the average line — show through instead of being covered. The
@@ -205,7 +202,7 @@ function NoSpendDot({ cx, cy, r, fill, delay }) {
 // bar, and its label is centred on the line, so with no room above them both are
 // half cut off. Callers that show the average pass it, and pass it for every
 // range so the chart doesn't change height as the line comes and goes.
-function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, showAverage = false, topPad = 0 }) {
+function BarChart({ values, labels, activeIndex, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, showAverage = false, topPad = 0 }) {
   const n       = values.length;
   const GROUP_W = CHART_W / n;
   const BAR_W   = Math.min(16, Math.max(6, GROUP_W - 10));
@@ -326,10 +323,6 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
 
   return (
     <Svg viewBox={`0 ${-topPad} ${CHART_W} ${svgH + topPad}`} style={{ width: '100%', aspectRatio: CHART_W / (svgH + topPad) }}>
-      {onDeselect && (
-        <Rect x={0} y={0} width={CHART_W} height={BAR_HEIGHT} fill="transparent" onPress={onDeselect} />
-      )}
-
       <Line x1={0} y1={BAR_HEIGHT} x2={CHART_W} y2={BAR_HEIGHT} stroke={gridColor} strokeWidth="0.8" strokeDasharray="2 3" />
 
       {/* Just the line here, drawn before the bars below (not after) so it
@@ -386,25 +379,6 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
               />
             ) : (
               <Rect x={x} y={BAR_HEIGHT - 2} width={BAR_W} height={2} rx={1} fill="transparent" />
-            )}
-
-            {/* A separate, never-animated full-column touch target instead
-                of onPress on the bar itself — react-native-svg's native hit
-                region for a shape driven by useAnimatedProps (height/y
-                updated on the UI thread) doesn't reliably stay in sync with
-                what's visually on screen, so a tap during or right after
-                the grow animation could land on a stale hit box and miss,
-                needing repeated taps to register. This stays a constant
-                full-height rect regardless of animation state. */}
-            {hasData && onBarClick && (
-              <Rect
-                x={x}
-                y={0}
-                width={BAR_W}
-                height={BAR_HEIGHT}
-                fill="transparent"
-                onPress={() => !isDisabled && onBarClick(i)}
-              />
             )}
 
             {showLabel && (
