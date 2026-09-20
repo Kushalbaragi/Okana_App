@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../hooks/useTransactions';
 import { useBudget } from '../../hooks/useBudget';
+import { useSavings } from '../../hooks/useSavings';
 import { useSubscription } from '../../hooks/useSubscription';
 import { getSubscriptionDisplayStatus } from '../../utils/trial';
 import Header from '../../components/Header';
@@ -91,6 +92,9 @@ export default function Dashboard() {
   const { user } = useAuth();
   const { transactions, loading: txLoading, addTransaction, editTransaction, deleteTransaction, refresh: refreshTransactions } = useTransactions();
   const budget = useBudget(user, transactions);
+  // Lives here (not inside the calendar page) so goals are already loaded the
+  // first time it opens, same as the budget above.
+  const savings = useSavings();
   const { subscription, loading: subLoading, refresh: refreshSubscription } = useSubscription(user);
   const trialInfo = useMemo(() => getSubscriptionDisplayStatus(subscription, today()), [subscription]);
   const posthog = usePostHog();
@@ -147,8 +151,9 @@ export default function Dashboard() {
     useCallback(() => {
       refreshTransactions();
       budget.refresh();
+      savings.refresh();
       refreshSubscription();
-    }, [refreshTransactions, budget.refresh, refreshSubscription])
+    }, [refreshTransactions, budget.refresh, savings.refresh, refreshSubscription])
   );
 
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -714,6 +719,7 @@ export default function Dashboard() {
         transactions={transactions}
         recap={recapForCalendar}
         budget={budgetForCalendar}
+        savings={savings}
         light={LIGHT_HOME}
         userId={user?.id}
       />

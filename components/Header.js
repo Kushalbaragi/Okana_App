@@ -2,7 +2,7 @@ import { memo } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle, withSpring } from 'react-native-reanimated';
-import { HamburgerIcon, CalendarIcon } from './icons';
+import { HamburgerIcon, WalletIcon } from './icons';
 import { PILL_ACTIVE_COLOR } from './Glass';
 
 const BTN_W = 88; // a hair under the original 92 — "Overview" still fits at text-base
@@ -81,9 +81,9 @@ function Header({ onMenuOpen, chartTab, onChartTabChange, onCalendarOpen, light 
         onPress={onCalendarOpen}
         className="w-9 h-9 items-center justify-center rounded-xl"
         accessibilityRole="button"
-        accessibilityLabel="Open spend calendar"
+        accessibilityLabel="Open budget and savings"
       >
-        <CalendarIcon color={iconColor} />
+        <WalletIcon color={iconColor} />
       </Pressable>
     </View>
   );
