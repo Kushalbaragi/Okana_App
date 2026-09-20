@@ -1049,7 +1049,7 @@ export default function AccountPage() {
                       }}
                     />
                     <Pressable onPress={saveName} disabled={savingName}>
-                      <Text className="text-base" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.60)' : 'rgba(255,255,255,0.60)' }}>{savingName ? 'Saving…' : 'Save'}</Text>
+                      <Text className="text-base" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.60)' : 'rgba(255,255,255,0.60)' }}>Save</Text>
                     </Pressable>
                   </View>
                 ) : (
@@ -1236,7 +1236,7 @@ export default function AccountPage() {
               className="w-full py-[14px] rounded-full items-center"
               style={{ backgroundColor: '#ffffff', opacity: !feedbackText.trim() || feedbackSending ? 0.3 : 1 }}
             >
-              <Text className="text-black text-base font-semibold">{feedbackSending ? 'Sending…' : 'Send'}</Text>
+              <Text className="text-black text-base font-semibold">Send</Text>
             </Pressable>
             <Text className="mt-3 text-center" style={{ fontSize: 12, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.20)' : 'rgba(255,255,255,0.20)' }}>We typically respond within 1–2 business days.</Text>
           </>

@@ -427,7 +427,7 @@ export default function SubscriptionPage() {
 
               {needsAction && Platform.OS !== 'web' && (
                 <Pressable onPress={handleRestore} disabled={restoring} className="w-full py-2 items-center mt-1">
-                  <Text className="text-white/40 text-base">{restoring ? 'Restoring…' : 'Restore purchases'}</Text>
+                  <Text className="text-white/40 text-base">Restore purchases</Text>
                 </Pressable>
               )}
 

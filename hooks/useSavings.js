@@ -33,7 +33,6 @@ function entryFromRow(row) {
 }
 
 const EMPTY = { goals: [], entries: [] }
-const OFFLINE_MESSAGE = "You're offline. Try again once you're back online."
 const FALLBACK_MESSAGE = 'Something went wrong. Please try again.'
 
 const cacheKey = storageKeys.savings
@@ -67,9 +66,12 @@ function byDateDesc(a, b) {
 // withdrawals), never stored on the goal itself — so correcting or deleting a
 // mistaken entry can't leave a stale total behind.
 //
-// Online-only, unlike transactions: writes need a connection and fail with
-// the usual offline notice rather than being queued. Reads still fall back to
-// the cached copy, so the list is viewable offline.
+// Online-only, unlike transactions: writes need a connection and aren't queued.
+// One made offline changes nothing and comes back as { success: false, offline:
+// true } with no message, after asking the app for its offline banner (which
+// also announces when the connection returns) — so the caller shows no error of
+// its own on top of it. Reads still fall back to the cached copy, so the list is
+// viewable offline.
 export function useSavings() {
   const { user } = useAuth()
   const { isOnlineRef, notifyOffline } = useNetwork()
@@ -155,7 +157,7 @@ export function useSavings() {
   // in-flight bookkeeping and the error handling can't drift between them.
   const write = useCallback(async ({ apply, request, rollback, onSuccess }) => {
     if (!user) return { success: false, error: 'Not signed in' }
-    if (!isOnlineRef.current) { notifyOffline(); return { success: false, error: OFFLINE_MESSAGE } }
+    if (!isOnlineRef.current) { notifyOffline(); return { success: false, offline: true } }
 
     writesInFlightRef.current += 1
     apply()
@@ -172,7 +174,7 @@ export function useSavings() {
       rollback()
       if (isConnectivityError(err, isOnlineRef.current)) {
         notifyOffline()
-        return { success: false, error: OFFLINE_MESSAGE }
+        return { success: false, offline: true }
       }
       reportError(err)
       return { success: false, error: err.message || FALLBACK_MESSAGE }

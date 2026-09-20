@@ -25,6 +25,7 @@ import SavingsBoundary from './SavingsBoundary';
 import ErrorBoundary from './ErrorBoundary';
 import { useTourStep } from '../hooks/useTourStep';
 import { SETTLE_EASING } from '../utils/motion';
+import { OfflineBanner } from './OfflineBanner';
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // Monday-first
 
@@ -513,6 +514,12 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
             >
               <SavingsSheetsHost savings={savings} ui={savingsUI} light={light} />
             </ErrorBoundary>
+
+            {/* This page is a native <Modal>, its own window drawn over the root
+                one, so the offline banner rendered at the app root is hidden
+                behind it. This copy shows the same state from inside the window,
+                last so it sits above the page and any open sheet. */}
+            <OfflineBanner />
         </View>
       </Animated.View>
       </GestureHandlerRootView>
