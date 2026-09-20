@@ -3,7 +3,7 @@
     "name": "Okana",
     "slug": "okana",
     "scheme": "okana",
-    "version": "1.0.3",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -22,10 +22,7 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "package": "com.kushalbaragi.okana",
-      "permissions": [
-        "android.permission.RECORD_AUDIO"
-      ]
+      "package": "com.kushalbaragi.okana"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -41,7 +38,13 @@
       ],
       "expo-document-picker",
       "expo-notifications",
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
       "@sentry/react-native/expo",
       "expo-localization"
     ],

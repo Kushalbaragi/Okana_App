@@ -13,6 +13,7 @@ import { useBudget } from '../../hooks/useBudget';
 import { useSavings } from '../../hooks/useSavings';
 import { useSubscription } from '../../hooks/useSubscription';
 import { getSubscriptionDisplayStatus } from '../../utils/trial';
+import { storageKeys } from '../../utils/storageKeys';
 import Header from '../../components/Header';
 import SummaryCard from '../../components/SummaryCard';
 import TransactionList from '../../components/TransactionList';
@@ -23,18 +24,24 @@ import BudgetSetupModal from '../../components/BudgetSetupModal';
 import { UpdateSheet } from '../../components/UpdateSheet';
 import { useAppUpdate } from '../../hooks/useAppUpdate';
 import { AnimatedModal } from '../../components/AnimatedModal';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { TourHint } from '../../components/TourHint';
 import { useTourStep } from '../../hooks/useTourStep';
 import { PlusIcon } from '../../components/icons';
-import { PILL_ACTIVE_COLOR } from '../../components/Glass';
-import { currentMonthYear, today, formatCurrency } from '../../utils/format';
+import { PILL_ACTIVE_COLOR, POPUP_RADIUS, SMOOTH } from '../../components/Glass';
+import { currentMonthYear, today, formatCurrency, formatCurrencyFull } from '../../utils/format';
 import { getMonthlyRecapSlides, hasAnyRecapData, prevMonthYear, MONTH_NAMES } from '../../utils/monthlyRecap';
+import { SETTLE_EASING } from '../../utils/motion';
 
 // One-flag experiment: a light theme for just this screen (Header,
 // SummaryCard, TransactionList). Flip back to false to fully revert —
 // every other screen is untouched regardless of this value.
 const LIGHT_HOME = false;
 const HOME_BG = LIGHT_HOME ? '#FAFAF8' : '#000000';
+
+// How long after a delete is confirmed it goes ahead even if the dialog never
+// reports having closed (see flushDelete): longer than its close animation.
+const DELETE_BACKSTOP_MS = 700;
 
 // Mirrors the local AsyncStorage "shown" tracking server-side, so the
 // check-monthly-summary cron (which has no access to any device's
@@ -123,7 +130,7 @@ export default function Dashboard() {
   // the actual app-open moment only, not on every visit here.
   const entranceProgress = useSharedValue(0);
   useEffect(() => {
-    entranceProgress.value = withTiming(1, { duration: 480, easing: Easing.bezier(0.16, 1, 0.3, 1) });
+    entranceProgress.value = withTiming(1, { duration: 480, easing: SETTLE_EASING });
   }, []);
 
   // Home stays static while the Calendar page slides in/out on top of it —
@@ -368,7 +375,7 @@ export default function Dashboard() {
     (async () => {
       const { month, year: cy } = currentMonthYear();
       const monthId = `${cy}-${String(month + 1).padStart(2, '0')}`;
-      const shownMonth = await AsyncStorage.getItem(`okana_budget_setup_shown_${user.id}`);
+      const shownMonth = await AsyncStorage.getItem(storageKeys.budgetSetupShown(user.id));
       if (!cancelled && shownMonth !== monthId) setBudgetSetupPending(true);
     })();
 
@@ -445,7 +452,7 @@ export default function Dashboard() {
     if (!user) return;
     const { month, year: cy } = currentMonthYear();
     const monthId = `${cy}-${String(month + 1).padStart(2, '0')}`;
-    await AsyncStorage.setItem(`okana_budget_setup_shown_${user.id}`, monthId);
+    await AsyncStorage.setItem(storageKeys.budgetSetupShown(user.id), monthId);
   }, [user]);
 
   // Same deferred-open reasoning as openRecapFromCalendar above.
@@ -503,6 +510,36 @@ export default function Dashboard() {
   }, [router]);
 
   const closeBudgetCrossed = useCallback(() => setBudgetCrossedOpen(false), []);
+
+  // Deleting a transaction asks first. The dialog closes, and only once it has
+  // gone is the transaction removed, so the row leaving the list is seen rather
+  // than happening behind the dialog. `deleteTx` is what it asks about, held
+  // while the dialog closes so its text doesn't change under it; `deleteOpen`
+  // drives it. `flushDelete` runs from the dialog's own "closed" and from a
+  // timer behind it, in case that never comes: whichever is first removes it, once.
+  const [deleteTx, setDeleteTx] = useState(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const transactionsRef = useRef(transactions);
+  transactionsRef.current = transactions;
+  const pendingDeleteId = useRef(null);
+  const requestDelete = useCallback((id) => {
+    const tx = transactionsRef.current.find(t => t.id === id);
+    if (!tx) return;
+    setDeleteTx(tx);
+    setDeleteOpen(true);
+  }, []);
+  const closeDelete = useCallback(() => setDeleteOpen(false), []);
+  const flushDelete = useCallback(() => {
+    const id = pendingDeleteId.current;
+    pendingDeleteId.current = null;
+    if (id) deleteTransaction(id);
+  }, [deleteTransaction]);
+  const confirmDelete = useCallback(() => {
+    if (!deleteTx) return;
+    pendingDeleteId.current = deleteTx.id;
+    setDeleteOpen(false);
+    setTimeout(flushDelete, DELETE_BACKSTOP_MS);
+  }, [deleteTx, flushDelete]);
 
   // Set by addTransactionWithBudgetCheck below, consumed by the effect
   // right after it — not opened directly there because AddModal is still
@@ -665,7 +702,7 @@ export default function Dashboard() {
         selectedPeriod={selectedPeriod}
         selectedDay={selectedDay}
         onEdit={openEdit}
-        onDelete={deleteTransaction}
+        onDelete={requestDelete}
         light={LIGHT_HOME}
       />
 
@@ -739,38 +776,45 @@ export default function Dashboard() {
         lastMonthSpent={budget.lastMonthSpent}
       />
 
+      <ConfirmDialog
+        open={deleteOpen}
+        title="Delete transaction?"
+        message={deleteTx
+          ? `${deleteTx.description ? `“${deleteTx.description}” · ` : ''}${formatCurrencyFull(deleteTx.amount)} ${deleteTx.type === 'income' ? 'income' : 'expense'} will be deleted.`
+          : ''}
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+        onCancel={closeDelete}
+        onClosed={flushDelete}
+      />
+
       <AnimatedModal open={proRequired} onClose={closeProRequired} variant="center">
         <View
-          className="w-full rounded-2xl p-6 items-center"
-          style={{ maxWidth: 360, backgroundColor: 'rgba(20,20,20,0.98)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
+          className="w-full p-6 items-center"
+          style={{ maxWidth: 360, borderRadius: POPUP_RADIUS, ...SMOOTH, backgroundColor: 'rgba(20,20,20,0.98)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
         >
           <Text style={{ fontSize: 30 }} className="mb-3">🔒</Text>
           <Text className="text-white font-semibold text-base mb-2 text-center">Subscription Required</Text>
           <Text className="text-white/45 text-base text-center mb-6" style={{ lineHeight: 22 }}>
             Your existing transactions are still here. Subscribe to Okana Plus to keep adding new ones.
           </Text>
-          <View className="flex-row w-full" style={{ gap: 12 }}>
-            <Pressable onPress={closeProRequired} className="flex-1 py-[11px] rounded-xl items-center" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
-              <Text className="text-white/60 text-base font-medium">Not now</Text>
-            </Pressable>
-            <Pressable onPress={subscribeFromProRequired} className="flex-1 py-[11px] rounded-xl items-center" style={{ backgroundColor: 'rgba(74,222,128,0.25)' }}>
-              <Text className="text-base font-semibold" style={{ color: '#4ade80' }}>Subscribe Now</Text>
-            </Pressable>
-          </View>
+          <Pressable onPress={subscribeFromProRequired} className="w-full py-[11px] rounded-full items-center" style={{ backgroundColor: 'rgba(74,222,128,0.25)' }}>
+            <Text className="text-base font-semibold" style={{ color: '#4ade80' }}>Subscribe Now</Text>
+          </Pressable>
         </View>
       </AnimatedModal>
 
       <AnimatedModal open={budgetCrossedOpen} onClose={closeBudgetCrossed} variant="center">
         <View
-          className="w-full rounded-2xl p-6 items-center"
-          style={{ maxWidth: 360, backgroundColor: 'rgba(20,20,20,0.98)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
+          className="w-full p-6 items-center"
+          style={{ maxWidth: 360, borderRadius: POPUP_RADIUS, ...SMOOTH, backgroundColor: 'rgba(20,20,20,0.98)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
         >
           <Text style={{ fontSize: 30 }} className="mb-3">⚠️</Text>
           <Text className="text-white font-semibold text-base mb-2 text-center">You've gone over budget</Text>
           <Text className="text-white/45 text-base text-center mb-6" style={{ lineHeight: 22 }}>
             You're now {formatCurrency(budgetCrossedOverAmount)} over your {formatCurrency(budget.amount)} budget for {MONTH_NAMES[currMonth]}.
           </Text>
-          <Pressable onPress={closeBudgetCrossed} className="w-full py-[11px] rounded-xl items-center" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+          <Pressable onPress={closeBudgetCrossed} className="w-full py-[11px] rounded-full items-center" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
             <Text className="text-white text-base font-semibold">Got it</Text>
           </Pressable>
         </View>

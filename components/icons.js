@@ -170,3 +170,14 @@ export function BackspaceIcon({ size = 22, color = '#ffffff' }) {
     </Svg>
   );
 }
+
+export function CalendarIcon({ color = 'rgba(255,255,255,0.35)' }) {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 14 14" fill="none">
+      <Rect x="1" y="2.5" width="12" height="10.5" rx="2" stroke={color} strokeWidth="1.2" />
+      <Line x1="1" y1="5.5" x2="13" y2="5.5" stroke={color} strokeWidth="1.2" />
+      <Line x1="4.5" y1="1" x2="4.5" y2="4" stroke={color} strokeWidth="1.2" strokeLinecap="round" />
+      <Line x1="9.5" y1="1" x2="9.5" y2="4" stroke={color} strokeWidth="1.2" strokeLinecap="round" />
+    </Svg>
+  );
+}

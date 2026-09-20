@@ -17,6 +17,7 @@ import {
 
 const LIFETIME_YEARLY_THRESHOLD = 2; // years of history before "All Time" switches from monthly to yearly bars
 import { MONTH_NAMES } from '../utils/monthlyRecap';
+import { SETTLE_EASING } from '../utils/motion';
 
 const MONTH_LABELS_SHORT = ['J','F','M','A','M','J','J','A','S','O','N','D'];
 
@@ -49,8 +50,12 @@ const ROUNDED_FONT = Platform.OS === 'ios' ? 'ui-rounded' : undefined;
 // a length change needs no handling at all — nothing slides, so the ₹ can't
 // jump and there's no width to animate.
 const HEADLINE_HEIGHT = 52;
+
+// Room above the bar chart (in its own units) so the average line and its label
+// aren't cut off when the average is as tall as the tallest bar. Always the same,
+// whatever the range, so the chart doesn't change height between them.
+const AVG_ROOM = 12;
 const HEADLINE_SWAP_RISE = 8;
-const HEADLINE_SWAP_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 const HEADLINE_ENTER_DURATION = 220;
 // Shorter than the enter on purpose. Both copies are stacked, so a
 // symmetric crossfade leaves them equally visible through the middle of the
@@ -63,8 +68,8 @@ function headlineEntering() {
   return {
     initialValues: { opacity: 0, transform: [{ translateY: HEADLINE_SWAP_RISE }] },
     animations: {
-      opacity: withTiming(1, { duration: HEADLINE_ENTER_DURATION, easing: HEADLINE_SWAP_EASING }),
-      transform: [{ translateY: withTiming(0, { duration: HEADLINE_ENTER_DURATION, easing: HEADLINE_SWAP_EASING }) }],
+      opacity: withTiming(1, { duration: HEADLINE_ENTER_DURATION, easing: SETTLE_EASING }),
+      transform: [{ translateY: withTiming(0, { duration: HEADLINE_ENTER_DURATION, easing: SETTLE_EASING }) }],
     },
   };
 }
@@ -74,8 +79,8 @@ function headlineExiting() {
   return {
     initialValues: { opacity: 1, transform: [{ translateY: 0 }] },
     animations: {
-      opacity: withTiming(0, { duration: HEADLINE_EXIT_DURATION, easing: HEADLINE_SWAP_EASING }),
-      transform: [{ translateY: withTiming(-HEADLINE_SWAP_RISE, { duration: HEADLINE_EXIT_DURATION, easing: HEADLINE_SWAP_EASING }) }],
+      opacity: withTiming(0, { duration: HEADLINE_EXIT_DURATION, easing: SETTLE_EASING }),
+      transform: [{ translateY: withTiming(-HEADLINE_SWAP_RISE, { duration: HEADLINE_EXIT_DURATION, easing: SETTLE_EASING }) }],
     },
   };
 }
@@ -473,6 +478,7 @@ function SummaryCard({
               // zero-days render an invisible placeholder instead of a dot.
               noSpendDots={timeRange === 'month' && chartTab === 'expense' && transactions.length > 0}
               showAverage={timeRange === 'month' || timeRange === 'year'}
+              topPad={AVG_ROOM}
               light={light}
             />
           )}

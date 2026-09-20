@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNetwork } from '../context/NetworkContext'
 import { isConnectivityError, reportError } from '../utils/errors'
+import { storageKeys } from '../utils/storageKeys'
 import { hapticAdded, hapticDeleted } from '../utils/haptics'
 import { loadQueue, saveQueue, enqueue, collapseQueue, mergeWithPending, withQueueLock } from '../utils/syncQueue'
 
@@ -20,17 +21,20 @@ function fromRow(row) {
   }
 }
 
-const cacheKey = (userId) => `okana_txs_${userId}`
+const cacheKey = storageKeys.transactions
 
 async function saveCache(userId, txs) {
-  try { await AsyncStorage.setItem(cacheKey(userId), JSON.stringify(txs)) } catch { /* ignore */ }
+  try { await AsyncStorage.setItem(cacheKey(userId), JSON.stringify(txs)) } catch (err) { reportError(err) }
 }
 
 async function loadCache(userId) {
   try {
     const raw = await AsyncStorage.getItem(cacheKey(userId))
     return raw ? JSON.parse(raw) : null
-  } catch { return null }
+  } catch (err) {
+    reportError(err)
+    return null
+  }
 }
 
 // Replays whatever's still queued, in order. A connectivity failure stops

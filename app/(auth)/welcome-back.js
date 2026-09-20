@@ -1,10 +1,10 @@
 import { useEffect } from 'react';
 import { View, Text } from 'react-native';
 import { useRouter } from 'expo-router';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, Easing } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay } from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
+import { SETTLE_EASING } from '../../utils/motion';
 
-const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 const HOLD_MS = 6000; // a brief courtesy beat, not the full first-run carousel
 
 // Shown to a returning user right after they verify their OTP — index.js's

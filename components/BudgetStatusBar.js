@@ -1,7 +1,8 @@
 import { memo, useEffect, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { formatCurrency } from '../utils/format';
+import { SETTLE_EASING } from '../utils/motion';
 
 // Always green — the bar previously shifted to yellow/red as spend
 // approached or passed the budget, but that's no longer wanted; one
@@ -18,20 +19,14 @@ const SEGMENT_COUNT = 63;
 // the target fast, then eases off gradually instead of cubic's milder,
 // more even taper — keeps the initial burst but gives the last stretch a
 // longer, more visible slowdown.
-const GROW_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard (and the flows it opens) — see the matching comment in
 // Header.js.
-// `summary` (optional) swaps the budget wording — the big figure, its suffix and
-// the two captions under the bar — for someone else's, so a savings goal can
-// use this exact bar (same figure, same segmented bar, same captions) without
-// a second copy of it: { hero, suffix, left, right }. Left out, this behaves
-// exactly as a budget bar always has.
 // `hideDivider` drops the bottom border-line — SpendCalendarModal sits this
 // right above its own calendar grid with a wider blank gap instead, so the
 // line there just reads as clutter; MonthlyRecapModal's slide keeps it.
-function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, light = false, hideDivider = false, summary }) {
+function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, light = false, hideDivider = false }) {
   const wrapperStyle = {
     paddingBottom: 10,
     marginBottom: 16,
@@ -55,7 +50,7 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, 
   useEffect(() => {
     if (!hasBudget || !barWidth) return;
     progress.value = 0;
-    progress.value = withTiming(1, { duration: 2600, easing: GROW_EASING });
+    progress.value = withTiming(1, { duration: 2600, easing: SETTLE_EASING });
   }, [hasBudget, barWidth, cappedPercent]);
 
   const fillStyle = useAnimatedStyle(() => ({
@@ -75,10 +70,10 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, 
 
   const remaining = amount - spent;
   const isOver = remaining < 0;
-  const heroAmount = summary ? summary.hero : formatCurrency(Math.abs(remaining));
-  const heroSuffix = summary ? summary.suffix : isOver ? 'over' : 'left';
-  const usedLabel = summary ? summary.left : isOver ? `${Math.round(percent - 100)}% over budget` : `${Math.round(percent)}% used`;
-  const totalLabel = summary ? summary.right : `${formatCurrency(amount)} total`;
+  const heroAmount = formatCurrency(Math.abs(remaining));
+  const heroSuffix = isOver ? 'over' : 'left';
+  const usedLabel = isOver ? `${Math.round(percent - 100)}% over budget` : `${Math.round(percent)}% used`;
+  const totalLabel = `${formatCurrency(amount)} total`;
 
   return (
     <View style={wrapperStyle}>

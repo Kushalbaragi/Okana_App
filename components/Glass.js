@@ -40,10 +40,21 @@ const BG = {
 // they'd use in a className elsewhere in the app.
 export const RADIUS = { none: 0, sm: 6, md: 8, lg: 10, xl: 12, '2xl': 16, '3xl': 24, full: 9999 };
 
+// Apple-style corners. iOS draws its own shapes with a "continuous" curve, which
+// eases into the straight edge instead of meeting it at the hard arc a plain
+// border radius makes; React Native has it as `borderCurve` (iOS only, ignored
+// elsewhere). Spread SMOOTH into any style that sets a corner radius, and use
+// the two radii below so cards and popups round the same way everywhere.
+export const SMOOTH = { borderCurve: 'continuous' };
+// Cards, and the boxes inside them.
+export const CARD_RADIUS = 28;
+// Sheets and dialogs — a step rounder than a card.
+export const POPUP_RADIUS = 32;
+
 function radiusStyle(radius, corners) {
   if (!radius) return null;
-  if (!corners) return { borderRadius: radius };
-  const style = {};
+  if (!corners) return { borderRadius: radius, ...SMOOTH };
+  const style = { ...SMOOTH };
   if (corners.includes('t')) { style.borderTopLeftRadius = radius; style.borderTopRightRadius = radius; }
   if (corners.includes('b')) { style.borderBottomLeftRadius = radius; style.borderBottomRightRadius = radius; }
   return style;

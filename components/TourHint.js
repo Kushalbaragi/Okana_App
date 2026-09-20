@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { View, Text, Pressable, useWindowDimensions } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
+import { CARD_RADIUS, SMOOTH } from './Glass';
+import { SETTLE_EASING } from '../utils/motion';
 
 // Same "settle" ease-out-expo feel used everywhere else in the app.
-const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 const TOOLTIP_MARGIN = 14;
 const TOOLTIP_WIDTH = 280;
 const HOLE_PADDING = 8;
@@ -132,8 +133,10 @@ export function TourHint({ visible, targetRef, description, onNext, circular = f
         pointerEvents="box-none"
       >
         <View
-          className="rounded-2xl p-4"
+          className="p-4"
           style={{
+            borderRadius: CARD_RADIUS,
+            ...SMOOTH,
             backgroundColor: 'rgba(20,20,20,0.98)',
             borderWidth: 1,
             borderColor: 'rgba(255,255,255,0.10)',

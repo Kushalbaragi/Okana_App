@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, View, Text, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, runOnJS, Easing } from 'react-native-reanimated';
 import { addMonths, subMonths, startOfMonth, getDaysInMonth } from 'date-fns';
 import {
@@ -16,12 +17,14 @@ import {
 } from '../utils/format';
 import { MONTH_NAMES as MONTHS } from '../utils/monthlyRecap';
 import BudgetStatusBar from './BudgetStatusBar';
-import { SETTLE_EASING } from './AmountField';
 import { TourHint } from './TourHint';
 import { BackIcon } from './icons';
 import SegmentedSwitch from './SegmentedSwitch';
 import SavingsSection, { SavingsSheetsHost, useSavingsUI } from './SavingsSection';
+import SavingsBoundary from './SavingsBoundary';
+import ErrorBoundary from './ErrorBoundary';
 import { useTourStep } from '../hooks/useTourStep';
+import { SETTLE_EASING } from '../utils/motion';
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // Monday-first
 
@@ -290,6 +293,10 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
           `visible`) flips to false the instant a close starts, so touches
           fall through immediately instead of at the end. Same fix as
           AddModal's — see the comment there. */}
+      {/* A <Modal> is its own native window, which the app's root
+          GestureHandlerRootView doesn't reach — the goal cards' swipe-to-delete
+          needs one in here (see AddModal). */}
+      <GestureHandlerRootView style={{ flex: 1 }}>
       <Animated.View className="flex-1" style={[{ flex: 1, backgroundColor: light ? '#FAFAF8' : '#000000' }, pageStyle]} pointerEvents={open ? 'auto' : 'none'}>
         <View style={{ flex: 1 }}>
             {/* Replaces the old drag-handle pill (which read as a
@@ -465,15 +472,17 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
               </Animated.View>
 
               <Animated.View style={[StyleSheet.absoluteFill, savingsLayerStyle]} pointerEvents={section === 'savings' ? 'auto' : 'none'}>
-                <SavingsSection
-                  savings={savings}
-                  ui={savingsUI}
-                  active={open && section === 'savings'}
-                  light={light}
-                  detailGoalId={detailGoalId}
-                  onOpenGoal={openGoal}
-                  onCloseGoal={closeGoal}
-                />
+                <SavingsBoundary light={light} onReset={closeGoal}>
+                  <SavingsSection
+                    savings={savings}
+                    ui={savingsUI}
+                    active={open && section === 'savings'}
+                    light={light}
+                    detailGoalId={detailGoalId}
+                    onOpenGoal={openGoal}
+                    onCloseGoal={closeGoal}
+                  />
+                </SavingsBoundary>
               </Animated.View>
             </View>
 
@@ -498,9 +507,15 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
 
             {/* Last child of the page, so its sheets slide up over everything
                 above — header included. */}
-            <SavingsSheetsHost savings={savings} ui={savingsUI} light={light} />
+            <ErrorBoundary
+              resetKeys={[savingsUI.sheetData, savingsUI.confirmData]}
+              onError={() => { savingsUI.closeSheet(); savingsUI.closeConfirm(); }}
+            >
+              <SavingsSheetsHost savings={savings} ui={savingsUI} light={light} />
+            </ErrorBoundary>
         </View>
       </Animated.View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }

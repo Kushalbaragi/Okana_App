@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
-import { SETTLE_EASING } from './AmountField';
+import { POPUP_RADIUS, SMOOTH } from './Glass';
+import { DialogBackdrop } from './DialogBackdrop';
+import { SETTLE_EASING } from '../utils/motion';
 
 const OPEN_MS = 220;
 const CLOSE_MS = 160;
-const BACKDROP_OPACITY = 0.6;
 
 // The app's confirm dialog (same card, copy style and buttons as the
 // ConfirmModal on the account screen), but drawn inside its parent instead of
@@ -16,7 +17,7 @@ const BACKDROP_OPACITY = 0.6;
 //
 // `error` shows a line under the message and leaves the dialog open, for a
 // confirm that was refused; `busy` stops a second tap while one is in flight.
-export function InlineConfirm({ open, title, message, confirmLabel = 'Delete', error, busy = false, onConfirm, onCancel, light = false }) {
+export function InlineConfirm({ open, title, message, confirmLabel = 'Delete', error, busy = false, onConfirm, onCancel, onClosed, light = false }) {
   const [visible, setVisible] = useState(open);
   const progress = useSharedValue(0);
 
@@ -26,13 +27,16 @@ export function InlineConfirm({ open, title, message, confirmLabel = 'Delete', e
       progress.value = withTiming(1, { duration: OPEN_MS, easing: SETTLE_EASING });
     } else {
       progress.value = withTiming(0, { duration: CLOSE_MS, easing: Easing.in(Easing.cubic) }, finished => {
-        if (finished) runOnJS(setVisible)(false);
+        if (!finished) return;
+        runOnJS(setVisible)(false);
+        // Only once it is really gone, for a caller that has something to do
+        // then (delete what it was asking about, so it is seen to go).
+        if (onClosed) runOnJS(onClosed)();
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const backdropStyle = useAnimatedStyle(() => ({ opacity: progress.value * BACKDROP_OPACITY }));
   // The same small rise and scale the app's centred dialogs use.
   const cardStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
@@ -44,14 +48,13 @@ export function InlineConfirm({ open, title, message, confirmLabel = 'Delete', e
   const text = light ? '#111111' : '#ffffff';
   return (
     <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }]} pointerEvents={open ? 'auto' : 'none'}>
-      <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#000000' }, backdropStyle]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={busy ? undefined : onCancel} accessibilityLabel="Cancel" />
-      </Animated.View>
+      <DialogBackdrop progress={progress} />
+      <Pressable style={StyleSheet.absoluteFill} onPress={busy ? undefined : onCancel} accessibilityLabel="Cancel" />
 
       <Animated.View
         style={[
           {
-            width: '100%', maxWidth: 360, borderRadius: 16, padding: 24,
+            width: '100%', maxWidth: 360, borderRadius: POPUP_RADIUS, ...SMOOTH, padding: 24,
             backgroundColor: light ? 'rgba(250,250,248,0.98)' : 'rgba(20,20,20,0.98)',
             borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)',
           },
@@ -61,24 +64,14 @@ export function InlineConfirm({ open, title, message, confirmLabel = 'Delete', e
         <Text className="font-semibold text-base" style={{ color: text, marginBottom: 8 }}>{title}</Text>
         <Text className="text-base" style={{ lineHeight: 22, color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', marginBottom: error ? 12 : 24 }}>{message}</Text>
         {!!error && <Text className="text-base" style={{ color: '#f87171', marginBottom: 20 }}>{error}</Text>}
-        <View style={{ flexDirection: 'row', gap: 12 }}>
-          <Pressable
-            onPress={onCancel}
-            disabled={busy}
-            style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: light ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)' }}
-            accessibilityRole="button"
-          >
-            <Text className="text-base font-medium" style={{ color: light ? 'rgba(0,0,0,0.60)' : 'rgba(255,255,255,0.60)' }}>Cancel</Text>
-          </Pressable>
-          <Pressable
-            onPress={onConfirm}
-            disabled={busy}
-            style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: 'rgba(248,113,113,0.14)', opacity: busy ? 0.6 : 1 }}
-            accessibilityRole="button"
-          >
-            <Text className="text-base font-semibold" style={{ color: 'rgba(248,113,113,0.9)' }}>{confirmLabel}</Text>
-          </Pressable>
-        </View>
+        <Pressable
+          onPress={onConfirm}
+          disabled={busy}
+          style={{ width: '100%', paddingVertical: 12, borderRadius: 9999, alignItems: 'center', backgroundColor: 'rgba(248,113,113,0.14)', opacity: busy ? 0.6 : 1 }}
+          accessibilityRole="button"
+        >
+          <Text className="text-base font-semibold" style={{ color: 'rgba(248,113,113,0.9)' }}>{confirmLabel}</Text>
+        </Pressable>
       </Animated.View>
     </View>
   );

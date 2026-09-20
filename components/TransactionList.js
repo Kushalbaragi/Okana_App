@@ -15,7 +15,8 @@ import TransactionItem from './TransactionItem';
 import { formatCurrency } from '../utils/format';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { ChevronRight, BackIcon } from './icons';
-import { SETTLE_EASING } from './AmountField';
+import { CARD_RADIUS, SMOOTH } from './Glass';
+import { SETTLE_EASING } from '../utils/motion';
 
 // Same spring shape as AmountField's AMOUNT_LAYOUT_TRANSITION (proven
 // smooth for this app's other retriggered repositioning), tuned a touch
@@ -50,9 +51,6 @@ const REVEAL_STAGGER_CAP_MS = 420;
 // the chart, not sixteen.
 const REVEAL_ANIMATE_MAX = 6;
 
-// Rounder than the 16 this started at — at that size the corner reads as a
-// softened square rather than the continuous curve iOS grouped lists use.
-const CARD_RADIUS = 24;
 // Lines the divider up with the description text rather than the card edge:
 // the row's own horizontal padding (16) + the date box (32) + its right
 // margin (10). Keep in step with TransactionItem's px-4 / w-8 / mr-2.5.
@@ -780,7 +778,7 @@ function TransactionList({
             renders is one month of transactions. */}
         <Animated.View
           style={[
-            { backgroundColor: cardColor, borderRadius: CARD_RADIUS, overflow: 'hidden' },
+            { backgroundColor: cardColor, borderRadius: CARD_RADIUS, ...SMOOTH, overflow: 'hidden' },
             cardHeightStyle,
           ]}
         >

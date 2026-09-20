@@ -11,8 +11,8 @@ import { formatChargeDate, getSubscriptionDisplayStatus, PRICE_PER_YEAR, WHY_ITE
 import { today } from '../../utils/format';
 import { BackIcon, CheckIcon, RefreshIcon } from '../../components/icons';
 import { PaymentProcessing } from '../../components/PaymentProcessing';
-import { SETTLE_EASING } from '../../components/AmountField';
 import { Card, Divider, SectionLabel } from '../../components/SettingsUI';
+import { SETTLE_EASING } from '../../utils/motion';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -388,14 +388,14 @@ export default function SubscriptionPage() {
                       )}
 
                       {offeringLoading ? (
-                        <View className="w-full py-[13px] rounded-2xl items-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                        <View className="w-full py-[13px] rounded-full items-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                           <ActivityIndicator color="rgba(255,255,255,0.5)" />
                         </View>
                       ) : pkg ? (
                         <Pressable
                           onPress={handleSubscribe}
                           disabled={purchasing}
-                          className="w-full py-[13px] rounded-2xl items-center"
+                          className="w-full py-[13px] rounded-full items-center"
                           style={{ backgroundColor: 'rgba(74,222,128,0.25)', opacity: purchasing ? 0.6 : 1 }}
                         >
                           <Text className="text-base font-semibold" style={{ color: '#4ade80' }}>
@@ -404,7 +404,7 @@ export default function SubscriptionPage() {
                         </Pressable>
                       ) : (
                         <View
-                          className="w-full py-[13px] rounded-2xl items-center"
+                          className="w-full py-[13px] rounded-full items-center"
                           style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
                         >
                           <Text className="text-base font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>
@@ -434,7 +434,7 @@ export default function SubscriptionPage() {
               {needsAction && Platform.OS === 'web' && (
                 <View style={{ gap: 8, marginTop: 10 }}>
                   <View
-                    className="w-full py-[13px] rounded-2xl items-center"
+                    className="w-full py-[13px] rounded-full items-center"
                     style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
                   >
                     <Text className="text-base font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>Not available on web</Text>
@@ -489,7 +489,7 @@ export default function SubscriptionPage() {
           {canManage && Platform.OS !== 'web' && (
             <Pressable
               onPress={() => (isOnline ? openManageSubscription() : notifyOffline())}
-              className="w-full py-[15px] rounded-2xl items-center"
+              className="w-full py-[15px] rounded-full items-center"
               style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
             >
               <Text className="text-white text-base font-semibold">Manage Subscription</Text>

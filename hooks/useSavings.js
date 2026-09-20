@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNetwork } from '../context/NetworkContext'
 import { isConnectivityError, reportError } from '../utils/errors'
+import { storageKeys } from '../utils/storageKeys'
 import { hapticAdded, hapticDeleted } from '../utils/haptics'
 import { today } from '../utils/format'
 
@@ -35,18 +36,25 @@ const EMPTY = { goals: [], entries: [] }
 const OFFLINE_MESSAGE = "You're offline. Try again once you're back online."
 const FALLBACK_MESSAGE = 'Something went wrong. Please try again.'
 
-const cacheKey = (userId) => `okana_savings_${userId}`
+const cacheKey = storageKeys.savings
 
 async function saveCache(userId, store) {
-  try { await AsyncStorage.setItem(cacheKey(userId), JSON.stringify(store)) } catch { /* best-effort */ }
+  // Best-effort: the list works without its cache, but a failing write is worth knowing about.
+  try { await AsyncStorage.setItem(cacheKey(userId), JSON.stringify(store)) } catch (err) { reportError(err) }
 }
 
 async function loadCache(userId) {
   try {
     const raw = await AsyncStorage.getItem(cacheKey(userId))
     return raw ? JSON.parse(raw) : null
-  } catch { return null }
+  } catch (err) {
+    // An unreadable cache is treated as no cache, and reported.
+    reportError(err)
+    return null
+  }
 }
+
+const daysSince = (iso) => Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 86400000))
 
 // Newest first, the same ordering the transaction list uses.
 function byDateDesc(a, b) {
@@ -100,15 +108,21 @@ export function useSavings() {
           supabase.from('savings_goals').select('*').eq('user_id', user.id).order('created_at', { ascending: true }),
           supabase.from('savings_entries').select('*').eq('user_id', user.id),
         ])
-        if (goalsRes.error || entriesRes.error) return // keep showing what we have
+        const failure = goalsRes.error || entriesRes.error
+        if (failure) {
+          // Keep showing what we have; being offline isn't worth a report, a rejection is.
+          if (!isConnectivityError(failure, isOnlineRef.current)) reportError(failure)
+          return
+        }
         if (writesInFlightRef.current > 0) return
         hydratedRef.current = true
         setStore({
           goals: goalsRes.data.map(goalFromRow),
           entries: entriesRes.data.map(entryFromRow),
         })
-      } catch {
-        // Network failure — keep showing cached data.
+      } catch (err) {
+        // Keep showing cached data; a dropped connection is expected, anything else is reported.
+        if (!isConnectivityError(err, isOnlineRef.current)) reportError(err)
       } finally {
         setLoading(false)
         refreshInFlightRef.current = null
@@ -167,6 +181,17 @@ export function useSavings() {
     }
   }, [user, isOnlineRef, notifyOffline])
 
+  // 'savings_goal_reached' — the moment what a goal holds first meets its
+  // target, which is when the goal page celebrates. Told apart from
+  // 'savings_goal_completed', which is a later, deliberate "mark as done". It
+  // fires from whatever caused the crossing (a deposit, an edited entry, a lowered
+  // target), once per crossing. Like the other events, it carries no names or
+  // amounts.
+  const trackReached = useCallback((goal, savedBefore, savedAfter, targetAfter = goal.target) => {
+    if (savedBefore >= goal.target || savedAfter < targetAfter) return
+    posthog?.capture('savings_goal_reached', { days_since_created: daysSince(goal.createdAt) })
+  }, [posthog])
+
   const addGoal = useCallback(async ({ name, target }) => {
     // Client-generated so the optimistic row and the server row share an id.
     const id = Crypto.randomUUID()
@@ -197,14 +222,18 @@ export function useSavings() {
     const prev = storeRef.current.goals.find(g => g.id === id)
     if (!prev) return { success: false, error: FALLBACK_MESSAGE }
     const next = { ...prev, name: name.trim(), target: parseFloat(target) }
-    return write({
+    const saved = netFor(storeRef.current.entries, id)
+    const result = await write({
       apply: () => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? next : g) })),
       request: () => supabase.from('savings_goals')
         .update({ name: next.name, target_amount: next.target })
         .eq('id', id).eq('user_id', user.id),
       rollback: () => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? prev : g) })),
     })
-  }, [write, user])
+    // Lowering the target to what's already saved reaches it too.
+    if (result.success) trackReached(prev, saved, saved, next.target)
+    return result
+  }, [write, user, trackReached])
 
   // Entries go with it — the FK cascades server-side, so this only has to
   // mirror that locally.
@@ -238,7 +267,7 @@ export function useSavings() {
         .eq('id', id).eq('user_id', user.id),
       rollback: () => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? prev : g) })),
     })
-    if (result.success && done) posthog?.capture('savings_goal_completed')
+    if (result.success && done) posthog?.capture('savings_goal_completed', { days_since_created: daysSince(prev.createdAt) })
     return result
   }, [write, user, posthog])
 
@@ -257,6 +286,8 @@ export function useSavings() {
     if (type === 'withdraw' && value > netFor(storeRef.current.entries, goalId)) {
       return { success: false, error: "You can't withdraw more than what's saved." }
     }
+    const goal = storeRef.current.goals.find(g => g.id === goalId)
+    const saved = netFor(storeRef.current.entries, goalId)
     const id = Crypto.randomUUID()
     const entry = { id, goalId, type, amount: value, date: date || today(), note: (note || '').trim(), createdAt: new Date().toISOString() }
     const result = await write({
@@ -269,9 +300,10 @@ export function useSavings() {
     if (result.success) {
       hapticAdded()
       posthog?.capture('savings_money_moved', { type })
+      if (goal) trackReached(goal, saved, saved + (type === 'add' ? value : -value))
     }
     return result
-  }, [write, user, posthog])
+  }, [write, user, posthog, trackReached])
 
   const updateEntry = useCallback(async (id, { type, amount, note, date }) => {
     const prev = storeRef.current.entries.find(e => e.id === id)
@@ -284,14 +316,18 @@ export function useSavings() {
     const after = type === 'add' ? others + value : others - value
     if (after < 0) return { success: false, error: "You can't withdraw more than what's saved." }
     const next = { ...prev, type, amount: value, note: (note || '').trim(), date: date || prev.date }
-    return write({
+    const goal = storeRef.current.goals.find(g => g.id === prev.goalId)
+    const before = netFor(storeRef.current.entries, prev.goalId)
+    const result = await write({
       apply: () => setStore(s => ({ ...s, entries: s.entries.map(e => e.id === id ? next : e) })),
       request: () => supabase.from('savings_entries')
         .update({ type, amount: value, note: next.note, date: next.date })
         .eq('id', id).eq('user_id', user.id),
       rollback: () => setStore(s => ({ ...s, entries: s.entries.map(e => e.id === id ? prev : e) })),
     })
-  }, [write, user])
+    if (result.success && goal) trackReached(goal, before, after)
+    return result
+  }, [write, user, trackReached])
 
   const deleteEntry = useCallback(async (id) => {
     const prev = storeRef.current.entries.find(e => e.id === id)

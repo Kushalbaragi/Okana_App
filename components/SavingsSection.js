@@ -2,20 +2,20 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, FadeIn } from 'react-native-reanimated';
-import { GlassPressable } from './Glass';
-import BarChart from './BarChart';
-import BudgetStatusBar from './BudgetStatusBar';
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
+import { GlassPressable, CARD_RADIUS, SMOOTH } from './Glass';
+import MonthSlider from './MonthSlider';
+import Celebration from './Celebration';
+import ErrorBoundary from './ErrorBoundary';
 import { InlineConfirm } from './InlineConfirm';
 import { GOAL_SUGGESTIONS, GoalSheet, MoneySheet } from './SavingsSheets';
-import { GoalCard } from './GoalCard';
-import { Card, ROUNDED_FONT, POSITIVE, dim, money } from './savingsShared';
-import { CheckIcon, ChevronRight, EditIcon, PlusIcon, TrashIcon } from './icons';
+import GoalCard from './GoalCard';
+import { SwipeDeleteAction, useSwipeDelete, useSwipeGroup } from './SwipeDeleteAction';
+import { Card, ProgressBar, ROUNDED_FONT, POSITIVE, cardFill, dim, money } from './savingsShared';
+import { CheckIcon, ChevronRight, EditIcon, PlusIcon } from './icons';
 import { currentMonthYear, dateBoxParts } from '../utils/format';
+import { hapticAdded } from '../utils/haptics';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
-
-// A softer red than the one used for errors — a resting delete icon shouldn't
-// shout.
-const DANGER_SOFT = 'rgba(248,113,113,0.65)';
 
 // List and detail swap by crossfade — the same fade the home screen uses for a
 // tab switch, and cheap because it's opacity only.
@@ -28,8 +28,24 @@ const SWAP_MS = 220;
 const HISTORY_PAD = { paddingHorizontal: 16, paddingVertical: 12 };
 const CENTERED = { alignItems: 'center', justifyContent: 'center' };
 
-// How many months the goal chart covers, ending with the current one.
-const CHART_MONTHS = 6;
+// Empty months drawn after the current one on the goal's slider, as a place for
+// what's still to come.
+const PLACEHOLDER_MONTHS = 12;
+
+// How long after a delete is confirmed it goes ahead even if the dialog never
+// reports having closed (see flushGoalDelete): longer than its close animation.
+const GOAL_DELETE_BACKSTOP_MS = 700;
+
+// A line on how the goal got there: how many deposits, over how long, since
+// when. Empty when there are no deposits to speak of.
+function journeyNote(entries) {
+  const deposits = entries.filter(e => e.type === 'add').length;
+  if (deposits === 0) return '';
+  const first = entries.reduce((min, e) => (e.date < min ? e.date : min), entries[0].date);
+  const days = Math.max(1, Math.floor((Date.now() - new Date(`${first}T00:00:00`).getTime()) / 86400000));
+  const span = days < 60 ? `${days} day${days === 1 ? '' : 's'}` : `${Math.round(days / 30.44)} months`;
+  return `${deposits} deposit${deposits === 1 ? '' : 's'} over ${span} · since ${MONTH_NAMES[Number(first.slice(5, 7)) - 1].slice(0, 3)} ${first.slice(0, 4)}`;
+}
 
 // ---------------------------------------------------------------------------
 // Sheet state. Owned by the calendar page (not this section) because the
@@ -137,13 +153,23 @@ export function SavingsSheetsHost({ savings, ui, light = false }) {
     confirmMessage = `This ${money(confirmEntry.amount)} ${confirmEntry.type === 'add' ? 'deposit' : 'withdrawal'} will be removed from ${confirmGoal.name}.`;
   }
 
+  // A goal is deleted once the dialog has closed, not while it is still on
+  // screen, so the card leaving the list is something you see. `flushGoalDelete`
+  // runs from the dialog's own "closed" and from a timer behind it, in case that
+  // never comes; whichever is first does it, once.
+  const goalToDelete = useRef(null);
+  const flushGoalDelete = useCallback(() => {
+    const id = goalToDelete.current;
+    goalToDelete.current = null;
+    if (id) savings.deleteGoal(id);
+  }, [savings]);
+
   const handleConfirm = useCallback(async () => {
     if (confirmBusy || !confirmData) return;
     if (confirmData.kind === 'goal') {
-      // The goal leaves the list at once (the write is optimistic), which is
-      // what closes its page — nothing more to do here.
-      savings.deleteGoal(confirmData.goalId);
+      goalToDelete.current = confirmData.goalId;
       closeConfirm();
+      setTimeout(flushGoalDelete, GOAL_DELETE_BACKSTOP_MS);
       return;
     }
     setConfirmBusy(true);
@@ -156,8 +182,7 @@ export function SavingsSheetsHost({ savings, ui, light = false }) {
       return;
     }
     closeConfirm();
-    closeSheet();
-  }, [confirmBusy, confirmData, savings, closeConfirm, closeSheet]);
+  }, [confirmBusy, confirmData, savings, closeConfirm, flushGoalDelete]);
 
   return (
     <>
@@ -179,7 +204,6 @@ export function SavingsSheetsHost({ savings, ui, light = false }) {
         initialType={sheetData?.type || 'add'}
         maxWithdraw={goal?.saved || 0}
         onSubmit={submitMoney}
-        onRequestDelete={() => ui.openDeleteEntry(goalId, entry?.id)}
         light={light}
       />
       {/* Last, so it sits above the sheets as well as the page. */}
@@ -191,6 +215,7 @@ export function SavingsSheetsHost({ savings, ui, light = false }) {
         busy={confirmBusy}
         onConfirm={handleConfirm}
         onCancel={closeConfirm}
+        onClosed={flushGoalDelete}
         light={light}
       />
     </>
@@ -201,38 +226,33 @@ export function SavingsSheetsHost({ savings, ui, light = false }) {
 // Pieces
 // ---------------------------------------------------------------------------
 
-// Net money moved in each of CHART_MONTHS months: adds minus withdrawals. The
-// window starts at the month of the goal's first entry and runs forward, so a
-// young goal shows its first months with the empty ones still to come. Once
-// the goal is older than the window, it rolls forward so the current month is
-// always the last bar rather than falling off the end. The chart draws each
-// month's size as a positive bar and marks it red when withdrawals beat adds
-// that month, green otherwise.
-function monthlyNet(entries) {
+// Net money moved in each month: adds minus withdrawals. The slider starts at
+// the month of the goal's oldest entry and runs to the current one, which is
+// where it opens (`initialIndex`), then carries PLACEHOLDER_MONTHS empty months
+// on past it. `average` is the mean of the months up to the current one, empty
+// ones included but not the placeholders, so it's what a month has come to on
+// the whole.
+function monthlyNets(entries) {
   const { month, year } = currentMonthYear();
   const nowIndex = year * 12 + month;
-  let start = nowIndex - (CHART_MONTHS - 1);
-  if (entries.length > 0) {
-    start = Math.min(...entries.map(e => Number(e.date.slice(0, 4)) * 12 + Number(e.date.slice(5, 7)) - 1));
-    if (nowIndex > start + CHART_MONTHS - 1) start = nowIndex - (CHART_MONTHS - 1);
-  }
-  const months = [];
-  for (let i = 0; i < CHART_MONTHS; i++) {
+  const indexOf = (e) => Number(e.date.slice(0, 4)) * 12 + Number(e.date.slice(5, 7)) - 1;
+  const start = entries.length > 0 ? Math.min(...entries.map(indexOf)) : nowIndex;
+  // The last real month: the current one, or a later one if an entry is dated
+  // ahead, so no entry lands among the placeholders.
+  const realCount = Math.max(nowIndex, ...entries.map(indexOf)) - start + 1;
+  const count = realCount + PLACEHOLDER_MONTHS;
+
+  const nets = new Array(count).fill(0);
+  for (const e of entries) nets[indexOf(e) - start] += e.type === 'add' ? e.amount : -e.amount;
+
+  const months = nets.map((net, i) => {
     const idx = start + i;
-    const y = Math.floor(idx / 12);
-    const m = idx % 12;
-    months.push({ key: `${y}-${String(m + 1).padStart(2, '0')}`, label: MONTH_NAMES[m].slice(0, 3) });
-  }
-  const totals = new Map(months.map(m => [m.key, 0]));
-  for (const e of entries) {
-    const key = e.date.slice(0, 7);
-    if (totals.has(key)) totals.set(key, totals.get(key) + (e.type === 'add' ? e.amount : -e.amount));
-  }
-  const nets = months.map(m => totals.get(m.key));
+    return { name: `${MONTH_NAMES[idx % 12].slice(0, 3)} ${Math.floor(idx / 12)}`, net };
+  });
   return {
-    labels: months.map(m => m.label),
-    values: nets.map(n => Math.abs(n)),
-    negative: nets.map(n => n < 0),
+    months,
+    initialIndex: Math.max(0, Math.min(realCount - 1, nowIndex - start)),
+    average: Math.round(nets.reduce((a, b) => a + b, 0) / realCount),
   };
 }
 
@@ -314,78 +334,111 @@ function DateChip({ dateStr, light }) {
   );
 }
 
-function HistoryRow({ entry, onPress, light }) {
+// Memoised, with stable handlers, so a page-level change (the celebration coming
+// and going, a sheet holding) doesn't repaint every row. Swiping it left reveals
+// a delete button, which asks `onDelete` (the caller confirms). It paints the
+// card's own fill, or the button underneath would show through as it slides.
+const HistoryRow = memo(function HistoryRow({ entry, onPress, onDelete, registerSwipeable, onSwipeOpen, onRowPress, light }) {
   const isAdd = entry.type === 'add';
+  const { setSwipeableRef, handleDelete } = useSwipeDelete(entry.id, onDelete, registerSwipeable);
+  // A tap that closed an open row is spent on that, so it doesn't also open the
+  // entry behind the closing swipe.
+  const handlePress = useCallback(() => {
+    if (onRowPress?.()) return;
+    onPress(entry.id);
+  }, [entry.id, onPress, onRowPress]);
+
   return (
-    <GlassPressable variant="field" pressScale={false} onPress={() => onPress(entry.id)} style={HISTORY_PAD} accessibilityRole="button">
-      <View className="flex-row items-center justify-between" style={{ gap: 12 }}>
-        <View className="flex-row items-center flex-1" style={{ gap: 10 }}>
-          <DateChip dateStr={entry.date} light={light} />
-          <Text className="text-base" numberOfLines={1} style={{ flexShrink: 1, color: light ? '#111111' : '#ffffff' }}>
-            {entry.note || (isAdd ? 'Added' : 'Withdrew')}
-          </Text>
-        </View>
-        <Text className="text-base font-medium" style={{ color: isAdd ? POSITIVE : dim(light, 0.5) }}>
-          {isAdd ? '+' : '−'}{money(entry.amount)}
-        </Text>
+    <ReanimatedSwipeable
+      ref={setSwipeableRef}
+      friction={1.8}
+      rightThreshold={32}
+      overshootRight={false}
+      renderRightActions={(_progress, drag) => <SwipeDeleteAction drag={drag} onDelete={handleDelete} label="Delete entry" />}
+      onSwipeableWillOpen={() => onSwipeOpen?.(entry.id)}
+    >
+      <View style={{ backgroundColor: cardFill(light) }}>
+        <GlassPressable variant="field" pressScale={false} onPress={handlePress} style={HISTORY_PAD} accessibilityRole="button">
+          <View className="flex-row items-center justify-between" style={{ gap: 12 }}>
+            <View className="flex-row items-center flex-1" style={{ gap: 10 }}>
+              <DateChip dateStr={entry.date} light={light} />
+              <Text className="text-base" numberOfLines={1} style={{ flexShrink: 1, color: light ? '#111111' : '#ffffff' }}>
+                {entry.note || (isAdd ? 'Added' : 'Withdrew')}
+              </Text>
+            </View>
+            <Text className="text-base font-medium" style={{ color: isAdd ? POSITIVE : dim(light, 0.5) }}>
+              {isAdd ? '+' : '−'}{money(entry.amount)}
+            </Text>
+          </View>
+        </GlassPressable>
       </View>
-    </GlassPressable>
+    </ReanimatedSwipeable>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Detail
 // ---------------------------------------------------------------------------
 function GoalDetail({ goal, savings, ui, light }) {
   const insets = useSafeAreaInsets();
-  const showReached = goal.reached && !goal.completedAt;
-  const chart = useMemo(() => monthlyNet(goal.entries), [goal.entries]);
+  // Held back while the celebration is up, so the "goal reached" prompt comes
+  // in once it has been dismissed rather than under it.
+  const [celebrating, setCelebrating] = useState(false);
+  const showReached = goal.reached && !goal.completedAt && !celebrating;
+  const chart = useMemo(() => monthlyNets(goal.entries), [goal.entries]);
+
+  // Celebrates the moment the goal reaches its target while this page is open.
+  // A goal that was already reached when its page opened does not (nor one whose
+  // page has just taken over from another goal's — this component is reused), so
+  // what's compared is the same goal's `reached` from one render to the next.
+  // Worked out during render, not in an effect, so the prompt above never gets a
+  // frame on screen before the celebration covers it.
+  const [seen, setSeen] = useState({ id: goal.id, reached: goal.reached });
+  if (seen.id !== goal.id || seen.reached !== goal.reached) {
+    setSeen({ id: goal.id, reached: goal.reached });
+    if (seen.id === goal.id && goal.reached && !seen.reached) setCelebrating(true);
+  }
+  useEffect(() => {
+    if (celebrating) hapticAdded();
+  }, [celebrating]);
+  const endCelebration = useCallback(() => setCelebrating(false), []);
+  const swipes = useSwipeGroup();
+  const { openEntry, openDeleteEntry } = ui;
+  const editEntry = useCallback((entryId) => openEntry(goal.id, entryId), [openEntry, goal.id]);
+  const deleteEntry = useCallback((entryId) => openDeleteEntry(goal.id, entryId), [openDeleteEntry, goal.id]);
 
   return (
     <View style={{ flex: 1 }}>
-    <ScrollView
-      showsVerticalScrollIndicator={false}
-      // Clears the round button that floats over the bottom of the page.
-      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: insets.bottom + 120 }}
-    >
-      {/* The pencil sits right beside the name; the trash stays at the far
-          right. The left spacer is as wide as the trash so the name and pencil
-          together stay centred. The name shrinks (and truncates) before it can
-          push the pencil out of the row. */}
-      <View className="flex-row items-center justify-between">
-        <View style={{ width: 32 }} />
-        <View className="flex-row items-center justify-center" style={{ flex: 1, minWidth: 0 }}>
-          <Text className="text-base" numberOfLines={1} style={{ flexShrink: 1, color: dim(light, 0.5) }}>{goal.name}</Text>
-          <Pressable
-            onPress={() => ui.openEditGoal(goal.id)}
-            className="w-8 h-8 items-center justify-center rounded-lg"
-            accessibilityRole="button"
-            accessibilityLabel="Edit goal"
-          >
-            <EditIcon color={dim(light, 0.4)} />
-          </Pressable>
-        </View>
+    {/* Everything down to the History label stays put; only the history below
+        it scrolls, the way the transaction list does on the home screen. */}
+    <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
+      {/* The name with the pencil right beside it, centred together. The name
+          shrinks (and truncates) before it can push the pencil out of the row.
+          Deleting a goal is done by swiping its card on the list. */}
+      <View className="flex-row items-center justify-center" style={{ minWidth: 0 }}>
+        <Text className="text-base" numberOfLines={1} style={{ flexShrink: 1, color: dim(light, 0.5) }}>{goal.name}</Text>
         <Pressable
-          onPress={() => ui.openDeleteGoal(goal.id)}
+          onPress={() => ui.openEditGoal(goal.id)}
           className="w-8 h-8 items-center justify-center rounded-lg"
           accessibilityRole="button"
-          accessibilityLabel="Delete goal"
+          accessibilityLabel="Edit goal"
         >
-          <TrashIcon size={16} color={DANGER_SOFT} />
+          <EditIcon color={dim(light, 0.4)} />
         </Pressable>
       </View>
 
-      {/* Exactly the Budget section's bar — the big figure, the segmented bar
-          and its two captions — with goal wording. */}
-      <View style={{ marginTop: 16 }}>
-        <BudgetStatusBar
-          loading={false}
-          hasBudget
-          percent={goal.percent}
-          light={light}
-          hideDivider
-          summary={{ hero: money(goal.saved), suffix: 'saved', left: `${goal.percent}%`, right: `${money(goal.target)} target` }}
-        />
+      {/* The big figure, a plain progress bar (the same one the goal cards
+          use) and its two captions. */}
+      <View style={{ marginTop: 16, paddingBottom: 10, marginBottom: 16 }}>
+        <View className="flex-row items-baseline justify-center mb-4" style={{ gap: 6 }}>
+          <Text style={{ color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.80)', fontSize: 32, fontWeight: '600', letterSpacing: -0.5 }}>{money(goal.saved)}</Text>
+          <Text style={{ color: dim(light, 0.5), fontSize: 15 }}>saved</Text>
+        </View>
+        <ProgressBar percent={goal.percent} height={8} light={light} />
+        <View className="flex-row items-center justify-between mt-2.5">
+          <Text className="text-xs" style={{ color: dim(light, 0.4) }}>{goal.percent}%</Text>
+          <Text className="text-xs" style={{ color: dim(light, 0.4) }}>{money(goal.target)} target</Text>
+        </View>
       </View>
 
       {goal.completedAt ? (
@@ -399,7 +452,7 @@ function GoalDetail({ goal, savings, ui, light }) {
           </Pressable>
         </View>
       ) : showReached ? (
-        <Animated.View entering={FadeIn.duration(SWAP_MS)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 16, backgroundColor: 'rgba(74,222,128,0.10)' }}>
+        <Animated.View entering={FadeIn.duration(SWAP_MS)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, paddingVertical: 12, paddingHorizontal: 16, borderRadius: CARD_RADIUS, ...SMOOTH, backgroundColor: 'rgba(74,222,128,0.10)' }}>
           <View className="flex-row items-center" style={{ gap: 8 }}>
             <CheckIcon size={16} color={POSITIVE} />
             <Text className="text-base" style={{ color: POSITIVE }}>Goal reached</Text>
@@ -410,32 +463,56 @@ function GoalDetail({ goal, savings, ui, light }) {
         </Animated.View>
       ) : null}
 
-      {/* Net per month over the last few months — green where more went in
-          than came out, red where withdrawals won. A readout only, so no
-          taps. Not shown until there is something to plot. */}
+      {/* Net per month from the first entry on, as a row that slides under a
+          fixed centre — the month in the middle is the one read out. Not shown
+          until there is something to plot. `key` reopens it on the current
+          month when another goal's page takes over this one. */}
       {goal.entries.length > 0 && (
-        <View style={{ marginTop: 24 }}>
-          <View style={{ paddingHorizontal: 4 }}>
-            <BarChart
-              values={chart.values}
-              labels={chart.labels}
-              negative={chart.negative}
-              isIncome
-              animKey={goal.id}
-              light={light}
-            />
-          </View>
+        <View style={{ marginTop: 12 }}>
+          <Text className="text-[11px] font-medium uppercase tracking-widest px-1 mb-2" style={{ color: dim(light, 0.3) }}>Monthly savings</Text>
+          <Card light={light}>
+            {/* The average sits at the top left; the slider below has no side
+                padding, so its bars slide right out to the card's edge. */}
+            <View style={{ paddingVertical: 16 }}>
+              <View style={{ paddingHorizontal: 20, marginBottom: 6 }}>
+                <Text style={{ color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.90)', fontSize: 26, fontWeight: '600', letterSpacing: -0.5 }}>
+                  {chart.average < 0 ? '−' : ''}{money(Math.abs(chart.average))}
+                </Text>
+                <Text className="text-sm" style={{ color: dim(light, 0.5), marginTop: 2 }}>average per month</Text>
+              </View>
+              <MonthSlider key={goal.id} months={chart.months} initialIndex={chart.initialIndex} light={light} />
+            </View>
+          </Card>
         </View>
       )}
 
-      <Text className="text-[11px] font-medium uppercase tracking-widest px-1 mb-2" style={{ color: dim(light, 0.3), marginTop: 28 }}>History</Text>
+      <Text className="text-[11px] font-medium uppercase tracking-widest px-1 mb-2" style={{ color: dim(light, 0.3), marginTop: 28 }}>
+        History
+      </Text>
+    </View>
+
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      style={{ flex: 1 }}
+      onScrollBeginDrag={swipes.closeOpen}
+      // Clears the round button that floats over the bottom of the page.
+      contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 120 }}
+    >
       {goal.entries.length === 0 ? (
         <Text className="text-base px-1" style={{ color: dim(light, 0.3) }}>Nothing added yet.</Text>
       ) : (
         <Card light={light}>
           {goal.entries.map((e, i) => (
             <View key={e.id}>
-              <HistoryRow entry={e} onPress={(id) => ui.openEntry(goal.id, id)} light={light} />
+              <HistoryRow
+                entry={e}
+                onPress={editEntry}
+                onDelete={deleteEntry}
+                registerSwipeable={swipes.registerSwipeable}
+                onSwipeOpen={swipes.onSwipeOpen}
+                onRowPress={swipes.onRowPress}
+                light={light}
+              />
               {i < goal.entries.length - 1 && <Divider inset={16} light={light} />}
             </View>
           ))}
@@ -443,6 +520,13 @@ function GoalDetail({ goal, savings, ui, light }) {
       )}
     </ScrollView>
     <AddFab onPress={() => ui.openMoney(goal.id, 'add')} label="Add or withdraw money" />
+    {/* Decoration: if it fails it goes away, and the "goal reached" prompt it was
+        holding back comes straight in. */}
+    {celebrating && (
+      <ErrorBoundary onError={endCelebration}>
+        <Celebration title="Congrats, you made it" subtitle={`${goal.name} · ${money(goal.target)}`} note={journeyNote(goal.entries)} onDone={endCelebration} />
+      </ErrorBoundary>
+    )}
     </View>
   );
 }
@@ -492,11 +576,16 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
 
   const isEmpty = goals.length === 0 && completedGoals.length === 0;
 
+  const swipes = useSwipeGroup();
+  const { openDeleteGoal } = ui;
+  const cardProps = { onPress: onOpenGoal, onDelete: openDeleteGoal, registerSwipeable: swipes.registerSwipeable, onSwipeOpen: swipes.onSwipeOpen, onCardPress: swipes.onRowPress, light };
+
   return (
     <View style={{ flex: 1 }}>
       <Animated.View style={[StyleSheet.absoluteFill, listStyle]} pointerEvents={detailOpen ? 'none' : 'auto'}>
         <ScrollView
           showsVerticalScrollIndicator={false}
+          onScrollBeginDrag={swipes.closeOpen}
           contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 130 }}
         >
           {isEmpty ? (
@@ -512,7 +601,7 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
                 </Text>
               </View>
 
-              {goals.map(g => <GoalCard key={g.id} goal={g} onPress={onOpenGoal} light={light} />)}
+              {goals.map(g => <GoalCard key={g.id} goal={g} {...cardProps} />)}
 
               {completedGoals.length > 0 && (
                 <>
@@ -530,7 +619,7 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
                   </Pressable>
                   {showCompleted && (
                     <Animated.View entering={FadeIn.duration(SWAP_MS)}>
-                      {completedGoals.map(g => <GoalCard key={g.id} goal={g} onPress={onOpenGoal} light={light} done />)}
+                      {completedGoals.map(g => <GoalCard key={g.id} goal={g} {...cardProps} done />)}
                     </Animated.View>
                   )}
                 </>

@@ -11,6 +11,7 @@ import Animated, {
   withDelay,
   Easing,
 } from 'react-native-reanimated';
+import { reportError } from '../utils/errors';
 
 export const ONBOARDING_SEEN_KEY = 'okana_onboarding_seen';
 
@@ -78,7 +79,8 @@ export default function OnboardingScreen() {
     // Recorded once, on first view, not on tapping through — an onboarding
     // sequence this deliberately slow shouldn't replay in full every time
     // someone reopens the app after getting interrupted mid-sequence.
-    AsyncStorage.setItem(ONBOARDING_SEEN_KEY, '1');
+    // If this can't be saved, onboarding just plays again next launch.
+    AsyncStorage.setItem(ONBOARDING_SEEN_KEY, '1').catch(reportError);
   }, []);
 
   useEffect(() => {

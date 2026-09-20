@@ -8,9 +8,7 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 const AnimatedLine = Animated.createAnimatedComponent(Line);
 const AnimatedSvgText = Animated.createAnimatedComponent(SvgText);
 
-// The two bar colours. A chart is normally all one (isIncome picks which), but
-// `negative` below lets individual bars flip to red — used by the savings
-// goal chart, where a month can be net-positive or net-negative.
+// The two bar colours; isIncome picks which one a chart uses.
 const GREEN_TONE = { active: 'rgba(74,222,128,0.95)', dim: 'rgba(74,222,128,0.62)' };
 const RED_TONE   = { active: 'rgba(255,75,75,0.92)',  dim: 'rgba(255,75,75,0.56)' };
 
@@ -202,10 +200,12 @@ function NoSpendDot({ cx, cy, r, fill, delay }) {
 // don't correspond to a real period at all — those keep their empty slot's
 // spacing but lose the label, since a label there isn't "a day that hasn't
 // happened yet," it's not a period the account will ever have.
-// `negative` is an optional array of booleans, one per value: a true entry draws
-// that bar in the red tone even when the chart is otherwise green (and vice
-// versa). Omit it and every bar uses the chart's own isIncome colour, as before.
-function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, negative, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, showAverage = false }) {
+// `topPad` (optional) is room left above the top of the bars, in chart units. The
+// average line sits at the top edge when the average is as tall as the tallest
+// bar, and its label is centred on the line, so with no room above them both are
+// half cut off. Callers that show the average pass it, and pass it for every
+// range so the chart doesn't change height as the line comes and goes.
+function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, showAverage = false, topPad = 0 }) {
   const n       = values.length;
   const GROUP_W = CHART_W / n;
   const BAR_W   = Math.min(16, Math.max(6, GROUP_W - 10));
@@ -257,7 +257,11 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
     // baseline is not a reference line, it's a second axis line sitting on
     // top of the real one. This also covers the window before the first
     // load resolves, when every value is still 0.
-    if (total > 0) {
+    //
+    // And nothing to average over a single period: the first day of a month, the
+    // first month of a year, or the day of the very first transaction. The line
+    // would just be drawn across the one bar it is the average of.
+    if (total > 0 && realValues.length >= 2) {
       const avg = total / realValues.length;
       const avgH = Math.round(useSqrtScale ? Math.sqrt(avg / maxVal) * BAR_HEIGHT : (avg / maxVal) * BAR_HEIGHT);
       avgY = BAR_HEIGHT - avgH;
@@ -321,7 +325,7 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
   }, [avgY, animKey, avgRevealDelay]);
 
   return (
-    <Svg viewBox={`0 0 ${CHART_W} ${svgH}`} style={{ width: '100%', aspectRatio: CHART_W / svgH }}>
+    <Svg viewBox={`0 ${-topPad} ${CHART_W} ${svgH + topPad}`} style={{ width: '100%', aspectRatio: CHART_W / (svgH + topPad) }}>
       {onDeselect && (
         <Rect x={0} y={0} width={CHART_W} height={BAR_HEIGHT} fill="transparent" onPress={onDeselect} />
       )}
@@ -357,7 +361,6 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
         // the one most likely sitting right at this knife's-edge value.
         const h          = Math.round(useSqrtScale ? Math.sqrt(v / maxVal) * BAR_HEIGHT : (v / maxVal) * BAR_HEIGHT);
         const isActive   = i === activeIndex;
-        const tone       = negative ? (negative[i] ? RED_TONE : GREEN_TONE) : baseTone;
         const isDisabled = disabledAfterIndex != null && i > disabledAfterIndex;
         const isBeforeStart = disabledBeforeIndex != null && i < disabledBeforeIndex;
         const hasData    = h > 0;
@@ -378,7 +381,7 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
                 rx={BAR_W / 3}
                 targetHeight={h}
                 delay={Math.min(i * BAR_STAGGER_STEP_MS, BAR_STAGGER_CAP_MS)}
-                fill={isActive ? tone.active : tone.dim}
+                fill={isActive ? baseTone.active : baseTone.dim}
                 maskColor={bgColor}
               />
             ) : (
