@@ -157,7 +157,9 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
     const result = await onSubmit({ name, target });
     if (result?.success === false) {
       setSubmitting(false);
-      setError(result.error || 'Something went wrong. Please try again.');
+      // Offline: the app's offline banner has said so, and the sheet stays open
+      // to try again — no red message on top of it.
+      if (!result.offline) setError(result.error || 'Something went wrong. Please try again.');
       return;
     }
     onClose();
@@ -178,7 +180,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
       dismissible={!submitting}
       footer={(
         <ActionRow
-          primaryLabel={isEdit ? (submitting ? 'Saving' : 'Save') : (submitting ? 'Adding' : 'Add Goal')}
+          primaryLabel={isEdit ? 'Save' : 'Add Goal'}
           onPrimary={handleSubmit}
           disabled={submitting}
         />
@@ -349,7 +351,9 @@ export function MoneySheet({ open, onClose, onClosed, goalName, entry, initialTy
     const result = await onSubmit({ type, amount: value, note, date });
     if (result?.success === false) {
       setSubmitting(false);
-      setError(result.error || 'Something went wrong. Please try again.');
+      // Offline: the app's offline banner has said so, and the sheet stays open
+      // to try again — no red message on top of it.
+      if (!result.offline) setError(result.error || 'Something went wrong. Please try again.');
       return;
     }
     onClose();
@@ -387,7 +391,7 @@ export function MoneySheet({ open, onClose, onClosed, goalName, entry, initialTy
             onPress={handleSubmit}
             style={{ paddingHorizontal: 32, paddingVertical: 12, alignItems: 'center' }}
           >
-            <Text className="text-black text-[15px] font-semibold">{submitting ? 'Saving…' : 'Save'}</Text>
+            <Text className="text-black text-[15px] font-semibold">Save</Text>
           </GlassPressable>
         </View>
       </View>

@@ -15,6 +15,7 @@ import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { FLAGS } from '../utils/flags';
 import { hapticAdded } from '../utils/haptics';
 import { SETTLE_EASING } from '../utils/motion';
+import { OfflineBanner } from './OfflineBanner';
 
 // Same drag-to-dismiss tuning as AddModal — one consistent feel for every
 // bottom-sheet page in the app.
@@ -322,7 +323,7 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
                       onPress={handleSubmit}
                       className="w-full py-[14px] items-center"
                     >
-                      <Text className="text-black text-base font-semibold">{submitting ? 'Setting…' : 'Set Budget'}</Text>
+                      <Text className="text-black text-base font-semibold">Set Budget</Text>
                     </GlassPressable>
                   </View>
 
@@ -363,6 +364,10 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
               </View>
             </GestureDetector>
           </Animated.View>
+
+          {/* A native <Modal> is its own window, so the app-root offline banner is
+              hidden behind it; this copy shows the same state from inside. */}
+          <OfflineBanner />
         </View>
       </GestureHandlerRootView>
     </Modal>

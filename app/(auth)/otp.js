@@ -152,7 +152,7 @@ export default function OtpScreen() {
 
         <Pressable onPress={handleResend} disabled={cooldown > 0 || resending || verifying} className="mt-3 py-1">
           <Text className="text-white/40 text-base">
-            {cooldown > 0 ? `Resend code in ${cooldown}s` : resending ? 'Sending…' : 'Resend code'}
+            {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
           </Text>
         </Pressable>
       </View>

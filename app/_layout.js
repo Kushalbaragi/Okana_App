@@ -1,6 +1,6 @@
 import '../global.css';
 import { useEffect } from 'react';
-import { View, Text } from 'react-native';
+import { LogBox, View, Text } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -21,6 +21,13 @@ import { reportError } from '../utils/errors';
 // and every later Sentry.* call is silently skipped) — safe for local dev
 // before EXPO_PUBLIC_SENTRY_DSN is filled in in .env, no separate "is this
 // configured" branch needed anywhere else in the app.
+// The PostHog SDK console.errors every failed flush, including a plain "no
+// network" — which in development pops a red toast. It is harmless: the events
+// are kept and sent once there is a connection, and in a release build nothing
+// is shown. Only that network case is hidden; any other flush failure (a bad
+// key, a rejected request) still shows.
+LogBox.ignoreLogs([/Error while flushing PostHog\s+PostHogFetchNetworkError/]);
+
 Sentry.init({
   dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
   // A fraction of performance traces, not every one: tracing a whole user base

@@ -178,7 +178,8 @@ export function SavingsSheetsHost({ savings, ui, light = false }) {
     setConfirmBusy(false);
     if (result?.success === false) {
       // Refused (e.g. later withdrawals depend on it) — stay open and say why.
-      setConfirmError(result.error || 'Something went wrong. Please try again.');
+      // Offline is different: the app's offline banner says so, so no message here.
+      if (!result.offline) setConfirmError(result.error || 'Something went wrong. Please try again.');
       return;
     }
     closeConfirm();

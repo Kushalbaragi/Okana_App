@@ -3,6 +3,7 @@ import { Modal, View, Pressable, StyleSheet, useWindowDimensions, Platform, Keyb
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
 import { DialogBackdrop } from './DialogBackdrop';
 import { SETTLE_EASING } from '../utils/motion';
+import { OfflineBanner } from './OfflineBanner';
 
 // Shared fade-backdrop + slide/scale-content shell, extracted from AddModal's
 // pattern. RN's built-in Modal animationType only animates the whole modal
@@ -139,6 +140,11 @@ export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', dim
             {children}
           </Animated.View>
         )}
+
+        {/* A native <Modal> is its own window, so the app-root offline banner is
+            hidden behind it — and what a sheet here does (sending feedback, say)
+            can need the network. This copy shows the same state from inside. */}
+        <OfflineBanner />
       </View>
     </Modal>
   );

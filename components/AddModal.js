@@ -194,7 +194,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
       setError('');
       // Without this, a successful add left `submitting` permanently true
       // (see handleSubmit below) — the next time the sheet opened fresh,
-      // the button showed "Adding"/"Updating" and stayed disabled forever.
+      // the button stayed disabled forever.
       setSubmitting(false);
     }
   }, [open, editData]);
@@ -537,9 +537,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
               className="px-8 py-3 items-center"
             >
               <Text className="text-black text-[15px] font-semibold">
-                {isEdit
-                  ? (submitting ? 'Updating' : 'Update')
-                  : (submitting ? 'Saving' : 'Save')}
+                {isEdit ? 'Update' : 'Save'}
               </Text>
             </GlassPressable>
           </View>
