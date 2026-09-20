@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { View, useWindowDimensions } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
-import Svg, { Defs, LinearGradient, Stop, Path, Circle, Line, Rect, Text as SvgText, G } from 'react-native-svg';
+import Svg, { Defs, LinearGradient, Stop, Path, Circle, Line, Text as SvgText, G } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 
 const CHART_W = 300;
@@ -36,7 +36,7 @@ function areaPath(pts, bottom) {
   return `${line} L${pts[pts.length - 1].x.toFixed(1)},${bottom} L${pts[0].x.toFixed(1)},${bottom} Z`;
 }
 
-function LineChart({ incomeData, expenseData, labels, light = false, activeIndex = -1, onPointClick, onDeselect, revealKey }) {
+function LineChart({ incomeData, expenseData, labels, light = false, activeIndex = -1, revealKey }) {
   const progress = useSharedValue(0);
   // The reveal-width animation needs a real pixel target, not a percentage —
   // Reanimated interpolates numbers reliably. Measured via onLayout, but
@@ -158,7 +158,6 @@ function LineChart({ incomeData, expenseData, labels, light = false, activeIndex
   // selected, same fallback shape as BarChart's activeIndex=-1 convention.
   const markerIndex = activeIndex >= 0 ? activeIndex : n - 1;
   const isSelected = activeIndex >= 0;
-  const touchTargetW = n > 1 ? CHART_W / n : CHART_W;
 
   return (
     <View
@@ -178,10 +177,6 @@ function LineChart({ incomeData, expenseData, labels, light = false, activeIndex
                 <Stop offset="100%" stopColor="#FF4B4B" stopOpacity="0" />
               </LinearGradient>
             </Defs>
-
-            {onDeselect && (
-              <Rect x={0} y={0} width={CHART_W} height={bottom} fill="transparent" onPress={onDeselect} />
-            )}
 
             <G>
               <Path d={incomeArea}  fill="url(#ig)" />
@@ -207,23 +202,6 @@ function LineChart({ incomeData, expenseData, labels, light = false, activeIndex
             </G>
 
             <Line x1={0} y1={bottom} x2={CHART_W} y2={bottom} stroke={light ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.18)'} strokeWidth="1" strokeDasharray="2 3" />
-
-            {/* Separate, never-animated per-point touch targets — same
-                reasoning as BarChart's own full-column hit rects: hovers
-                over the actual (curved, thin) line paths would be an
-                unreliable tap target, so each period gets a generous
-                invisible column instead. */}
-            {onPointClick && incomePts.map((p, i) => (
-              <Rect
-                key={i}
-                x={i * stepX - touchTargetW / 2}
-                y={0}
-                width={touchTargetW}
-                height={bottom}
-                fill="transparent"
-                onPress={() => onPointClick(i)}
-              />
-            ))}
 
             {labels.map((lbl, i) => showLabel(i) && lbl && (
               <SvgText

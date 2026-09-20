@@ -22,7 +22,10 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "package": "com.kushalbaragi.okana"
+      "package": "com.kushalbaragi.okana",
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -41,7 +44,6 @@
       [
         "expo-audio",
         {
-          "microphonePermission": false,
           "recordAudioAndroid": false
         }
       ],

@@ -17,6 +17,7 @@ import {
 } from '../utils/format';
 import { MONTH_NAMES as MONTHS } from '../utils/monthlyRecap';
 import BudgetStatusBar from './BudgetStatusBar';
+import BudgetSetupModal from './BudgetSetupModal';
 import { TourHint } from './TourHint';
 import { BackIcon } from './icons';
 import SegmentedSwitch from './SegmentedSwitch';
@@ -44,6 +45,11 @@ const SECTION_FADE_MS = 220;
 // juddery rather than synchronized, so Home now stays put and only this
 // page moves.
 const CALENDAR_SLIDE_DURATION = 480;
+// How long after the budget sheet closes before the tour may point at the budget
+// bar — long enough that the sheet is gone and the new budget has been seen.
+const BUDGET_SHEET_TOUR_DELAY_MS = 2000;
+// The "tap a day" hint waits this long after the calendar has opened.
+const TAP_DATE_TOUR_DELAY_MS = 2000;
 
 // Each row slides up and fades in with a small stagger, rather than the
 // whole day's list appearing at once.
@@ -81,7 +87,17 @@ function DayTransactionRow({ tx, index, light }) {
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard (and the flows it opens) — see the matching comment in
 // Header.js.
-function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budget, savings, light = false, userId }) {
+// `slideX` (optional) is a shared value this page keeps at its own horizontal
+// position: full width while closed, 0 once it has slid in. Whoever passes one can
+// read it to move in step with the page — Home uses it for its parallax. It is the
+// page's own value rather than a second animation started elsewhere, so the two
+// can never fall out of step (the page can't begin sliding until the native
+// window is up, which a separate animation had no way to wait for).
+// `budget` (or null) carries what the Budget section shows — loading, hasBudget,
+// amount, spent, percent — plus what setting one needs: `onSubmit`, last month's
+// amount and spend, and `onSetupClosed` for the caller's own bookkeeping when the
+// sheet closes. The sheet opens right here on the page, not by closing it first.
+function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budget, savings, light = false, userId, slideX }) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const now = new Date();
@@ -103,6 +119,16 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
   const budgetLayerStyle = useAnimatedStyle(() => ({ opacity: 1 - sectionProgress.value }));
   const savingsLayerStyle = useAnimatedStyle(() => ({ opacity: sectionProgress.value }));
 
+  const { onSubmit: submitBudget, onSetupClosed, lastMonthAmount, lastMonthSpent, ...budgetBar } = budget || {};
+  const [budgetSheetOpen, setBudgetSheetOpen] = useState(false);
+  const openBudgetSheet = useCallback(() => setBudgetSheetOpen(true), []);
+  const budgetSheetClosedAtRef = useRef(0);
+  const closeBudgetSheet = useCallback(() => {
+    budgetSheetClosedAtRef.current = Date.now();
+    setBudgetSheetOpen(false);
+    onSetupClosed?.();
+  }, [onSetupClosed]);
+
   const openGoal = useCallback((id) => setDetailGoalId(id), []);
   const closeGoal = useCallback(() => setDetailGoalId(null), []);
 
@@ -110,24 +136,23 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
   // only then the whole page. Also what the Android back button does.
   const { sheetOpen, closeSheet, confirmOpen, closeConfirm } = savingsUI;
   const handleBack = useCallback(() => {
+    if (budgetSheetOpen) { closeBudgetSheet(); return; }
     if (confirmOpen) { closeConfirm(); return; }
     if (sheetOpen) { closeSheet(); return; }
     if (section === 'savings' && detailGoalId != null) { setDetailGoalId(null); return; }
     onClose();
-  }, [confirmOpen, closeConfirm, sheetOpen, closeSheet, section, detailGoalId, onClose]);
+  }, [budgetSheetOpen, closeBudgetSheet, confirmOpen, closeConfirm, sheetOpen, closeSheet, section, detailGoalId, onClose]);
 
-  // First-run tour for this page: what the color-coded days mean, that
-  // tapping one shows its transactions, and (only once a budget actually
-  // exists) what the budget bar shows. Separate from the Home-screen tour
-  // in app/(app)/index.js — this one only makes sense once the user has
-  // actually opened the calendar, not forced on them right after signup.
-  const legendRef = useRef(null);
+  // First-run tour for this page: that tapping a day shows its transactions,
+  // and (only once a budget actually exists) what the budget bar shows. Separate
+  // from the Home-screen tour in app/(app)/index.js — this one only makes sense
+  // once the user has actually opened the calendar, not forced on them right
+  // after signup.
   const spentDayRef = useRef(null);
   const budgetSectionRef = useRef(null);
-  const legendTour = useTourStep(userId, 'calendar_legend');
   const tapDateTour = useTourStep(userId, 'calendar_tap_date');
   const budgetTour = useTourStep(userId, 'calendar_budget_left');
-  const [calendarTourActive, setCalendarTourActive] = useState(null); // 'legend' | 'tapDate' | 'budget' | null
+  const [calendarTourActive, setCalendarTourActive] = useState(null); // 'tapDate' | 'budget' | null
 
   // Same pattern as AddModal — managed independently of RN's Modal
   // animationType so `visible` stays mounted through the close animation.
@@ -137,7 +162,8 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
   // this now, so there's no gesture to reconcile with the day-list
   // ScrollView's own vertical scrolling either.
   const [visible, setVisible] = useState(open);
-  const pageTranslateX = useSharedValue(windowWidth);
+  const ownPageX = useSharedValue(windowWidth);
+  const pageTranslateX = slideX ?? ownPageX;
   // Guards handleModalShow below so it only ever drives the slide-in for an
   // actual open, never fires stale from some earlier mount.
   const openingRef = useRef(false);
@@ -165,6 +191,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
       // Back to the list, sheet away — the page reopens fresh, not on
       // whichever goal or sheet it was closed from.
       setDetailGoalId(null);
+      setBudgetSheetOpen(false);
       savingsUI.closeSheet();
       savingsUI.closeConfirm();
       pageTranslateX.value = withTiming(
@@ -194,11 +221,10 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
 
 
   const advanceCalendarTour = useCallback(() => {
-    if (calendarTourActive === 'legend') legendTour.markSeen();
-    else if (calendarTourActive === 'tapDate') tapDateTour.markSeen();
+    if (calendarTourActive === 'tapDate') tapDateTour.markSeen();
     else if (calendarTourActive === 'budget') budgetTour.markSeen();
     setCalendarTourActive(null);
-  }, [calendarTourActive, legendTour, tapDateTour, budgetTour]);
+  }, [calendarTourActive, tapDateTour, budgetTour]);
 
   const pageStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: pageTranslateX.value }],
@@ -245,23 +271,31 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
     // pointing at a row that's now sliding off-screen with the sheet.
     // Only the Budget section has anything for the tour to point at.
     if (!open || section !== 'budget') { setCalendarTourActive(null); return; }
-    if (!userId || calendarTourActive) return;
-    // Waits out the sheet's own opening slide (CALENDAR_SLIDE_DURATION
-    // above) so the tour doesn't spotlight something that's still animating
-    // into place.
-    const t = setTimeout(() => {
-      if (!legendTour.seen) { setCalendarTourActive('legend'); return; }
-      // Deferred until there's an actual spent day to point at — same
-      // "only show it once it's real" rule as budget-left below and the
-      // Home-screen tour's swipe step.
-      if (!tapDateTour.seen && spentDayStr) { setCalendarTourActive('tapDate'); return; }
-      // Budget-left only makes sense once a budget actually exists —
-      // deferred (not skipped outright) until one does, same "only show it
-      // once it's real" rule as the Home-screen tour's swipe step.
-      if (!budgetTour.seen && budget?.hasBudget) setCalendarTourActive('budget');
-    }, CALENDAR_SLIDE_DURATION + 150);
+    // Not while the budget sheet is up: setting a budget makes `hasBudget` true
+    // before the sheet has finished, and the tour must not appear over it.
+    if (!userId || calendarTourActive || budgetSheetOpen) return;
+    // Deferred until there's an actual spent day to point at — same "only show
+    // it once it's real" rule as budget-left below and the Home-screen tour's
+    // swipe step. Budget-left only makes sense once a budget actually exists —
+    // deferred (not skipped outright) until one does.
+    const next = !tapDateTour.seen && spentDayStr ? 'tapDate'
+      : !budgetTour.seen && budget?.hasBudget ? 'budget'
+      : null;
+    if (!next) return;
+    // Just after the budget sheet closed, the budget step waits a further beat
+    // so the tour doesn't land the instant the sheet goes.
+    const sinceSheetClosed = Date.now() - budgetSheetClosedAtRef.current;
+    // At least the sheet's own opening slide, so the tour doesn't spotlight
+    // something that's still animating into place.
+    const settle = CALENDAR_SLIDE_DURATION + 150;
+    const delay = next === 'tapDate'
+      ? TAP_DATE_TOUR_DELAY_MS
+      : sinceSheetClosed < BUDGET_SHEET_TOUR_DELAY_MS
+        ? Math.max(settle, BUDGET_SHEET_TOUR_DELAY_MS - sinceSheetClosed)
+        : settle;
+    const t = setTimeout(() => setCalendarTourActive(next), delay);
     return () => clearTimeout(t);
-  }, [open, section, userId, calendarTourActive, legendTour.seen, tapDateTour.seen, spentDayStr, budgetTour.seen, budget?.hasBudget]);
+  }, [open, section, userId, calendarTourActive, budgetSheetOpen, tapDateTour.seen, spentDayStr, budgetTour.seen, budget?.hasBudget]);
 
   const dayTxs = useMemo(
     () => (visible && selectedDate
@@ -350,7 +384,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                     calendar grid underneath stays put — just a wider gap
                     between the two. */}
                 <View className="rounded-3xl px-4 pb-4" style={{ maxWidth: 320, alignSelf: 'center', width: '100%', paddingTop: 6 }}>
-                  {budget && <View ref={budgetSectionRef} style={{ marginBottom: 10 }}><BudgetStatusBar {...budget} light={light} hideDivider /></View>}
+                  {budget && <View ref={budgetSectionRef} style={{ marginBottom: 10 }}><BudgetStatusBar {...budgetBar} onSetup={openBudgetSheet} light={light} hideDivider /></View>}
 
                   <View className="flex-row items-center justify-between mb-4">
                     <Pressable
@@ -421,7 +455,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                     </View>
                   ))}
 
-                  <View ref={legendRef} className="flex-row items-center justify-center mt-3" style={{ gap: 12 }}>
+                  <View className="flex-row items-center justify-center mt-3" style={{ gap: 12 }}>
                     <View className="flex-row items-center" style={{ gap: 4 }}>
                       <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(34,197,94,0.5)' }} />
                       <Text style={{ fontSize: 10, color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>No spend</Text>
@@ -488,12 +522,6 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
             </View>
 
             <TourHint
-              visible={calendarTourActive === 'legend'}
-              targetRef={legendRef}
-              description="Red shows spending — dark red means more. Green means no spend that day."
-              onNext={advanceCalendarTour}
-            />
-            <TourHint
               visible={calendarTourActive === 'tapDate'}
               targetRef={spentDayRef}
               description="Tap a date to see what you spent or earned that day."
@@ -514,6 +542,23 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
             >
               <SavingsSheetsHost savings={savings} ui={savingsUI} light={light} />
             </ErrorBoundary>
+
+            {/* Setting a budget happens here, on the page: this is the same sheet the
+                home screen opens in a window of its own, drawn as an overlay inside
+                this one. It is above the page and the savings sheets, below the
+                offline banner. */}
+            {budget && (
+              <ErrorBoundary resetKeys={[budgetSheetOpen]} onError={() => setBudgetSheetOpen(false)}>
+                <BudgetSetupModal
+                  inline
+                  open={budgetSheetOpen}
+                  onClose={closeBudgetSheet}
+                  onSubmit={submitBudget}
+                  lastMonthAmount={lastMonthAmount}
+                  lastMonthSpent={lastMonthSpent}
+                />
+              </ErrorBoundary>
+            )}
 
             {/* This page is a native <Modal>, its own window drawn over the root
                 one, so the offline banner rendered at the app root is hidden

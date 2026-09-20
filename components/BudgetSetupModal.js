@@ -62,7 +62,11 @@ function lastMonthMessage(lastMonthAmount, lastMonthSpent) {
   };
 }
 
-function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, lastMonthSpent }) {
+// `inline` draws the sheet as an overlay inside a window that already exists (the
+// calendar page) instead of in a native <Modal> of its own — a second native Modal
+// opened over the calendar is broken on Android, which is why this used to make
+// the calendar close first. The sheet, its drag and its confirmation are the same.
+function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, lastMonthSpent, inline = false }) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const { month: currMonth } = currentMonthYear();
@@ -239,131 +243,143 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
   const confirmColor = `rgba(${confirmRGB},0.9)`;
   const confirmBg = `rgba(${confirmRGB},0.14)`;
 
+  const sheet = (
+    <>
+      <Animated.View pointerEvents={open ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, { backgroundColor: '#000000' }, backdropStyle]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={handleRequestClose} accessibilityLabel="Close" />
+      </Animated.View>
+
+      <Animated.View
+        pointerEvents={open ? 'auto' : 'none'}
+        style={[
+          {
+            position: 'absolute', left: 0, right: 0, bottom: 0,
+            backgroundColor: SHEET_COLOR,
+            borderTopLeftRadius: POPUP_RADIUS, borderTopRightRadius: POPUP_RADIUS, ...SMOOTH,
+            overflow: 'hidden',
+          },
+          sheetStyle,
+        ]}
+      >
+        <GestureDetector gesture={pan}>
+          <View>
+            <Animated.View style={formStyle} pointerEvents={confirmDelta ? 'none' : 'auto'}>
+              <View style={{ paddingTop: 10, paddingBottom: 16, alignItems: 'center' }}>
+                <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.2)' }} />
+              </View>
+
+              <Text className="text-white text-lg font-semibold text-center mb-2 px-6">
+                Set your {MONTH_NAMES[currMonth]} budget
+              </Text>
+              <Text className="text-white/50 text-base text-center mb-6 px-6" style={{ lineHeight: 22 }}>
+                How much do you want to spend this month?
+              </Text>
+
+              {rulerOn ? (
+                <>
+                  <View className="items-center mb-2">
+                    <RulerFigure value={parseFloat(amount) || 0} />
+                  </View>
+
+                  {/* Edge to edge, so the ticks can run off both sides of the screen. */}
+                  <AmountRuler
+                    scale={BUDGET_SCALE}
+                    initialValue={startValue}
+                    sessionKey={session}
+                    onChange={v => setAmountProgrammatically(String(v))}
+                    surface={SHEET_COLOR}
+                  />
+                </>
+              ) : (
+                <View className="items-center mb-6">
+                  <AmountRow amount={amount} prevAmountLength={prevAmountLength} skipDigitAnim={skipDigitAnim} />
+                </View>
+              )}
+
+              {recap && (
+                <View className="px-6" style={{ marginTop: rulerOn ? 24 : 0 }}>
+                  <View
+                    className="px-4 py-3 w-full"
+                    style={{
+                      maxWidth: 320, alignSelf: 'center', borderRadius: CARD_RADIUS, ...SMOOTH, borderWidth: 1,
+                      // The same recessed fill the new-goal sheet's fields use.
+                      backgroundColor: 'rgba(0,0,0,0.18)', borderColor: 'rgba(255,255,255,0.07)',
+                    }}
+                  >
+                    <Text className="text-white/40 text-xs font-semibold uppercase tracking-wide mb-1.5">Last month</Text>
+                    <Text className="text-white text-base font-medium mb-1">{recap.stat}</Text>
+                    <Text className="text-sm" style={{ color: recap.color, lineHeight: 18 }}>{recap.hint}</Text>
+                  </View>
+                </View>
+              )}
+
+              {!!error && <Text className="text-red-400 text-base text-center mx-5 mt-4">{error}</Text>}
+
+              <View style={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: rulerOn ? Math.max(insets.bottom, 8) + 12 : 20 }}>
+                <GlassPressable
+                  variant="active"
+                  radius={9999}
+                  disabled={!canSubmit}
+                  onPress={handleSubmit}
+                  className="w-full py-[14px] items-center"
+                >
+                  <Text className="text-black text-base font-semibold">Set Budget</Text>
+                </GlassPressable>
+              </View>
+
+              {!rulerOn && <NumericKeypad onKeyPress={handleKeypadPress} insetBottom={insets.bottom} />}
+            </Animated.View>
+
+            {confirmDelta && (
+              // Over the whole sheet, so it centres on the sheet rather than
+              // on what is left below the grabber.
+              <Animated.View
+                style={[
+                  { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
+                  confirmStyle,
+                ]}
+              >
+                {confirmDelta.greeting ? (
+                  <>
+                    <SuccessBadge style={{ marginBottom: 24 }} />
+                    <Text className="text-white text-lg font-semibold text-center" style={{ lineHeight: 26 }}>
+                      You set {formatCurrency(confirmDelta.amount)} budget{'\n'}for {MONTH_NAMES[currMonth]}. Stick with it!
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <View
+                      className="items-center justify-center mb-6"
+                      style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: confirmBg }}
+                    >
+                      <TrendArrowIcon up={confirmDelta.up} color={confirmColor} size={28} />
+                    </View>
+                    <Text className="text-white text-lg font-semibold text-center" style={{ lineHeight: 26 }}>
+                      You decided to spend{'\n'}{formatCurrency(confirmDelta.diff)} {confirmDelta.up ? 'more' : 'less'} this month
+                    </Text>
+                  </>
+                )}
+              </Animated.View>
+            )}
+          </View>
+        </GestureDetector>
+      </Animated.View>
+    </>
+  );
+
+  if (inline) {
+    // box-none: only the backdrop and the sheet take touches, so the page under
+    // them stays usable in the gaps.
+    return <View style={StyleSheet.absoluteFill} pointerEvents="box-none">{sheet}</View>;
+  }
+
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={handleRequestClose}>
       {/* A Modal is a separate native hierarchy, so the app-root gesture root
           doesn't reach in here — see AddModal. */}
       <GestureHandlerRootView style={{ flex: 1 }}>
         <View style={{ flex: 1 }}>
-          <Animated.View pointerEvents={open ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, { backgroundColor: '#000000' }, backdropStyle]}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={handleRequestClose} accessibilityLabel="Close" />
-          </Animated.View>
-
-          <Animated.View
-            pointerEvents={open ? 'auto' : 'none'}
-            style={[
-              {
-                position: 'absolute', left: 0, right: 0, bottom: 0,
-                backgroundColor: SHEET_COLOR,
-                borderTopLeftRadius: POPUP_RADIUS, borderTopRightRadius: POPUP_RADIUS, ...SMOOTH,
-                overflow: 'hidden',
-              },
-              sheetStyle,
-            ]}
-          >
-            <GestureDetector gesture={pan}>
-              <View>
-                <Animated.View style={formStyle} pointerEvents={confirmDelta ? 'none' : 'auto'}>
-                  <View style={{ paddingTop: 10, paddingBottom: 16, alignItems: 'center' }}>
-                    <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.2)' }} />
-                  </View>
-
-                  <Text className="text-white text-lg font-semibold text-center mb-2 px-6">
-                    Set your {MONTH_NAMES[currMonth]} budget
-                  </Text>
-                  <Text className="text-white/50 text-base text-center mb-6 px-6" style={{ lineHeight: 22 }}>
-                    How much do you want to spend this month?
-                  </Text>
-
-                  {rulerOn ? (
-                    <>
-                      <View className="items-center mb-2">
-                        <RulerFigure value={parseFloat(amount) || 0} />
-                      </View>
-
-                      {/* Edge to edge, so the ticks can run off both sides of the screen. */}
-                      <AmountRuler
-                        scale={BUDGET_SCALE}
-                        initialValue={startValue}
-                        sessionKey={session}
-                        onChange={v => setAmountProgrammatically(String(v))}
-                        surface={SHEET_COLOR}
-                      />
-                    </>
-                  ) : (
-                    <View className="items-center mb-6">
-                      <AmountRow amount={amount} prevAmountLength={prevAmountLength} skipDigitAnim={skipDigitAnim} />
-                    </View>
-                  )}
-
-                  {recap && (
-                    <View className="px-6" style={{ marginTop: rulerOn ? 24 : 0 }}>
-                      <View
-                        className="px-4 py-3 w-full"
-                        style={{
-                          maxWidth: 320, alignSelf: 'center', borderRadius: CARD_RADIUS, ...SMOOTH, borderWidth: 1,
-                          // The same recessed fill the new-goal sheet's fields use.
-                          backgroundColor: 'rgba(0,0,0,0.18)', borderColor: 'rgba(255,255,255,0.07)',
-                        }}
-                      >
-                        <Text className="text-white/40 text-xs font-semibold uppercase tracking-wide mb-1.5">Last month</Text>
-                        <Text className="text-white text-base font-medium mb-1">{recap.stat}</Text>
-                        <Text className="text-sm" style={{ color: recap.color, lineHeight: 18 }}>{recap.hint}</Text>
-                      </View>
-                    </View>
-                  )}
-
-                  {!!error && <Text className="text-red-400 text-base text-center mx-5 mt-4">{error}</Text>}
-
-                  <View style={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: rulerOn ? Math.max(insets.bottom, 8) + 12 : 20 }}>
-                    <GlassPressable
-                      variant="active"
-                      radius={9999}
-                      disabled={!canSubmit}
-                      onPress={handleSubmit}
-                      className="w-full py-[14px] items-center"
-                    >
-                      <Text className="text-black text-base font-semibold">Set Budget</Text>
-                    </GlassPressable>
-                  </View>
-
-                  {!rulerOn && <NumericKeypad onKeyPress={handleKeypadPress} insetBottom={insets.bottom} />}
-                </Animated.View>
-
-                {confirmDelta && (
-                  // Over the whole sheet, so it centres on the sheet rather than
-                  // on what is left below the grabber.
-                  <Animated.View
-                    style={[
-                      { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
-                      confirmStyle,
-                    ]}
-                  >
-                    {confirmDelta.greeting ? (
-                      <>
-                        <SuccessBadge style={{ marginBottom: 24 }} />
-                        <Text className="text-white text-lg font-semibold text-center" style={{ lineHeight: 26 }}>
-                          You set {formatCurrency(confirmDelta.amount)} budget{'\n'}for {MONTH_NAMES[currMonth]}. Stick with it!
-                        </Text>
-                      </>
-                    ) : (
-                      <>
-                        <View
-                          className="items-center justify-center mb-6"
-                          style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: confirmBg }}
-                        >
-                          <TrendArrowIcon up={confirmDelta.up} color={confirmColor} size={28} />
-                        </View>
-                        <Text className="text-white text-lg font-semibold text-center" style={{ lineHeight: 26 }}>
-                          You decided to spend{'\n'}{formatCurrency(confirmDelta.diff)} {confirmDelta.up ? 'more' : 'less'} this month
-                        </Text>
-                      </>
-                    )}
-                  </Animated.View>
-                )}
-              </View>
-            </GestureDetector>
-          </Animated.View>
+          {sheet}
 
           {/* A native <Modal> is its own window, so the app-root offline banner is
               hidden behind it; this copy shows the same state from inside. */}

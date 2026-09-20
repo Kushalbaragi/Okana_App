@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, Platform, useWindowDimensions } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, Platform, StyleSheet, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, useAnimatedProps, withDelay, withSequence, withTiming, Easing } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePostHog } from 'posthog-react-native';
+import { useSavings } from '../../hooks/useSavings';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
 import { isConnectivityError, reportError } from '../../utils/errors';
@@ -25,7 +26,7 @@ import { openManageSubscription } from '../../hooks/usePurchases';
 import { getSubscriptionDisplayStatus } from '../../utils/trial';
 import { today } from '../../utils/format';
 import { supabase } from '../../lib/supabase';
-import { buildTransactionsWorkbook, parseTransactionsWorkbook } from '../../utils/exportImport';
+import { buildWorkbook, parseWorkbook } from '../../utils/exportImport';
 import { BackIcon, EditIcon, ChevronRight, CheckIcon, CameraIcon } from '../../components/icons';
 import { ONBOARDING_SEEN_KEY } from '../onboarding';
 import { AnimatedModal } from '../../components/AnimatedModal';
@@ -34,7 +35,7 @@ import { ActionOverlay } from '../../components/ActionOverlay';
 import * as SettingsUI from '../../components/SettingsUI';
 import { TourHint, TOUR_HINT_BORDER_WIDTH, TOUR_HINT_BORDER_COLOR } from '../../components/TourHint';
 import { useTourStep } from '../../hooks/useTourStep';
-import { CARD_RADIUS, SMOOTH } from '../../components/Glass';
+import { CARD_RADIUS, POPUP_RADIUS, SMOOTH } from '../../components/Glass';
 import { SETTLE_EASING } from '../../utils/motion';
 
 // One-flag experiment: a light theme for just this screen. Flip back to
@@ -388,6 +389,15 @@ function BottomBanner({ visible, children }) {
   );
 }
 
+// "12 transactions, 2 goals, 30 savings entries" — what an import brought in.
+function describeImported(transactions, goals, entries) {
+  return [
+    transactions && `${transactions} transaction${transactions === 1 ? '' : 's'}`,
+    goals && `${goals} goal${goals === 1 ? '' : 's'}`,
+    entries && `${entries} savings entr${entries === 1 ? 'y' : 'ies'}`,
+  ].filter(Boolean).join(', ');
+}
+
 export default function AccountPage() {
   const router = useRouter();
   const { user, profile, logout } = useAuth();
@@ -395,6 +405,7 @@ export default function AccountPage() {
   const posthog = usePostHog();
   const { subscription, refresh: refreshSubscription } = useSubscription(user);
   const { transactions, importTransactions } = useTransactions();
+  const { allGoals, importSavings } = useSavings();
 
   // Settings stays mounted underneath Subscription when you navigate there
   // (standard stack behavior) — useSubscription only fetches once on this
@@ -444,17 +455,17 @@ export default function AccountPage() {
 
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
-  const [noTransactionsBanner, setNoTransactionsBanner] = useState(false);
-  const noTransactionsBannerTimeoutRef = useRef(null);
+  const [noDataBanner, setNoDataBanner] = useState(false);
+  const noDataBannerTimeoutRef = useRef(null);
 
-  const showNoTransactionsBanner = useCallback(() => {
-    if (noTransactionsBannerTimeoutRef.current) clearTimeout(noTransactionsBannerTimeoutRef.current);
-    setNoTransactionsBanner(true);
-    noTransactionsBannerTimeoutRef.current = setTimeout(() => setNoTransactionsBanner(false), 2000);
+  const showNoDataBanner = useCallback(() => {
+    if (noDataBannerTimeoutRef.current) clearTimeout(noDataBannerTimeoutRef.current);
+    setNoDataBanner(true);
+    noDataBannerTimeoutRef.current = setTimeout(() => setNoDataBanner(false), 2000);
   }, []);
 
   useEffect(() => {
-    return () => { if (noTransactionsBannerTimeoutRef.current) clearTimeout(noTransactionsBannerTimeoutRef.current); };
+    return () => { if (noDataBannerTimeoutRef.current) clearTimeout(noDataBannerTimeoutRef.current); };
   }, []);
 
   const [importOptionsOpen, setImportOptionsOpen] = useState(false);
@@ -463,12 +474,13 @@ export default function AccountPage() {
   // idle | reading | importing | done | error
   const [importStage, setImportStage] = useState('idle');
   const [importMessage, setImportMessage] = useState('');
-  const [importErrorMsg, setImportErrorMsg] = useState('');
-  // True when the failure happened before any real import attempt — an
-  // unreadable file or a template that doesn't match the expected columns
-  // — as opposed to a genuine network/server error partway through
-  // importing. Only this case offers "Download Template" as a way out.
-  const [importFormatError, setImportFormatError] = useState(false);
+  // What the error card shows: { title, message, offerTemplate, retry }.
+  // `offerTemplate` is for a failure before any real import attempt — an
+  // unreadable file or one that doesn't match the expected columns — as opposed
+  // to a genuine network/server error partway through importing; only that case
+  // offers "Download template" as a way out. `retry` is what "Try again" does:
+  // choose a file again, or (when the template itself couldn't be made) remake it.
+  const [importError, setImportError] = useState(null);
   const importProgress = useSharedValue(0);
   const progressBarStyle = useAnimatedStyle(() => ({ width: `${importProgress.value * 100}%` }));
 
@@ -731,8 +743,15 @@ export default function AccountPage() {
     router.back();
   }, [router]);
 
+  // The overlay is deliberately left up: this screen is replaced by onboarding
+  // below, and taking the overlay down first showed Settings for a moment
+  // before the welcome pages loaded. It goes with the screen. The guard is for
+  // the overlay's timer, which restarts if this callback's identity changes
+  // (sign-out does that) and must not run the sequence twice.
+  const deleteDoneRef = useRef(false);
   const handleDeleteDone = useCallback(async () => {
-    setActionFlow(null);
+    if (deleteDoneRef.current) return;
+    deleteDoneRef.current = true;
     // Deleting the account is one of the three conditions (fresh install,
     // reinstall, account deletion) that brings the first-run onboarding
     // animation back — clearing the flag first, then routing there.
@@ -805,26 +824,26 @@ export default function AccountPage() {
 
   async function exportData() {
     if (exporting) return;
-    if (!transactions.length) {
-      showNoTransactionsBanner();
+    if (!transactions.length && !allGoals.length) {
+      showNoDataBanner();
       return;
     }
     setExporting(true);
     setExportError('');
     try {
-      const base64 = buildTransactionsWorkbook(transactions);
+      const base64 = buildWorkbook({ transactions, goals: allGoals });
       // today(), not new Date().toISOString().slice(0, 10) — the latter is
       // UTC, which can name the file "yesterday" for the first several
       // hours of a local day in any timezone ahead of UTC (see today()'s
       // own comment in utils/format.js).
-      const fileUri = `${FileSystem.cacheDirectory}okana-transactions-${today()}.xlsx`;
+      const fileUri = `${FileSystem.cacheDirectory}okana-data-${today()}.xlsx`;
       await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: FileSystem.EncodingType.Base64 });
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(fileUri, { mimeType: XLSX_MIME, dialogTitle: 'Export transactions' });
+        await Sharing.shareAsync(fileUri, { mimeType: XLSX_MIME, dialogTitle: 'Export data' });
         // Confirms the file was written and handed to the OS share sheet —
         // not that the user actually saved/sent it, which nothing client-side
         // can observe once shareAsync hands off.
-        posthog?.capture('data_exported', { count: transactions.length });
+        posthog?.capture('data_exported', { count: transactions.length, goals: allGoals.length });
       } else {
         setExportError('Sharing is not available on this device.');
       }
@@ -837,13 +856,13 @@ export default function AccountPage() {
   }
 
   // Empty version of the same workbook exportData produces — just the
-  // header row, so a user unsure of the expected columns can grab a file
+  // header rows, so a user unsure of the expected columns can grab a file
   // already in the right shape instead of guessing.
   async function downloadTemplate() {
     if (downloadingTemplate) return;
     setDownloadingTemplate(true);
     try {
-      const base64 = buildTransactionsWorkbook([]);
+      const base64 = buildWorkbook();
       const fileUri = `${FileSystem.cacheDirectory}okana-import-template.xlsx`;
       await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: FileSystem.EncodingType.Base64 });
       if (await Sharing.isAvailableAsync()) {
@@ -853,8 +872,7 @@ export default function AccountPage() {
       // Tell the user, or the tap just does nothing — and report it, since a
       // template that can't be written or shared is not the user's doing.
       reportError(err);
-      setImportErrorMsg("Couldn't create the template. Please try again.");
-      setImportFormatError(false);
+      setImportError({ title: "Couldn't create template", message: 'Something went wrong making the file.', retry: 'template' });
       setImportStage('error');
     } finally {
       setDownloadingTemplate(false);
@@ -875,8 +893,7 @@ export default function AccountPage() {
 
       if (!isOnline) { notifyOffline(); return; }
 
-      setImportErrorMsg('');
-      setImportFormatError(false);
+      setImportError(null);
       setImportStage('reading');
       // A small kick so the bar visibly moves even during the read/parse
       // step, which has no real sub-progress to report.
@@ -890,12 +907,15 @@ export default function AccountPage() {
       const base64 = await FileSystem.readAsStringAsync(result.assets[0].uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
-      const { parsed, skipped } = parseTransactionsWorkbook(base64);
-      if (!parsed.length) {
-        setImportErrorMsg(skipped.length
-          ? "Couldn't read any valid rows — check the Date, Type, and Amount columns."
-          : 'That file has no transaction rows.');
-        setImportFormatError(true);
+      const { transactions: tx, savings } = parseWorkbook(base64);
+      const total = tx.parsed.length + savings.goals.length + savings.entries.length;
+      const skippedCount = tx.skipped.length + savings.skipped.length;
+      if (!total) {
+        // A file with rows that were all unreadable doesn't match the template; one
+        // with no rows at all (the empty template itself) simply has nothing yet.
+        setImportError(skippedCount
+          ? { title: "Template doesn't match", message: "Couldn't read any valid rows — check that the columns match the template.", offerTemplate: true }
+          : { title: 'Nothing to import', message: 'That file has no data yet. Fill it in and try again.' });
         setImportStage('error');
         return;
       }
@@ -904,22 +924,34 @@ export default function AccountPage() {
       importProgress.value = withTiming(0.15, { duration: 600, easing: SETTLE_EASING });
 
       const importStartedAt = Date.now();
-      const res = await importTransactions(parsed, (done, total) => {
+      // One bar for the whole file: transactions fill the first part of it,
+      // savings the rest.
+      const showProgress = (done) => {
         importProgress.value = withTiming(done / total, { duration: 500, easing: SETTLE_EASING });
-      });
+      };
+      const txRes = await importTransactions(tx.parsed, showProgress);
+      const savingsRes = txRes.success
+        ? await importSavings(savings.goals, savings.entries, (done) => showProgress(tx.parsed.length + done))
+        : { success: true, goals: 0, entries: 0 };
+      // The first thing that went wrong, whichever of the two it was.
+      const res = txRes.success ? savingsRes : txRes;
 
       if (!res.success) {
         if (res.offline) { notifyOffline(); setImportStage('idle'); return; }
         // A raw Postgres RLS-violation message here always means the same
-        // thing for this table (see transactions_insert_own's has_active_
+        // thing for these tables (see transactions_insert_own's has_active_
         // access check) — trial/subscription lapsed, not a real import
         // problem — so it gets a message someone can actually act on
         // instead of "row-level security policy" being shown verbatim.
         const isAccessExpired = /row-level security/i.test(res.error || '');
         if (!isAccessExpired) reportError(new Error(res.error || 'Import failed'));
-        setImportErrorMsg(isAccessExpired
-          ? 'Your Okana Plus trial or subscription has expired — resubscribe to import transactions.'
-          : (res.error || 'Import failed. Please try again.'));
+        // Part of a file may already be in by the time something fails — say so,
+        // or a second try would bring it in twice.
+        const already = describeImported(txRes.imported, savingsRes.goals, savingsRes.entries);
+        const reason = isAccessExpired
+          ? 'Your Okana Plus trial or subscription has expired — resubscribe to import data.'
+          : (res.error || 'Import failed. Please try again.');
+        setImportError({ title: 'Import failed', message: already ? `${reason} Already imported: ${already}.` : reason });
         setImportStage('error');
         return;
       }
@@ -935,12 +967,15 @@ export default function AccountPage() {
       }
 
       importProgress.value = withTiming(1, { duration: 400, easing: SETTLE_EASING });
+      // A savings entry whose goal is in neither the file nor the account was
+      // left out too.
+      const skippedTotal = skippedCount + (savings.entries.length - savingsRes.entries);
       setImportMessage(
-        `Imported ${res.imported} transaction${res.imported === 1 ? '' : 's'}`
-        + (skipped.length ? ` — ${skipped.length} row${skipped.length === 1 ? '' : 's'} skipped` : '')
+        `Imported ${describeImported(txRes.imported, savingsRes.goals, savingsRes.entries) || 'nothing new'}`
+        + (skippedTotal ? ` — ${skippedTotal} row${skippedTotal === 1 ? '' : 's'} skipped` : '')
       );
       setImportStage('done');
-      posthog?.capture('data_imported', { count: res.imported });
+      posthog?.capture('data_imported', { count: txRes.imported, goals: savingsRes.goals, entries: savingsRes.entries });
 
       importRedirectTimeoutRef.current = setTimeout(() => {
         setImportStage('idle');
@@ -948,13 +983,21 @@ export default function AccountPage() {
       }, 1700);
     } catch (err) {
       if (isConnectivityError(err, isOnlineRef.current)) { notifyOffline(); setImportStage('idle'); return; }
-      // Reaching here almost always means parseTransactionsWorkbook rejected
+      // Reaching here almost always means parseWorkbook rejected
       // the file itself (not a real xlsx) rather than some other failure —
       // treat it the same as a format mismatch.
-      setImportErrorMsg(err.message || 'Something went wrong. Please try again.');
-      setImportFormatError(true);
+      setImportError({ title: "Template doesn't match", message: err.message || 'Make sure your file matches the required Excel format.', offerTemplate: true });
       setImportStage('error');
     }
+  }
+
+  // "Try again" on the error card: closes it and starts over — choosing a file
+  // again, as if Import file had been tapped.
+  function retryImport() {
+    const retry = importError?.retry;
+    setImportStage('idle');
+    if (retry === 'template') downloadTemplate();
+    else pickImportFile();
   }
 
   const isFocused = useIsFocused();
@@ -1337,19 +1380,37 @@ export default function AccountPage() {
             backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.85)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32,
           }}
         >
-          <View style={{ width: '100%', maxWidth: 300 }}>
-            {importStage === 'error' ? (
-              <>
+          {/* Behind the card, not around it, so a tap on the card itself doesn't
+              count as outside. Only the error card can be dismissed; the
+              progress bar is not something to tap away. */}
+          {importStage === 'error' && (
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => setImportStage('idle')}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss"
+            />
+          )}
+          <View style={{ width: '100%', maxWidth: 340 }}>
+            {importStage === 'error' && importError ? (
+              <View
+                className="w-full p-6"
+                style={{
+                  borderRadius: POPUP_RADIUS,
+                  ...SMOOTH,
+                  backgroundColor: LIGHT_SETTINGS ? 'rgba(250,250,248,0.98)' : 'rgba(20,20,20,0.98)',
+                  borderWidth: 1,
+                  borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)',
+                }}
+              >
                 <Text className="text-base font-semibold mb-2 text-center" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>
-                  {importFormatError ? "Template doesn't match" : 'Import failed'}
+                  {importError.title}
                 </Text>
                 <Text className="text-sm mb-5 text-center" style={{ lineHeight: 20, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.50)' : 'rgba(255,255,255,0.50)' }}>
-                  {importFormatError
-                    ? 'Make sure your file matches the required Excel format.'
-                    : importErrorMsg}
+                  {importError.message}
                 </Text>
-                {importFormatError ? (
-                  <View style={{ gap: 8 }}>
+                <View style={{ gap: 8 }}>
+                  {importError.offerTemplate && (
                     <Pressable
                       onPress={downloadTemplate}
                       disabled={downloadingTemplate}
@@ -1360,29 +1421,21 @@ export default function AccountPage() {
                         {downloadingTemplate ? 'Preparing…' : 'Download template'}
                       </Text>
                     </Pressable>
-                    <Pressable
-                      onPress={() => setImportStage('idle')}
-                      className="py-[13px] rounded-full items-center"
-                      style={{ backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)' }}
-                    >
-                      <Text className="text-base font-medium" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>Cancel</Text>
-                    </Pressable>
-                  </View>
-                ) : (
+                  )}
                   <Pressable
-                    onPress={() => setImportStage('idle')}
+                    onPress={retryImport}
                     className="py-[13px] rounded-full items-center"
-                    style={{ backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)' }}
+                    style={{ backgroundColor: importError.offerTemplate ? (LIGHT_SETTINGS ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)') : '#ffffff' }}
                   >
-                    <Text className="text-base font-medium" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>Dismiss</Text>
+                    <Text className="text-base font-semibold" style={{ color: importError.offerTemplate && !LIGHT_SETTINGS ? '#ffffff' : importError.offerTemplate ? '#111111' : '#000000' }}>Try again</Text>
                   </Pressable>
-                )}
-              </>
+                </View>
+              </View>
             ) : (
               <>
                 <Text className="text-base font-medium mb-4 text-center" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>
                   {importStage === 'reading' && 'Reading file…'}
-                  {importStage === 'importing' && 'Importing transactions…'}
+                  {importStage === 'importing' && 'Importing data…'}
                   {importStage === 'done' && importMessage}
                 </Text>
                 <View style={{ height: 8, borderRadius: 4, backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)', overflow: 'hidden', width: '100%' }}>
@@ -1394,7 +1447,7 @@ export default function AccountPage() {
         </View>
       )}
 
-      <BottomBanner visible={noTransactionsBanner}>No transactions to export yet</BottomBanner>
+      <BottomBanner visible={noDataBanner}>No data to export yet</BottomBanner>
     </View>
   );
 }

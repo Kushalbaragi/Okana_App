@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, useWindowDimensions } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
@@ -14,6 +14,7 @@ import { useSavings } from '../../hooks/useSavings';
 import { useSubscription } from '../../hooks/useSubscription';
 import { getSubscriptionDisplayStatus } from '../../utils/trial';
 import { storageKeys } from '../../utils/storageKeys';
+import { reportError } from '../../utils/errors';
 import Header from '../../components/Header';
 import SummaryCard from '../../components/SummaryCard';
 import TransactionList from '../../components/TransactionList';
@@ -29,7 +30,7 @@ import { TourHint } from '../../components/TourHint';
 import { useTourStep } from '../../hooks/useTourStep';
 import { PlusIcon } from '../../components/icons';
 import { PILL_ACTIVE_COLOR, POPUP_RADIUS, SMOOTH } from '../../components/Glass';
-import { currentMonthYear, today, formatCurrency, formatCurrencyFull } from '../../utils/format';
+import { currentMonthYear, today, formatCurrency } from '../../utils/format';
 import { getMonthlyRecapSlides, hasAnyRecapData, prevMonthYear, MONTH_NAMES } from '../../utils/monthlyRecap';
 import { SETTLE_EASING } from '../../utils/motion';
 
@@ -38,6 +39,20 @@ import { SETTLE_EASING } from '../../utils/motion';
 // every other screen is untouched regardless of this value.
 const LIGHT_HOME = false;
 const HOME_BG = LIGHT_HOME ? '#FAFAF8' : '#000000';
+
+// Home under the calendar page as it slides in from the right: it moves left by
+// this share of the screen width — well short of the page's own full width, so the
+// page appears to slide over it — and dims by this much once it is covered.
+const PARALLAX_SHIFT = 0.3;
+const PARALLAX_DIM = 0.4;
+
+// The tour's demo swipe: a beat after the hint appears, then again every few
+// seconds while it stays up (the swipe itself holds for about a second).
+const SWIPE_DEMO_DELAY_MS = 700;
+const SWIPE_DEMO_EVERY_MS = 3600;
+// The hint for the Expense / Income / Overview toggle comes a good while after
+// the swipe one is dismissed, so the two never read as one run of pop-ups.
+const TABS_HINT_DELAY_MS = 3000;
 
 // How long after a delete is confirmed it goes ahead even if the dialog never
 // reports having closed (see flushDelete): longer than its close animation.
@@ -133,16 +148,26 @@ export default function Dashboard() {
     entranceProgress.value = withTiming(1, { duration: 480, easing: SETTLE_EASING });
   }, []);
 
-  // Home stays static while the Calendar page slides in/out on top of it —
-  // an earlier version also pushed Home off-screen in lockstep (a
-  // synchronized swap, matching how Settings pushed via the Stack navigator
-  // moves both screens together), but that read as glittery/janky rather
-  // than smooth, so it was removed. Only SpendCalendarModal's own page
-  // animates now.
-  const entranceStyle = useAnimatedStyle(() => ({
-    opacity: entranceProgress.value,
-    transform: [{ scale: 0.94 + entranceProgress.value * 0.06 }],
-  }));
+  // The Calendar page slides in over Home, and Home eases back and dims beneath
+  // it (a parallax). It is driven by the page's own position, `calendarSlideX`,
+  // read every frame, not by an animation of Home's own. An earlier version did
+  // start its own, in step with the page, and read as juddery: the page cannot
+  // begin sliding until its native window is up, so the two began at different
+  // moments. Sharing the one value means they can't drift. It also moved Home a
+  // whole screen width, a swap rather than a parallax; this is a fraction of that.
+  const { width: windowWidth } = useWindowDimensions();
+  const calendarSlideX = useSharedValue(windowWidth);
+  const entranceStyle = useAnimatedStyle(() => {
+    // 0 with the page away, 1 once it has covered the screen.
+    const covered = Math.min(1, Math.max(0, 1 - calendarSlideX.value / windowWidth));
+    return {
+      opacity: entranceProgress.value * (1 - covered * PARALLAX_DIM),
+      transform: [
+        { scale: 0.94 + entranceProgress.value * 0.06 },
+        { translateX: -covered * windowWidth * PARALLAX_SHIFT },
+      ],
+    };
+  });
 
   // Erase Data / other changes made from Account (a separate stacked screen)
   // update Supabase directly without touching this screen's own useTransactions/
@@ -173,7 +198,7 @@ export default function Dashboard() {
   const [selectedMonth, setSelectedMonth] = useState(currMonth);
   // { year, month } | null — month is null when the selection is a whole
   // year (5y-yearly mode) and 0-11 when it's a specific month (5y-monthly).
-  const [selectedPeriod, setSelectedPeriod] = useState(null);
+  const [selectedPeriod] = useState(null);
   const [selectedDay, setSelectedDay] = useState(null);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -408,8 +433,9 @@ export default function Dashboard() {
   // animation has actually finished is broken on Android (see the note in
   // SpendCalendarModal.js) — rather than guess a delay long enough to cover
   // it, stash what should open next and let SpendCalendarModal's onClosed
-  // (fired only once it's truly gone) trigger it.
-  const pendingAfterCalendarClose = useRef(null); // 'recap' | 'budget' | null
+  // (fired only once it's truly gone) trigger it. (Setting a budget from the
+  // calendar isn't one of these: that sheet opens on the calendar page itself.)
+  const pendingAfterCalendarClose = useRef(null); // 'recap' | null
 
   // Holds whatever this render's transactions/budget values are, purely so
   // openRecapFromCalendar below can build the actual slide data on demand
@@ -433,7 +459,6 @@ export default function Dashboard() {
     const pending = pendingAfterCalendarClose.current;
     pendingAfterCalendarClose.current = null;
     if (pending === 'recap') setRecapOpen(true);
-    else if (pending === 'budget') setBudgetSetupOpen(true);
   }, []);
 
   // Memoized — SpendCalendarModal stays mounted and memo()-wrapped even
@@ -446,20 +471,25 @@ export default function Dashboard() {
       : null
   ), [recapAvailable, recapMonthName, openRecapFromCalendar]);
 
-  const closeBudgetSetup = useCallback(async () => {
-    setBudgetSetupOpen(false);
+  // What finishing with the budget setup records, wherever it was opened: it no
+  // longer needs to be offered on the home screen this month.
+  const markBudgetSetupShown = useCallback(async () => {
     setBudgetSetupPending(false);
     if (!user) return;
     const { month, year: cy } = currentMonthYear();
     const monthId = `${cy}-${String(month + 1).padStart(2, '0')}`;
-    await AsyncStorage.setItem(storageKeys.budgetSetupShown(user.id), monthId);
+    try {
+      await AsyncStorage.setItem(storageKeys.budgetSetupShown(user.id), monthId);
+    } catch (err) {
+      // If this can't be saved the offer just comes back next launch.
+      reportError(err);
+    }
   }, [user]);
 
-  // Same deferred-open reasoning as openRecapFromCalendar above.
-  const openBudgetSetupFromCalendar = useCallback(() => {
-    pendingAfterCalendarClose.current = 'budget';
-    setCalendarOpen(false);
-  }, []);
+  const closeBudgetSetup = useCallback(() => {
+    setBudgetSetupOpen(false);
+    markBudgetSetupShown();
+  }, [markBudgetSetupShown]);
 
   const budgetForCalendar = useMemo(() => ({
     loading: budget.loading,
@@ -467,8 +497,12 @@ export default function Dashboard() {
     amount: budget.amount,
     spent: budget.spentThisMonth,
     percent: budget.percent,
-    onSetup: openBudgetSetupFromCalendar,
-  }), [budget.loading, budget.hasBudget, budget.amount, budget.spentThisMonth, budget.percent, openBudgetSetupFromCalendar]);
+    // Setting one happens on the calendar page itself.
+    onSubmit: budget.setBudget,
+    lastMonthAmount: budget.lastMonthAmount,
+    lastMonthSpent: budget.lastMonthSpent,
+    onSetupClosed: markBudgetSetupShown,
+  }), [budget.loading, budget.hasBudget, budget.amount, budget.spentThisMonth, budget.percent, budget.setBudget, budget.lastMonthAmount, budget.lastMonthSpent, markBudgetSetupShown]);
 
   // Switching tabs itself is instant — every bar in the chart fully
   // remounts (a fresh, genuinely-new instance, not a reused one) whenever
@@ -584,15 +618,15 @@ export default function Dashboard() {
     setHoldReveal(true);
   }, [transactions]);
 
-  // First-run product tour for the three Home-screen habits: adding a
-  // transaction, switching chart tabs, and swiping a row to edit/delete.
-  // The first two need no data and can run right after signup; the third
-  // needs a real transaction to point at, so it just sits deferred (seen
-  // stays false, step never becomes reachable) until one exists — no
-  // forcing a brand-new, data-less account through a step with nothing to
-  // show. (The calendar's color legend, tap-a-date, and budget section get
-  // their own separate tour, triggered from SpendCalendarModal.js instead,
-  // for the same "only show it once it's real" reason.)
+  // First-run product tour for the Home-screen habits, in the order they become
+  // useful. Adding a transaction needs no data, so it runs right after signup.
+  // The other two need a real transaction, so they wait (seen stays false, the
+  // step never becomes reachable) until one has been added: first how to delete
+  // one by sliding it, shown by actually sliding the row, then what the
+  // Expense/Income/Overview tabs are. Nothing forces a brand-new, data-less
+  // account through a step with nothing to show. (The calendar's tap-a-date and
+  // budget hints get their own separate tour, triggered from
+  // SpendCalendarModal.js, for the same "only show it once it's real" reason.)
   const fabRef = useRef(null);
   // The FAB had zero press feedback at all (a plain Pressable) — the most
   // frequently-tapped button on the whole screen deserved better than
@@ -604,11 +638,22 @@ export default function Dashboard() {
   const handleFabPressOut = useCallback(() => { fabScale.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.back(1.6)) }); }, [fabScale]);
   const tabToggleRef = useRef(null);
   const addTxTour = useTourStep(user?.id, 'add_transaction');
+  const swipeTour = useTourStep(user?.id, 'swipe_delete');
   const tabsTour = useTourStep(user?.id, 'income_expense_tabs');
-  // No swipe step anymore: editing is reached by tapping a row, which needs
-  // no teaching, and the swipe is now only a shortcut to delete rather than
-  // the sole route to either action.
-  const [homeTourActive, setHomeTourActive] = useState(null); // 'fab' | 'tabs' | null
+  // Editing is reached by tapping a row, which needs no teaching; the swipe is
+  // only a shortcut to delete, so that is all this step shows.
+  const [homeTourActive, setHomeTourActive] = useState(null); // 'fab' | 'swipe' | 'tabs' | null
+  const txCardRef = useRef(null);
+
+  // Whether the list on screen has a row the swipe demo can be shown on: the
+  // month view (not a picked day, not Overview) with a transaction of the type
+  // being listed in this month. The tour waits for it, or it would point at an
+  // empty card — say the first transaction was income while Expense is showing.
+  const hasRowToSwipe = useMemo(() => {
+    if (timeRange !== 'month' || selectedDay != null || chartTab === 'overview') return false;
+    const monthKey = `${currYear}-${String(currMonth + 1).padStart(2, '0')}`;
+    return transactions.some(t => t.type === chartTab && t.date.slice(0, 7) === monthKey);
+  }, [timeRange, selectedDay, chartTab, currYear, currMonth, transactions]);
 
   useEffect(() => {
     if (!user || homeTourActive) return;
@@ -620,18 +665,38 @@ export default function Dashboard() {
     // Calendar tour's own delay, so it never fires the instant the screen
     // lands, before the user has even had a chance to look around on their
     // own.
-    const t = setTimeout(() => {
-      if (!addTxTour.seen) { setHomeTourActive('fab'); return; }
-      if (!tabsTour.seen) { setHomeTourActive('tabs'); }
-    }, 1200);
+    // Everything after adding a transaction waits for one to be on screen.
+    const next = !addTxTour.seen ? 'fab'
+      : !hasRowToSwipe ? null
+      : !swipeTour.seen ? 'swipe'
+      : !tabsTour.seen ? 'tabs'
+      : null;
+    if (!next) return;
+    const t = setTimeout(() => setHomeTourActive(next), next === 'tabs' ? TABS_HINT_DELAY_MS : 1200);
     return () => clearTimeout(t);
-  }, [user, homeTourActive, dailyPopupsResolved, recapOpen, budgetSetupOpen, proRequired, budgetCrossedOpen, modalOpen, addTxTour.seen, tabsTour.seen]);
+  }, [user, homeTourActive, dailyPopupsResolved, recapOpen, budgetSetupOpen, proRequired, budgetCrossedOpen, modalOpen, addTxTour.seen, swipeTour.seen, tabsTour.seen, hasRowToSwipe]);
 
   const advanceHomeTour = useCallback(() => {
     if (homeTourActive === 'fab') addTxTour.markSeen();
+    else if (homeTourActive === 'swipe') swipeTour.markSeen();
     else if (homeTourActive === 'tabs') tabsTour.markSeen();
     setHomeTourActive(null);
-  }, [homeTourActive, addTxTour, tabsTour]);
+  }, [homeTourActive, addTxTour, swipeTour, tabsTour]);
+
+  // While the swipe hint is up, show the swipe itself: the first row slides open
+  // to its delete button and shuts again, after a beat for the hint to settle and
+  // then every few seconds until it is dismissed. Rows only become swipeable a
+  // moment after a list paints, so an early try may find none; the next one does.
+  useEffect(() => {
+    if (homeTourActive !== 'swipe') return undefined;
+    const first = setTimeout(() => transactionListRef.current?.demoSwipe(), SWIPE_DEMO_DELAY_MS);
+    const repeat = setInterval(() => transactionListRef.current?.demoSwipe(), SWIPE_DEMO_EVERY_MS);
+    return () => {
+      clearTimeout(first);
+      clearInterval(repeat);
+      transactionListRef.current?.closeOpenRow();
+    };
+  }, [homeTourActive]);
 
   // Stable no-arg toggles for the modal props below — each was previously
   // an inline arrow function created fresh every render, which defeated
@@ -682,11 +747,8 @@ export default function Dashboard() {
         onTimeRangeChange={handleTimeRangeChange}
         selectedMonth={selectedMonth}
         year={year}
-        onMonthChange={setSelectedMonth}
         selectedPeriod={selectedPeriod}
-        onPeriodChange={setSelectedPeriod}
         selectedDay={selectedDay}
-        onDayChange={setSelectedDay}
         light={LIGHT_HOME}
       />
 
@@ -703,6 +765,7 @@ export default function Dashboard() {
         selectedDay={selectedDay}
         onEdit={openEdit}
         onDelete={requestDelete}
+        cardRef={txCardRef}
         light={LIGHT_HOME}
       />
 
@@ -733,6 +796,13 @@ export default function Dashboard() {
         onNext={advanceHomeTour}
       />
       <TourHint
+        visible={homeTourActive === 'swipe'}
+        targetRef={txCardRef}
+        description="Slide a transaction left to delete it."
+        hideRing
+        onNext={advanceHomeTour}
+      />
+      <TourHint
         visible={homeTourActive === 'tabs'}
         targetRef={tabToggleRef}
         description="Switch between Expense, Income, and Overview here."
@@ -759,6 +829,7 @@ export default function Dashboard() {
         savings={savings}
         light={LIGHT_HOME}
         userId={user?.id}
+        slideX={calendarSlideX}
       />
 
       <MonthlyRecapModal
@@ -780,7 +851,7 @@ export default function Dashboard() {
         open={deleteOpen}
         title="Delete transaction?"
         message={deleteTx
-          ? `${deleteTx.description ? `“${deleteTx.description}” · ` : ''}${formatCurrencyFull(deleteTx.amount)} ${deleteTx.type === 'income' ? 'income' : 'expense'} will be deleted.`
+          ? `${deleteTx.description ? `“${deleteTx.description}”` : 'This transaction'} will be deleted.`
           : ''}
         confirmLabel="Delete"
         onConfirm={confirmDelete}
