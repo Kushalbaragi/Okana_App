@@ -10,12 +10,11 @@ import { NumericKeypad, nextAmountValue } from './NumericKeypad';
 import { AmountRow } from './AmountField';
 import { GlassPressable, INPUT_TEXT_STYLE } from './Glass';
 import { useShake } from '../hooks/useShake';
+import { TrashIcon } from './icons';
 import { formatCurrency, shiftDate, today } from '../utils/format';
 
 // Same as AddModal's description pill, so the two sheets read as one family.
 const PILL_H = 40;
-// How long the first "Delete" tap stays armed waiting for its confirming tap.
-const CONFIRM_MS = 3000;
 
 const MONEY_TYPES = [
   { id: 'add', label: 'Add' },
@@ -89,16 +88,10 @@ function TextPill({ value, onChangeText, placeholder, maxLength, shake, light, a
   );
 }
 
-// The button row that sits right above the keypad: an optional destructive
-// action on the left, the primary action on the right.
-function ActionRow({ primaryLabel, onPrimary, disabled, destructiveLabel, onDestructive }) {
+// The primary button that sits right above the keypad, on the right.
+function ActionRow({ primaryLabel, onPrimary, disabled }) {
   return (
-    <View className="flex-row items-center justify-between" style={{ paddingHorizontal: 32, paddingBottom: 20 }}>
-      {destructiveLabel ? (
-        <Pressable onPress={onDestructive} disabled={disabled} accessibilityRole="button" hitSlop={8}>
-          <Text className="text-[15px]" style={{ color: '#f87171' }}>{destructiveLabel}</Text>
-        </Pressable>
-      ) : <View />}
+    <View className="flex-row items-center justify-end" style={{ paddingHorizontal: 32, paddingBottom: 20 }}>
       <GlassPressable
         variant="active"
         radius={9999}
@@ -112,28 +105,14 @@ function ActionRow({ primaryLabel, onPrimary, disabled, destructiveLabel, onDest
   );
 }
 
-// A two-tap delete without a second modal (which can't be stacked on the
-// calendar page's Modal on Android): the first tap arms it and changes the
-// label, the second within CONFIRM_MS confirms, and it disarms itself.
-function useArmedDelete() {
-  const [armed, setArmed] = useState(false);
-  useEffect(() => {
-    if (!armed) return undefined;
-    const t = setTimeout(() => setArmed(false), CONFIRM_MS);
-    return () => clearTimeout(t);
-  }, [armed]);
-  return [armed, setArmed];
-}
-
 // New goal / edit goal. The amount is the goal's target.
-export function GoalSheet({ open, onClose, goal, initialName = '', onSubmit, onDelete, light = false }) {
+export function GoalSheet({ open, onClose, goal, initialName = '', onSubmit, light = false }) {
   const insets = useSafeAreaInsets();
   const isEdit = !!goal;
   const { amount, prevAmountLength, skipDigitAnim, onKeyPress, setProgrammatic } = useAmountEntry();
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [deleteArmed, setDeleteArmed] = useArmedDelete();
   const nameShake = useShake();
   const amountShake = useShake();
 
@@ -143,7 +122,6 @@ export function GoalSheet({ open, onClose, goal, initialName = '', onSubmit, onD
     setProgrammatic(goal ? String(goal.target) : '');
     setError('');
     setSubmitting(false);
-    setDeleteArmed(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -167,21 +145,6 @@ export function GoalSheet({ open, onClose, goal, initialName = '', onSubmit, onD
     const result = await onSubmit({ name, target: value });
     if (result?.success === false) {
       setSubmitting(false);
-      setError(result.error || 'Something went wrong. Please try again.');
-      return;
-    }
-    onClose();
-  }
-
-  async function handleDelete() {
-    if (submitting) return;
-    if (!deleteArmed) { setDeleteArmed(true); return; }
-    setSubmitting(true);
-    setError('');
-    const result = await onDelete();
-    if (result?.success === false) {
-      setSubmitting(false);
-      setDeleteArmed(false);
       setError(result.error || 'Something went wrong. Please try again.');
       return;
     }
@@ -224,8 +187,6 @@ export function GoalSheet({ open, onClose, goal, initialName = '', onSubmit, onD
           primaryLabel={isEdit ? (submitting ? 'Saving' : 'Save') : (submitting ? 'Creating' : 'Create')}
           onPrimary={handleSubmit}
           disabled={submitting}
-          destructiveLabel={isEdit ? (deleteArmed ? 'Tap again to delete' : 'Delete goal') : null}
-          onDestructive={handleDelete}
         />
         <NumericKeypad onKeyPress={onKeyPress} insetBottom={insets.bottom} light={light} />
       </View>
@@ -259,7 +220,7 @@ function CalIcon({ color }) {
 // calendar over the button row and keypad) and keypad. It can't literally be
 // AddModal — that is its own native Modal, and this page is already inside
 // one — so it is built from the same pieces inside an InlineSheet instead.
-export function MoneySheet({ open, onClose, goalName, entry, initialType = 'add', maxWithdraw = 0, onSubmit, onDelete, light = false }) {
+export function MoneySheet({ open, onClose, goalName, entry, initialType = 'add', maxWithdraw = 0, onSubmit, onRequestDelete, light = false }) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const isEdit = !!entry;
@@ -269,7 +230,6 @@ export function MoneySheet({ open, onClose, goalName, entry, initialType = 'add'
   const [date, setDate] = useState(today());
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [deleteArmed, setDeleteArmed] = useArmedDelete();
   const amountShake = useShake();
   const noteShake = useShake();
 
@@ -312,7 +272,6 @@ export function MoneySheet({ open, onClose, goalName, entry, initialType = 'add'
     setDate(entry ? entry.date : today());
     setError('');
     setSubmitting(false);
-    setDeleteArmed(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -341,23 +300,7 @@ export function MoneySheet({ open, onClose, goalName, entry, initialType = 'add'
     onClose();
   }
 
-  async function handleDelete() {
-    if (submitting) return;
-    if (!deleteArmed) { setDeleteArmed(true); return; }
-    setSubmitting(true);
-    setError('');
-    const result = await onDelete();
-    if (result?.success === false) {
-      setSubmitting(false);
-      setDeleteArmed(false);
-      setError(result.error || 'Something went wrong. Please try again.');
-      return;
-    }
-    onClose();
-  }
-
   const muted = light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)';
-  const primaryLabel = isEdit ? 'Save' : type === 'add' ? 'Add' : 'Withdraw';
   // Full sheet width, like AddModal's toggle: the sheet's own 20px side
   // padding and the switch's 2px track padding come off, split across two.
   const toggleButtonWidth = Math.floor((windowWidth - 40 - 4) / 2);
@@ -380,7 +323,7 @@ export function MoneySheet({ open, onClose, goalName, entry, initialType = 'add'
           light={light}
         />
         <Text className="text-center text-[13px]" numberOfLines={1} style={{ color: muted, marginTop: 22 }}>
-          {type === 'add' ? 'To' : 'From'} {goalName}
+          {goalName}
         </Text>
         <Animated.View style={[{ alignItems: 'center', marginTop: 6, marginBottom: 28 }, amountShake.style]}>
           <AmountRow
@@ -402,11 +345,6 @@ export function MoneySheet({ open, onClose, goalName, entry, initialType = 'add'
           shake={noteShake}
           light={light}
         />
-        {isEdit && (
-          <Pressable onPress={handleDelete} disabled={submitting} accessibilityRole="button" hitSlop={8} style={{ alignSelf: 'center', marginTop: 22 }}>
-            <Text className="text-[15px]" style={{ color: '#f87171' }}>{deleteArmed ? 'Tap again to delete' : 'Delete'}</Text>
-          </Pressable>
-        )}
       </ScrollView>
 
       {!!error && <Text className="text-red-400 text-base text-center mx-5 mb-3">{error}</Text>}
@@ -428,15 +366,31 @@ export function MoneySheet({ open, onClose, goalName, entry, initialType = 'add'
             </Text>
           </Pressable>
 
-          <GlassPressable
-            variant="active"
-            radius={9999}
-            disabled={submitting}
-            onPress={handleSubmit}
-            style={{ paddingHorizontal: 32, paddingVertical: 12, alignItems: 'center' }}
-          >
-            <Text className="text-black text-[15px] font-semibold">{submitting ? `${primaryLabel}…` : primaryLabel}</Text>
-          </GlassPressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+            {/* Editing an entry only: delete sits just left of Save, as an icon
+                — the confirmation dialog does the "are you sure". */}
+            {isEdit && (
+              <Pressable
+                onPress={onRequestDelete}
+                disabled={submitting}
+                hitSlop={8}
+                style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+                accessibilityRole="button"
+                accessibilityLabel="Delete entry"
+              >
+                <TrashIcon size={20} color="rgba(248,113,113,0.8)" />
+              </Pressable>
+            )}
+            <GlassPressable
+              variant="active"
+              radius={9999}
+              disabled={submitting}
+              onPress={handleSubmit}
+              style={{ paddingHorizontal: 32, paddingVertical: 12, alignItems: 'center' }}
+            >
+              <Text className="text-black text-[15px] font-semibold">{submitting ? 'Saving…' : 'Save'}</Text>
+            </GlassPressable>
+          </View>
         </View>
 
         <NumericKeypad onKeyPress={onKeyPress} insetBottom={insets.bottom} light={light} />

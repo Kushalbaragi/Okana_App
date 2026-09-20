@@ -4,9 +4,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, FadeIn } from 'react-native-reanimated';
 import { GlassPressable } from './Glass';
 import BarChart from './BarChart';
+import BudgetStatusBar from './BudgetStatusBar';
+import { InlineConfirm } from './InlineConfirm';
 import { SETTLE_EASING } from './AmountField';
 import { GoalSheet, MoneySheet } from './SavingsSheets';
-import { CheckIcon, ChevronRight, EditIcon, PlusIcon } from './icons';
+import { CheckIcon, ChevronRight, EditIcon, PlusIcon, TrashIcon } from './icons';
 import { currentMonthYear, dateBoxParts, formatCurrency, formatCurrencyFull } from '../utils/format';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 
@@ -18,6 +20,9 @@ const CARD_COLOR = '#151515';
 const FILL_COLOR = '#4ade80';
 const POSITIVE = 'rgba(74,222,128,0.85)';
 const SUGGESTIONS = ['Bike', 'Home', 'Emergency fund'];
+// A softer red than the one used for errors — a resting delete icon shouldn't
+// shout.
+const DANGER_SOFT = 'rgba(248,113,113,0.65)';
 
 // List and detail swap by crossfade — the same fade the home screen uses for a
 // tab switch, and cheap because it's opacity only.
@@ -68,11 +73,28 @@ export function useSavingsUI() {
   }, []);
   const closeSheet = useCallback(() => setSheetOpen(false), []);
 
-  return { sheetOpen, sheetData, openNewGoal, openEditGoal, openMoney, openEntry, closeSheet };
+  // The delete confirmation. Same split as the sheet: `confirmOpen` drives the
+  // animation, `confirmData` keeps its text while it fades out.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmData, setConfirmData] = useState(null);
+  const openDeleteGoal = useCallback((goalId) => {
+    setConfirmData({ kind: 'goal', goalId });
+    setConfirmOpen(true);
+  }, []);
+  const openDeleteEntry = useCallback((goalId, entryId) => {
+    setConfirmData({ kind: 'entry', goalId, entryId });
+    setConfirmOpen(true);
+  }, []);
+  const closeConfirm = useCallback(() => setConfirmOpen(false), []);
+
+  return {
+    sheetOpen, sheetData, openNewGoal, openEditGoal, openMoney, openEntry, closeSheet,
+    confirmOpen, confirmData, openDeleteGoal, openDeleteEntry, closeConfirm,
+  };
 }
 
-export function SavingsSheetsHost({ savings, ui, light = false, onGoalDeleted }) {
-  const { sheetOpen, sheetData, closeSheet } = ui;
+export function SavingsSheetsHost({ savings, ui, light = false }) {
+  const { sheetOpen, sheetData, closeSheet, confirmOpen, confirmData, closeConfirm } = ui;
   const goalId = sheetData?.goalId ?? null;
   const goal = goalId ? savings.allGoals.find(g => g.id === goalId) : null;
   const entry = sheetData?.entryId && goal ? goal.entries.find(e => e.id === sheetData.entryId) : null;
@@ -81,17 +103,54 @@ export function SavingsSheetsHost({ savings, ui, light = false, onGoalDeleted })
     goalId ? savings.editGoal(goalId, { name, target }) : savings.addGoal({ name, target })
   ), [savings, goalId]);
 
-  const deleteGoal = useCallback(async () => {
-    const result = await savings.deleteGoal(goalId);
-    if (result.success && onGoalDeleted) onGoalDeleted();
-    return result;
-  }, [savings, goalId, onGoalDeleted]);
-
   const submitMoney = useCallback(({ type, amount, note, date }) => (
     entry ? savings.updateEntry(entry.id, { type, amount, note, date }) : savings.addEntry(goalId, { type, amount, note, date })
   ), [savings, goalId, entry]);
 
-  const deleteEntry = useCallback(() => savings.deleteEntry(entry.id), [savings, entry]);
+  // What the confirmation is about, looked up from the data rather than
+  // carried in state so it can't go stale.
+  const confirmGoal = confirmData ? savings.allGoals.find(g => g.id === confirmData.goalId) : null;
+  const confirmEntry = confirmData?.kind === 'entry' && confirmGoal ? confirmGoal.entries.find(e => e.id === confirmData.entryId) : null;
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [confirmError, setConfirmError] = useState('');
+  useEffect(() => {
+    if (confirmOpen) { setConfirmBusy(false); setConfirmError(''); }
+  }, [confirmOpen]);
+
+  let confirmTitle = '';
+  let confirmMessage = '';
+  if (confirmData?.kind === 'goal' && confirmGoal) {
+    const what = confirmGoal.saved > 0
+      ? `${confirmGoal.name} and its ${money(confirmGoal.saved)} history`
+      : confirmGoal.entries.length > 0 ? `${confirmGoal.name} and its history` : confirmGoal.name;
+    confirmTitle = 'Delete goal?';
+    confirmMessage = `${what} will be deleted. This can't be undone.`;
+  } else if (confirmData?.kind === 'entry' && confirmEntry && confirmGoal) {
+    confirmTitle = 'Delete entry?';
+    confirmMessage = `This ${money(confirmEntry.amount)} ${confirmEntry.type === 'add' ? 'deposit' : 'withdrawal'} will be removed from ${confirmGoal.name}.`;
+  }
+
+  const handleConfirm = useCallback(async () => {
+    if (confirmBusy || !confirmData) return;
+    if (confirmData.kind === 'goal') {
+      // The goal leaves the list at once (the write is optimistic), which is
+      // what closes its page — nothing more to do here.
+      savings.deleteGoal(confirmData.goalId);
+      closeConfirm();
+      return;
+    }
+    setConfirmBusy(true);
+    setConfirmError('');
+    const result = await savings.deleteEntry(confirmData.entryId);
+    setConfirmBusy(false);
+    if (result?.success === false) {
+      // Refused (e.g. later withdrawals depend on it) — stay open and say why.
+      setConfirmError(result.error || 'Something went wrong. Please try again.');
+      return;
+    }
+    closeConfirm();
+    closeSheet();
+  }, [confirmBusy, confirmData, savings, closeConfirm, closeSheet]);
 
   return (
     <>
@@ -101,7 +160,6 @@ export function SavingsSheetsHost({ savings, ui, light = false, onGoalDeleted })
         goal={goal}
         initialName={sheetData?.initialName || ''}
         onSubmit={submitGoal}
-        onDelete={deleteGoal}
         light={light}
       />
       <MoneySheet
@@ -112,7 +170,18 @@ export function SavingsSheetsHost({ savings, ui, light = false, onGoalDeleted })
         initialType={sheetData?.type || 'add'}
         maxWithdraw={goal?.saved || 0}
         onSubmit={submitMoney}
-        onDelete={deleteEntry}
+        onRequestDelete={() => ui.openDeleteEntry(goalId, entry?.id)}
+        light={light}
+      />
+      {/* Last, so it sits above the sheets as well as the page. */}
+      <InlineConfirm
+        open={confirmOpen}
+        title={confirmTitle}
+        message={confirmMessage}
+        error={confirmError}
+        busy={confirmBusy}
+        onConfirm={handleConfirm}
+        onCancel={closeConfirm}
         light={light}
       />
     </>
@@ -123,15 +192,27 @@ export function SavingsSheetsHost({ savings, ui, light = false, onGoalDeleted })
 // Pieces
 // ---------------------------------------------------------------------------
 
-// Net money moved in each of the last CHART_MONTHS months: adds minus
-// withdrawals. The chart draws each month's size as a positive bar and marks it
-// red when withdrawals beat adds that month, green otherwise.
+// Net money moved in each of CHART_MONTHS months: adds minus withdrawals. The
+// window starts at the month of the goal's first entry and runs forward, so a
+// young goal shows its first months with the empty ones still to come. Once
+// the goal is older than the window, it rolls forward so the current month is
+// always the last bar rather than falling off the end. The chart draws each
+// month's size as a positive bar and marks it red when withdrawals beat adds
+// that month, green otherwise.
 function monthlyNet(entries) {
   const { month, year } = currentMonthYear();
+  const nowIndex = year * 12 + month;
+  let start = nowIndex - (CHART_MONTHS - 1);
+  if (entries.length > 0) {
+    start = Math.min(...entries.map(e => Number(e.date.slice(0, 4)) * 12 + Number(e.date.slice(5, 7)) - 1));
+    if (nowIndex > start + CHART_MONTHS - 1) start = nowIndex - (CHART_MONTHS - 1);
+  }
   const months = [];
-  for (let i = CHART_MONTHS - 1; i >= 0; i--) {
-    const d = new Date(year, month - i, 1);
-    months.push({ key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, label: MONTH_NAMES[d.getMonth()].slice(0, 3) });
+  for (let i = 0; i < CHART_MONTHS; i++) {
+    const idx = start + i;
+    const y = Math.floor(idx / 12);
+    const m = idx % 12;
+    months.push({ key: `${y}-${String(m + 1).padStart(2, '0')}`, label: MONTH_NAMES[m].slice(0, 3) });
   }
   const totals = new Map(months.map(m => [m.key, 0]));
   for (const e of entries) {
@@ -146,8 +227,32 @@ function monthlyNet(entries) {
   };
 }
 
-// The round button at the bottom of both the list and a goal's page. On the
-// list it starts a new goal; on a goal it opens the add / withdraw sheet.
+// The button at the bottom of the list: a labelled pill rather than a bare "+",
+// since starting a goal is the one thing this page is for and the words say so.
+// The app's primary-CTA treatment (light fill, dark text) — the same as Create,
+// Add and Save — because it is this page's one main action.
+function NewGoalButton({ onPress }) {
+  const insets = useSafeAreaInsets();
+  return (
+    // The wrapper spans the width only to centre the pill without measuring
+    // it; box-none lets touches beside the pill fall through to the list.
+    <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom + 24, alignItems: 'center' }}>
+      <GlassPressable
+        variant="active"
+        radius={9999}
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel="New goal"
+        style={{ paddingHorizontal: 28, paddingVertical: 16, alignItems: 'center' }}
+      >
+        <Text className="text-base font-semibold text-black">New goal</Text>
+      </GlassPressable>
+    </View>
+  );
+}
+
+// The round "+" at the bottom of a goal's page, opening the add / withdraw
+// sheet.
 function AddFab({ onPress, label }) {
   const insets = useSafeAreaInsets();
   return (
@@ -290,29 +395,45 @@ function GoalDetail({ goal, savings, ui, light }) {
       // Clears the round button that floats over the bottom of the page.
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: insets.bottom + 120 }}
     >
+      {/* The pencil sits right beside the name; the trash stays at the far
+          right. The left spacer is as wide as the trash so the name and pencil
+          together stay centred. The name shrinks (and truncates) before it can
+          push the pencil out of the row. */}
       <View className="flex-row items-center justify-between">
         <View style={{ width: 32 }} />
-        <Text className="text-base text-center" numberOfLines={1} style={{ flex: 1, color: dim(light, 0.5) }}>{goal.name}</Text>
+        <View className="flex-row items-center justify-center" style={{ flex: 1, minWidth: 0 }}>
+          <Text className="text-base" numberOfLines={1} style={{ flexShrink: 1, color: dim(light, 0.5) }}>{goal.name}</Text>
+          <Pressable
+            onPress={() => ui.openEditGoal(goal.id)}
+            className="w-8 h-8 items-center justify-center rounded-lg"
+            accessibilityRole="button"
+            accessibilityLabel="Edit goal"
+          >
+            <EditIcon color={dim(light, 0.4)} />
+          </Pressable>
+        </View>
         <Pressable
-          onPress={() => ui.openEditGoal(goal.id)}
+          onPress={() => ui.openDeleteGoal(goal.id)}
           className="w-8 h-8 items-center justify-center rounded-lg"
           accessibilityRole="button"
-          accessibilityLabel="Edit goal"
+          accessibilityLabel="Delete goal"
         >
-          <EditIcon color={dim(light, 0.4)} />
+          <TrashIcon size={16} color={DANGER_SOFT} />
         </Pressable>
       </View>
 
-      <Text
-        className="text-center"
-        style={{ fontSize: 44, lineHeight: 52, fontWeight: '600', letterSpacing: -1, marginTop: 4, color: light ? '#111111' : '#ffffff', fontFamily: ROUNDED_FONT }}
-      >
-        {money(goal.saved)}
-      </Text>
-      <Text className="text-sm text-center" style={{ color: dim(light, 0.4), marginTop: 2, marginBottom: 18 }}>
-        of {money(goal.target)} · {goal.percent}%
-      </Text>
-      <ProgressBar percent={goal.percent} height={10} light={light} />
+      {/* Exactly the Budget section's bar — the big figure, the segmented bar
+          and its two captions — with goal wording. */}
+      <View style={{ marginTop: 16 }}>
+        <BudgetStatusBar
+          loading={false}
+          hasBudget
+          percent={goal.percent}
+          light={light}
+          hideDivider
+          summary={{ hero: money(goal.saved), suffix: 'saved', left: `${goal.percent}%`, right: `${money(goal.target)} target` }}
+        />
+      </View>
 
       {goal.completedAt ? (
         <View className="flex-row items-center justify-center" style={{ gap: 10, marginTop: 20 }}>
@@ -340,8 +461,7 @@ function GoalDetail({ goal, savings, ui, light }) {
           than came out, red where withdrawals won. A readout only, so no
           taps. Not shown until there is something to plot. */}
       {goal.entries.length > 0 && (
-        <View style={{ marginTop: 28 }}>
-          <Text className="text-[11px] font-medium uppercase tracking-widest px-1 mb-3" style={{ color: dim(light, 0.3) }}>Per month</Text>
+        <View style={{ marginTop: 24 }}>
           <View style={{ paddingHorizontal: 4 }}>
             <BarChart
               values={chart.values}
@@ -479,7 +599,7 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
           )}
         </ScrollView>
 
-        {!isEmpty && <AddFab onPress={() => ui.openNewGoal('')} label="New goal" />}
+        {!isEmpty && <NewGoalButton onPress={() => ui.openNewGoal('')} />}
       </Animated.View>
 
       <Animated.View style={[StyleSheet.absoluteFill, detailStyle]} pointerEvents={detailOpen ? 'auto' : 'none'}>

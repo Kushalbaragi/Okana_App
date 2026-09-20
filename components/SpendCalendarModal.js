@@ -104,12 +104,13 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
 
   // Back steps out one level at a time: an open sheet, then an open goal, and
   // only then the whole page. Also what the Android back button does.
-  const { sheetOpen, closeSheet } = savingsUI;
+  const { sheetOpen, closeSheet, confirmOpen, closeConfirm } = savingsUI;
   const handleBack = useCallback(() => {
+    if (confirmOpen) { closeConfirm(); return; }
     if (sheetOpen) { closeSheet(); return; }
     if (section === 'savings' && detailGoalId != null) { setDetailGoalId(null); return; }
     onClose();
-  }, [sheetOpen, closeSheet, section, detailGoalId, onClose]);
+  }, [confirmOpen, closeConfirm, sheetOpen, closeSheet, section, detailGoalId, onClose]);
 
   // First-run tour for this page: what the color-coded days mean, that
   // tapping one shows its transactions, and (only once a budget actually
@@ -161,6 +162,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
       // whichever goal or sheet it was closed from.
       setDetailGoalId(null);
       savingsUI.closeSheet();
+      savingsUI.closeConfirm();
       pageTranslateX.value = withTiming(
         windowWidth,
         { duration: CALENDAR_SLIDE_DURATION, easing: SETTLE_EASING },
@@ -496,7 +498,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
 
             {/* Last child of the page, so its sheets slide up over everything
                 above — header included. */}
-            <SavingsSheetsHost savings={savings} ui={savingsUI} light={light} onGoalDeleted={closeGoal} />
+            <SavingsSheetsHost savings={savings} ui={savingsUI} light={light} />
         </View>
       </Animated.View>
     </Modal>
