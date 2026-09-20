@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, View, Text, Pressable, ScrollView, useWindowDimensions } from 'react-native';
+import { Modal, View, Text, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, runOnJS } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, runOnJS, Easing } from 'react-native-reanimated';
 import { addMonths, subMonths, startOfMonth, getDaysInMonth } from 'date-fns';
 import {
   formatCurrency,
@@ -19,9 +19,20 @@ import BudgetStatusBar from './BudgetStatusBar';
 import { SETTLE_EASING } from './AmountField';
 import { TourHint } from './TourHint';
 import { BackIcon } from './icons';
+import SegmentedSwitch from './SegmentedSwitch';
+import SavingsSection, { SavingsSheetsHost, useSavingsUI } from './SavingsSection';
 import { useTourStep } from '../hooks/useTourStep';
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // Monday-first
+
+// The page has two sections, switched from the header: the budget + spend
+// calendar it always was, and savings goals.
+const SECTIONS = [
+  { id: 'budget', label: 'Budget' },
+  { id: 'savings', label: 'Savings' },
+];
+// Same fade the home screen uses when a tab switches.
+const SECTION_FADE_MS = 220;
 
 // How long this page takes to slide in or out. Home used to animate in
 // lockstep with it (sliding off to the left as this came in from the
@@ -66,12 +77,40 @@ function DayTransactionRow({ tx, index, light }) {
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard (and the flows it opens) — see the matching comment in
 // Header.js.
-function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budget, light = false, userId }) {
+function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budget, savings, light = false, userId }) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const now = new Date();
   const [view, setView] = useState(startOfMonth(now));
   const [selectedDate, setSelectedDate] = useState(null);
+
+  // Which section is showing. Deliberately survives closing and reopening
+  // (this component stays mounted between opens), so it comes back where it
+  // was left. Both sections stay mounted and crossfade rather than swapping,
+  // so switching costs nothing and keeps each one's own state — the selected
+  // day, the open goal.
+  const [section, setSection] = useState('budget');
+  const [detailGoalId, setDetailGoalId] = useState(null);
+  const savingsUI = useSavingsUI();
+  const sectionProgress = useSharedValue(0); // 0 budget -> 1 savings
+  useEffect(() => {
+    sectionProgress.value = withTiming(section === 'savings' ? 1 : 0, { duration: SECTION_FADE_MS, easing: Easing.out(Easing.cubic) });
+  }, [section, sectionProgress]);
+  const budgetLayerStyle = useAnimatedStyle(() => ({ opacity: 1 - sectionProgress.value }));
+  const savingsLayerStyle = useAnimatedStyle(() => ({ opacity: sectionProgress.value }));
+
+  const openGoal = useCallback((id) => setDetailGoalId(id), []);
+  const closeGoal = useCallback(() => setDetailGoalId(null), []);
+
+  // Back steps out one level at a time: an open sheet, then an open goal, and
+  // only then the whole page. Also what the Android back button does.
+  const { sheetOpen, closeSheet, confirmOpen, closeConfirm } = savingsUI;
+  const handleBack = useCallback(() => {
+    if (confirmOpen) { closeConfirm(); return; }
+    if (sheetOpen) { closeSheet(); return; }
+    if (section === 'savings' && detailGoalId != null) { setDetailGoalId(null); return; }
+    onClose();
+  }, [confirmOpen, closeConfirm, sheetOpen, closeSheet, section, detailGoalId, onClose]);
 
   // First-run tour for this page: what the color-coded days mean, that
   // tapping one shows its transactions, and (only once a budget actually
@@ -119,6 +158,11 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
       // guaranteed to be applied to something on screen.
     } else {
       openingRef.current = false;
+      // Back to the list, sheet away — the page reopens fresh, not on
+      // whichever goal or sheet it was closed from.
+      setDetailGoalId(null);
+      savingsUI.closeSheet();
+      savingsUI.closeConfirm();
       pageTranslateX.value = withTiming(
         windowWidth,
         { duration: CALENDAR_SLIDE_DURATION, easing: SETTLE_EASING },
@@ -144,27 +188,6 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
     pageTranslateX.value = withTiming(0, { duration: CALENDAR_SLIDE_DURATION, easing: SETTLE_EASING });
   }, [pageTranslateX]);
 
-  useEffect(() => {
-    // Resets immediately on close so a tour hint mid-flow doesn't linger
-    // pointing at a row that's now sliding off-screen with the sheet.
-    if (!open) { setCalendarTourActive(null); return; }
-    if (!userId || calendarTourActive) return;
-    // Waits out the sheet's own opening slide (CALENDAR_SLIDE_DURATION
-    // above) so the tour doesn't spotlight something that's still animating
-    // into place.
-    const t = setTimeout(() => {
-      if (!legendTour.seen) { setCalendarTourActive('legend'); return; }
-      // Deferred until there's an actual spent day to point at — same
-      // "only show it once it's real" rule as budget-left below and the
-      // Home-screen tour's swipe step.
-      if (!tapDateTour.seen && spentDayStr) { setCalendarTourActive('tapDate'); return; }
-      // Budget-left only makes sense once a budget actually exists —
-      // deferred (not skipped outright) until one does, same "only show it
-      // once it's real" rule as the Home-screen tour's swipe step.
-      if (!budgetTour.seen && budget?.hasBudget) setCalendarTourActive('budget');
-    }, CALENDAR_SLIDE_DURATION + 150);
-    return () => clearTimeout(t);
-  }, [open, userId, calendarTourActive, legendTour.seen, tapDateTour.seen, spentDayStr, budgetTour.seen, budget?.hasBudget]);
 
   const advanceCalendarTour = useCallback(() => {
     if (calendarTourActive === 'legend') legendTour.markSeen();
@@ -210,6 +233,32 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
     return null;
   }, [visible, dailyTotals, year, month, daysInMonth, todayStr]);
 
+  // Below spentDayStr on purpose: its dependency list reads that value, and a
+  // const can't be read before its declaration — Hermes' Babel transform
+  // quietly tolerates it (const becomes var), a strict engine throws.
+  useEffect(() => {
+    // Resets immediately on close so a tour hint mid-flow doesn't linger
+    // pointing at a row that's now sliding off-screen with the sheet.
+    // Only the Budget section has anything for the tour to point at.
+    if (!open || section !== 'budget') { setCalendarTourActive(null); return; }
+    if (!userId || calendarTourActive) return;
+    // Waits out the sheet's own opening slide (CALENDAR_SLIDE_DURATION
+    // above) so the tour doesn't spotlight something that's still animating
+    // into place.
+    const t = setTimeout(() => {
+      if (!legendTour.seen) { setCalendarTourActive('legend'); return; }
+      // Deferred until there's an actual spent day to point at — same
+      // "only show it once it's real" rule as budget-left below and the
+      // Home-screen tour's swipe step.
+      if (!tapDateTour.seen && spentDayStr) { setCalendarTourActive('tapDate'); return; }
+      // Budget-left only makes sense once a budget actually exists —
+      // deferred (not skipped outright) until one does, same "only show it
+      // once it's real" rule as the Home-screen tour's swipe step.
+      if (!budgetTour.seen && budget?.hasBudget) setCalendarTourActive('budget');
+    }, CALENDAR_SLIDE_DURATION + 150);
+    return () => clearTimeout(t);
+  }, [open, section, userId, calendarTourActive, legendTour.seen, tapDateTour.seen, spentDayStr, budgetTour.seen, budget?.hasBudget]);
+
   const dayTxs = useMemo(
     () => (visible && selectedDate
       ? transactions
@@ -232,7 +281,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} onShow={handleModalShow}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={handleBack} onShow={handleModalShow}>
       {/* RN's <Modal> stays fully touch-active for its whole lifetime —
           `visible` only flips to false once the close animation below has
           actually finished, so without this the calendar icon (and anything
@@ -241,7 +290,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
           `visible`) flips to false the instant a close starts, so touches
           fall through immediately instead of at the end. Same fix as
           AddModal's — see the comment there. */}
-      <Animated.View className="flex-1" style={[{ backgroundColor: light ? '#FAFAF8' : '#000000' }, pageStyle]} pointerEvents={open ? 'auto' : 'none'}>
+      <Animated.View className="flex-1" style={[{ flex: 1, backgroundColor: light ? '#FAFAF8' : '#000000' }, pageStyle]} pointerEvents={open ? 'auto' : 'none'}>
         <View style={{ flex: 1 }}>
             {/* Replaces the old drag-handle pill (which read as a
                 bottom-sheet affordance that stopped making sense once this
@@ -249,15 +298,26 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                 way to close this. */}
             <View className="flex-row items-center px-4" style={{ paddingTop: insets.top + 10, paddingBottom: 8 }}>
               <Pressable
-                onPress={onClose}
+                onPress={handleBack}
                 className="w-9 h-9 items-center justify-center rounded-xl"
                 accessibilityRole="button"
                 accessibilityLabel="Go back"
               >
                 <BackIcon color={light ? 'rgba(0,0,0,0.7)' : undefined} />
               </Pressable>
+              {/* Fixed to the back button's own height so the switch (a couple
+                  of px taller) can't push everything below it down — the
+                  Budget section sits exactly where it always did. */}
+              <View style={{ flex: 1, height: 36, alignItems: 'center', justifyContent: 'center' }}>
+                <SegmentedSwitch options={SECTIONS} value={section} onChange={setSection} buttonWidth={92} light={light} />
+              </View>
+              <View style={{ width: 36 }} />
             </View>
 
+            {/* Both sections fill the space under the header and crossfade;
+                only the visible one takes touches. */}
+            <View style={{ flex: 1 }}>
+              <Animated.View style={[StyleSheet.absoluteFill, budgetLayerStyle]} pointerEvents={section === 'budget' ? 'auto' : 'none'}>
             {/* Fixed — not inside any ScrollView, so it never scrolls or
                 shifts regardless of how many transactions the day list
                 below ends up showing. */}
@@ -402,6 +462,21 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
               </View>
             )}
 
+              </Animated.View>
+
+              <Animated.View style={[StyleSheet.absoluteFill, savingsLayerStyle]} pointerEvents={section === 'savings' ? 'auto' : 'none'}>
+                <SavingsSection
+                  savings={savings}
+                  ui={savingsUI}
+                  active={open && section === 'savings'}
+                  light={light}
+                  detailGoalId={detailGoalId}
+                  onOpenGoal={openGoal}
+                  onCloseGoal={closeGoal}
+                />
+              </Animated.View>
+            </View>
+
             <TourHint
               visible={calendarTourActive === 'legend'}
               targetRef={legendRef}
@@ -420,6 +495,10 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
               description="This shows what's left in your budget this month."
               onNext={advanceCalendarTour}
             />
+
+            {/* Last child of the page, so its sheets slide up over everything
+                above — header included. */}
+            <SavingsSheetsHost savings={savings} ui={savingsUI} light={light} />
         </View>
       </Animated.View>
     </Modal>

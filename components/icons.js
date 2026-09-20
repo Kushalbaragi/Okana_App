@@ -137,13 +137,17 @@ export function UpdateIcon({ size = 18, color = '#4ade80' }) {
   );
 }
 
-export function CalendarIcon({ size = 18, color = 'rgba(255,255,255,0.7)' }) {
+// The header's entry to the Budget / Savings page (which also holds the spend
+// calendar). A wallet rather than a calendar or a piggy bank: it says "money"
+// for both halves of that page, and it stays legible at this size.
+export function WalletIcon({ size = 18, color = 'rgba(255,255,255,0.7)' }) {
+  const stroke = { stroke: color, strokeWidth: 1.4, strokeLinecap: 'round', strokeLinejoin: 'round' };
   return (
     <Svg width={size} height={size} viewBox="0 0 18 18" fill="none">
-      <Rect x="1.5" y="3" width="15" height="13" rx="2.5" stroke={color} strokeWidth="1.4" />
-      <Line x1="1.5" y1="7" x2="16.5" y2="7" stroke={color} strokeWidth="1.4" />
-      <Line x1="5" y1="1" x2="5" y2="4.5" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
-      <Line x1="13" y1="1" x2="13" y2="4.5" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+      <Rect x="1.5" y="4.5" width="15" height="11" rx="2.5" {...stroke} />
+      <Path d="M4 4.5 L12.2 1.9 A1 1 0 0 1 13.5 2.85 V4.5" {...stroke} />
+      <Path d="M16.5 8.5 H12.5 A1.75 1.75 0 0 0 12.5 12 H16.5" {...stroke} />
+      <Circle cx="12.75" cy="10.25" r="0.55" fill={color} />
     </Svg>
   );
 }

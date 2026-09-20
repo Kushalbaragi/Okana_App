@@ -426,12 +426,13 @@ function SummaryCard({
 
         <View className="mt-4">
           {isOverview ? (
-            // No `key={animKey}` — this used to force a full remount on
-            // every period switch (replaying LineChart's own one-time
-            // width reveal every time, see its own comment). Staying
-            // mounted across a switch is what lets that reveal genuinely
-            // only play once, while still updating the curve's actual
-            // shape/points instantly.
+            // No `key={animKey}` — that forced a full remount on every
+            // period switch, discarding the chart's measured width and
+            // remounting the whole SVG. Staying mounted and passing the
+            // range as `revealKey` gets the same replayed growing reveal
+            // without the remount. It also plays whenever Overview is
+            // entered (fresh mount on a tab switch, or the screen
+            // regaining focus).
             <LineChart
               incomeData={lineChartData.income}
               expenseData={lineChartData.expense}
@@ -440,6 +441,7 @@ function SummaryCard({
               activeIndex={chartActiveIndex}
               onPointClick={onBarClick}
               onDeselect={onDeselect}
+              revealKey={timeRange}
             />
           ) : (
             // No onBarClick/onDeselect: Expense and Income bars are a

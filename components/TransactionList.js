@@ -1,4 +1,4 @@
-import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, Pressable, InteractionManager, StyleSheet, useWindowDimensions } from 'react-native';
 import Animated, {
   Easing,
@@ -14,7 +14,6 @@ import { parseISO } from 'date-fns';
 import TransactionItem from './TransactionItem';
 import { formatCurrency } from '../utils/format';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
-import { CARD_COLOR } from './Glass';
 import { ChevronRight, BackIcon } from './icons';
 import { SETTLE_EASING } from './AmountField';
 
@@ -61,6 +60,17 @@ const DIVIDER_INSET = 58;
 // Drill rows have no date box, so their divider starts at the row's own
 // padding instead — still aligned with where that row's label begins.
 const DRILL_DIVIDER_INSET = 16;
+// Right-hand gap, so the divider stops short of the card edge the way it
+// does on the left instead of running flush to it. Matches the rows' own
+// horizontal padding (px-4), which lines the divider's end up with the
+// right edge of the amount text.
+const DIVIDER_INSET_END = 16;
+// The card's fill: CARD_COLOR (#161616) at 95% over the black page, written
+// as a solid hex rather than an rgba — the rows, their wrappers and the
+// drill rows all paint this same color, so a real alpha would stack on each
+// layer, and each swipeable row has to stay opaque or the delete button
+// underneath it shows through mid-swipe.
+const CARD_FILL_DARK = '#151515';
 
 // How long a step deeper (or back out) takes to slide across. The outgoing
 // and incoming content are on screen together for this whole window — one
@@ -75,11 +85,29 @@ const NAV_PARALLAX = 0.28;
 // A tab/range switch is a change of subject, not a move through anything,
 // so its content crossfades in place instead of sliding.
 const TAB_FADE_MS = 220;
-// How long the card takes to grow/shrink to a new content height. Matched
-// to the slide so a step that also changes the row count settles as one
-// motion rather than two.
-const CARD_HEIGHT_MS = 340;
-const CARD_HEIGHT_EASING = Easing.inOut(Easing.ease);
+// How long the card takes to grow/shrink to a new content height. Ease-OUT
+// (same family as the slide's SETTLE_EASING, just a touch less abrupt), not
+// the ease-in-out this used to be: an in-out curve barely moves for the
+// first ~15% of its duration, which on a resize read as the card hesitating
+// before it started. Ease-out is already moving at full speed on frame one.
+const CARD_HEIGHT_MS = 280;
+const CARD_HEIGHT_EASING = Easing.bezier(0.22, 1, 0.36, 1);
+const CARD_HEIGHT_TIMING = { duration: CARD_HEIGHT_MS, easing: CARD_HEIGHT_EASING };
+
+// Predicts the card's height for a piece of content from what's been
+// measured before, so a resize can start the moment the content swaps
+// instead of waiting to be told the real height (see cardHeight below).
+// `metrics` holds a per-row height for each kind of row list, and a whole-
+// layer height for the empty state. Rows are uniform within a kind, and
+// every row but the last carries a hairline divider, hence the trailing
+// subtraction. null = not measured yet, caller falls back to waiting for
+// the real measurement.
+function predictCardHeight(metrics, kind, count) {
+  if (kind === 'empty') return metrics.empty ?? null;
+  const rowH = metrics[kind];
+  if (rowH == null || count <= 0) return null;
+  return count * rowH - StyleSheet.hairlineWidth;
+}
 
 // Slides up + fades in on mount. Only ever plays for the list's very first
 // paint (see `revealing` in TransactionList) — switching tabs/periods
@@ -148,7 +176,7 @@ function DrillRow({ label, total, leading, dividerInset, isLast, cardColor, divi
         </View>
       </Pressable>
       {!isLast && (
-        <View style={{ height: StyleSheet.hairlineWidth, marginLeft: dividerInset, backgroundColor: dividerColor }} />
+        <View style={{ height: StyleSheet.hairlineWidth, marginLeft: dividerInset, marginRight: DIVIDER_INSET_END, backgroundColor: dividerColor }} />
       )}
     </View>
   );
@@ -220,7 +248,7 @@ function TransactionList({
   // The raised surface the rows sit on. This used to be the same colour as
   // the page behind it, which meant the per-row corner radii had nothing to
   // show against and the list read as loose text rather than a card.
-  const cardColor = light ? '#FFFFFF' : CARD_COLOR;
+  const cardColor = light ? '#FFFFFF' : CARD_FILL_DARK;
   const dividerColor = light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)';
   const isOverview = chartTab === 'overview';
   const isIncome   = activeTab === 'income';
@@ -484,7 +512,7 @@ function TransactionList({
             the row's sliding content. Inset to start where the label does
             rather than running the full width. */}
         {!isLast && (
-          <View style={{ height: StyleSheet.hairlineWidth, marginLeft: DIVIDER_INSET, backgroundColor: dividerColor }} />
+          <View style={{ height: StyleSheet.hairlineWidth, marginLeft: DIVIDER_INSET, marginRight: DIVIDER_INSET_END, backgroundColor: dividerColor }} />
         )}
       </Animated.View>
     );
@@ -640,23 +668,67 @@ function TransactionList({
   // month with a different number of them) grows or shrinks the card
   // smoothly instead of jumping. The first measurement is applied without
   // animating, since there's no previous height to travel from.
+  //
+  // onLayout alone is late, though: it only fires once the new layer's rows
+  // have all mounted and been laid out, plus a native→JS hop, so the resize
+  // used to sit still at the old height for that whole stretch — the pause
+  // between switching from an empty tab to a full one and the card
+  // opening up. So when the content swaps, the height is *predicted* from
+  // the row count and previously measured row heights (predictCardHeight)
+  // and the animation starts in the same commit, before the new layer has
+  // even laid out. onLayout stays as the source of truth: it records those
+  // row heights, and corrects the target if the prediction was off. A kind
+  // of content that has never been measured yet has no prediction and just
+  // waits for onLayout, as before.
   const cardHeight = useSharedValue(0);
   const measuredRef = useRef(false);
+  const targetHeightRef = useRef(0);
+  const metricsRef = useRef({});
   const contentKeyRef = useRef(contentKey);
   contentKeyRef.current = contentKey;
-  const onContentLayout = useCallback((key, e) => {
+
+  const contentKind =
+    level === 'years' ? 'years' :
+    level === 'months' ? 'months' :
+    items.length === 0 ? 'empty' : 'tx';
+  const contentCount =
+    level === 'years' ? yearRows.length :
+    level === 'months' ? monthRows.length :
+    items.length;
+
+  const onContentLayout = useCallback((key, kind, count, e) => {
     // A layer that's on its way out can still fire onLayout; only the one
     // actually being shown should drive the card's height.
     if (key !== contentKeyRef.current) return;
     const h = e.nativeEvent.layout.height;
     if (h === 0) return;
+    if (kind === 'empty') metricsRef.current.empty = h;
+    else if (count > 0) metricsRef.current[kind] = (h + StyleSheet.hairlineWidth) / count;
     if (!measuredRef.current) {
       measuredRef.current = true;
+      targetHeightRef.current = h;
       cardHeight.value = h;
       return;
     }
-    cardHeight.value = withTiming(h, { duration: CARD_HEIGHT_MS, easing: CARD_HEIGHT_EASING });
+    // Already heading here (the prediction was right) — re-issuing the same
+    // target would just restart the animation's clock mid-flight.
+    if (Math.abs(h - targetHeightRef.current) < 0.5) return;
+    targetHeightRef.current = h;
+    cardHeight.value = withTiming(h, CARD_HEIGHT_TIMING);
   }, [cardHeight]);
+
+  // Layout effect, not a regular one: this needs to run in the same commit
+  // that swaps the content, before paint. Only on a content swap (contentKey)
+  // — a row added or removed within the same content resizes through
+  // onLayout, alongside its own row transition.
+  useLayoutEffect(() => {
+    if (!measuredRef.current) return;
+    const predicted = predictCardHeight(metricsRef.current, contentKind, contentCount);
+    if (predicted == null || Math.abs(predicted - targetHeightRef.current) < 0.5) return;
+    targetHeightRef.current = predicted;
+    cardHeight.value = withTiming(predicted, CARD_HEIGHT_TIMING);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contentKey]);
   const cardHeightStyle = useAnimatedStyle(() => ({ height: cardHeight.value }));
 
   let rows;
@@ -716,7 +788,7 @@ function TransactionList({
             key={contentKey}
             entering={entering}
             exiting={exiting}
-            onLayout={e => onContentLayout(contentKey, e)}
+            onLayout={e => onContentLayout(contentKey, contentKind, contentCount, e)}
             style={{ position: 'absolute', left: 0, right: 0, top: 0 }}
           >
             {rows}

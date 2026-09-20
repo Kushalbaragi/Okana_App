@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../hooks/useTransactions';
 import { useBudget } from '../../hooks/useBudget';
+import { useSavings } from '../../hooks/useSavings';
 import { useSubscription } from '../../hooks/useSubscription';
 import { getSubscriptionDisplayStatus } from '../../utils/trial';
 import Header from '../../components/Header';
@@ -91,6 +92,9 @@ export default function Dashboard() {
   const { user } = useAuth();
   const { transactions, loading: txLoading, addTransaction, editTransaction, deleteTransaction, refresh: refreshTransactions } = useTransactions();
   const budget = useBudget(user, transactions);
+  // Lives here (not inside the calendar page) so goals are already loaded the
+  // first time it opens, same as the budget above.
+  const savings = useSavings();
   const { subscription, loading: subLoading, refresh: refreshSubscription } = useSubscription(user);
   const trialInfo = useMemo(() => getSubscriptionDisplayStatus(subscription, today()), [subscription]);
   const posthog = usePostHog();
@@ -147,8 +151,9 @@ export default function Dashboard() {
     useCallback(() => {
       refreshTransactions();
       budget.refresh();
+      savings.refresh();
       refreshSubscription();
-    }, [refreshTransactions, budget.refresh, refreshSubscription])
+    }, [refreshTransactions, budget.refresh, savings.refresh, refreshSubscription])
   );
 
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -186,19 +191,21 @@ export default function Dashboard() {
   // usage below for why this matters.
   const [addModalClosed, setAddModalClosed] = useState(true);
 
-  // Adding a transaction updates `transactions` optimistically the instant
-  // it's called — well before AddModal's own close animation even starts,
-  // since the sheet is still fully open at that point. Left alone, that
-  // means the amount/chart/list animations that are SUPPOSED to be the
-  // reveal all run to completion hidden behind the still-closing sheet, so
-  // by the time it's gone the screen just looks like it already "hard cut"
-  // to the new state. `holdReveal` freezes what SummaryCard/TransactionList
-  // are shown (via `displayTransactions` below) to a snapshot taken when
-  // the sheet opens, only letting the real (already-updated) data through
-  // once the sheet has actually finished closing — same stash-then-fire
-  // shape as pendingBudgetCrossedRef below, timed off the same
-  // addModalClosed flip. Only set from openAdd (not openEdit) — an edit's
-  // existing instant-update behavior is untouched.
+  // Adding or editing a transaction updates `transactions` optimistically
+  // the instant it's called — well before AddModal's own close animation
+  // even starts, since the sheet is still fully open at that point. Left
+  // alone, that means the amount/chart/list animations that are SUPPOSED to
+  // be the reveal all run to completion hidden behind the still-closing
+  // sheet, so by the time it's gone the screen just looks like it already
+  // "hard cut" to the new state. `holdReveal` freezes what
+  // SummaryCard/TransactionList are shown (via `displayTransactions` below)
+  // to a snapshot taken when the sheet opens, only letting the real
+  // (already-updated) data through once the sheet has actually finished
+  // closing — same stash-then-fire shape as pendingBudgetCrossedRef below,
+  // timed off the same addModalClosed flip. Set from both openAdd and
+  // openEdit so the two land on the home screen with identical timing;
+  // delete has no sheet, so TransactionItem holds it until the swipe row
+  // has closed instead.
   const frozenTransactionsRef = useRef(null);
   const [holdReveal, setHoldReveal] = useState(false);
   // The transaction that reveal just brought in — TransactionList uses this
@@ -536,7 +543,9 @@ export default function Dashboard() {
     setAddModalClosed(false);
     setEditData(tx);
     setModalOpen(true);
-  }, []);
+    frozenTransactionsRef.current = transactions;
+    setHoldReveal(true);
+  }, [transactions]);
 
   // First-run product tour for the three Home-screen habits: adding a
   // transaction, switching chart tabs, and swiping a row to edit/delete.
@@ -710,6 +719,7 @@ export default function Dashboard() {
         transactions={transactions}
         recap={recapForCalendar}
         budget={budgetForCalendar}
+        savings={savings}
         light={LIGHT_HOME}
         userId={user?.id}
       />

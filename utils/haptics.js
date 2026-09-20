@@ -14,3 +14,12 @@ export function hapticDeleted() {
   const Haptics = require('expo-haptics')
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
 }
+
+// The light tap a picker makes as each value passes under the selection — a
+// selection change, not an impact, so it stays a whisper even when a fling
+// fires dozens of them in a row.
+export function hapticTick() {
+  if (Platform.OS === 'web') return
+  const Haptics = require('expo-haptics')
+  Haptics.selectionAsync()
+}

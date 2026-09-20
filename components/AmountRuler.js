@@ -1,0 +1,242 @@
+import { memo, useCallback, useEffect, useRef } from 'react';
+import { View, Text, useWindowDimensions } from 'react-native';
+import Animated, { useSharedValue, useAnimatedScrollHandler, runOnJS } from 'react-native-reanimated';
+import Svg, { Defs, LinearGradient, Stop, Path, Rect, Text as SvgText } from 'react-native-svg';
+import { hapticTick } from '../utils/haptics';
+import { ROUNDED_FONT, dim } from './savingsShared';
+
+// A ruler you drag sideways to set an amount: the ticks scroll under a fixed
+// centre line and the value is whichever one sits under it.
+//
+// The scrolling is a plain horizontal ScrollView with `snapToInterval`, NOT a
+// hand-rolled pan gesture with its own inertia. The platform's own momentum and
+// rubber-banding are exactly what make a picker feel like a physical dial, and
+// they run natively; a JS approximation of them is both more code and worse.
+// Reanimated's scroll handler then reads the offset on the UI thread, so the
+// only JS work per tick is updating one number and firing a haptic.
+
+const SPACING = 9;
+// Breathing room at both ends so the first and last labels aren't half-clipped
+// by the SVG's own bounds.
+const PAD = 24;
+const HEIGHT = 62;
+const TICK_TOP = 8;
+const MINOR_H = 14;
+const MAJOR_H = 26;
+// Every tenth tick is taller and carries a label.
+const MAJOR_EVERY = 10;
+const LABEL_Y = 48;
+const FADE_W = 44;
+
+// The step between ticks grows with the amount. A flat step can't serve both
+// ends: fine enough for a ₹20,000 goal means thousands of ticks to reach ₹20
+// lakh. Widening it keeps small goals precise and big ones a few swipes away.
+// Each use gets its own set of bands — a monthly budget lives at a smaller
+// scale than a savings goal, so it wants finer steps down there.
+export const GOAL_BANDS = [
+  { upTo: 100000, step: 1000 },
+  { upTo: 1000000, step: 10000 },
+  { upTo: 5000000, step: 50000 },
+];
+
+export const BUDGET_BANDS = [
+  { upTo: 20000, step: 500 },
+  { upTo: 100000, step: 1000 },
+  { upTo: 1000000, step: 10000 },
+];
+
+// "5K", "1.5L", "1Cr" — short enough to sit under a tick without crowding
+// its neighbours.
+function shortLabel(v) {
+  if (v === 0) return '0';
+  if (v >= 10000000) return `${+(v / 10000000).toFixed(1)}Cr`;
+  if (v >= 100000) return `${+(v / 100000).toFixed(1)}L`;
+  return `${Math.round(v / 1000)}K`;
+}
+
+// Everything that depends only on the bands, built once at module load: the
+// tick values, and every tick as two path strings (one for the short ones, one
+// for the tall) so the whole ruler is two native nodes instead of a few
+// hundred. The ruler is otherwise the same at every size and in every theme.
+export function createScale(bands) {
+  const ticks = [0];
+  let prev = 0;
+  for (const band of bands) {
+    for (let v = prev + band.step; v <= band.upTo; v += band.step) ticks.push(v);
+    prev = band.upTo;
+  }
+  const count = ticks.length;
+
+  let minor = '';
+  let major = '';
+  const labels = [];
+  for (let i = 0; i < count; i++) {
+    const x = PAD + i * SPACING;
+    if (i % MAJOR_EVERY === 0) {
+      major += `M${x} ${TICK_TOP}V${TICK_TOP + MAJOR_H}`;
+      labels.push({ x, text: shortLabel(ticks[i]) });
+    } else {
+      minor += `M${x} ${TICK_TOP}V${TICK_TOP + MINOR_H}`;
+    }
+  }
+
+  // Nearest tick to a value — an amount typed before this picker existed (or
+  // one carried over from an older goal or budget) won't sit exactly on one.
+  function nearestTickIndex(value) {
+    if (!(value > 0)) return 0;
+    let lo = 0, hi = count - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (ticks[mid] < value) lo = mid + 1; else hi = mid;
+    }
+    if (lo > 0 && value - ticks[lo - 1] < ticks[lo] - value) return lo - 1;
+    return lo;
+  }
+
+  return {
+    ticks,
+    count,
+    trackWidth: (count - 1) * SPACING + PAD * 2,
+    minorPath: minor,
+    majorPath: major,
+    labels,
+    min: ticks[1],
+    max: ticks[count - 1],
+    nearestTickIndex,
+  };
+}
+
+export const GOAL_SCALE = createScale(GOAL_BANDS);
+export const BUDGET_SCALE = createScale(BUDGET_BANDS);
+
+export const MIN_TARGET = GOAL_SCALE.min;
+
+// One edge of the ruler dissolving into the sheet, so ticks arrive and leave
+// rather than being cut off at a hard border.
+function EdgeFade({ side, color }) {
+  const id = `ruler-fade-${side}`;
+  return (
+    <Svg
+      width={FADE_W}
+      height={HEIGHT}
+      pointerEvents="none"
+      style={{ position: 'absolute', top: 0, [side]: 0 }}
+    >
+      <Defs>
+        <LinearGradient id={id} x1={side === 'left' ? '0' : '1'} y1="0" x2={side === 'left' ? '1' : '0'} y2="0">
+          <Stop offset="0" stopColor={color} stopOpacity="1" />
+          <Stop offset="1" stopColor={color} stopOpacity="0" />
+        </LinearGradient>
+      </Defs>
+      <Rect width={FADE_W} height={HEIGHT} fill={`url(#${id})`} />
+    </Svg>
+  );
+}
+
+// `sessionKey` changing means "start again from initialValue" — the sheet
+// reopening, say. The scroll position is the source of truth the rest of the
+// time, so the value is reported out rather than pushed in.
+function AmountRuler({ initialValue, sessionKey, onChange, light = false, surface, scale = GOAL_SCALE }) {
+  const { width } = useWindowDimensions();
+  // Pulled out as plain values: the scroll handler below is a worklet, and
+  // capturing the whole scale would copy every tick across to the UI thread.
+  const { ticks, count, trackWidth, minorPath, majorPath, labels, nearestTickIndex } = scale;
+  const scrollRef = useRef(null);
+  const lastIndex = useSharedValue(nearestTickIndex(initialValue));
+  const lastHapticRef = useRef(0);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  const report = useCallback((index) => {
+    onChangeRef.current(ticks[index]);
+    // A fast fling crosses ticks quicker than a tap can be felt as separate;
+    // spacing them out keeps the ruler buzzing rather than mushing.
+    const now = Date.now();
+    if (now - lastHapticRef.current > 24) {
+      lastHapticRef.current = now;
+      hapticTick();
+    }
+  }, [ticks]);
+
+  useEffect(() => {
+    const index = nearestTickIndex(initialValue);
+    // Set this BEFORE scrolling: the scroll handler only reports a change, so
+    // agreeing with it up front keeps the jump silent — no haptic, and no
+    // overwriting an exact value that doesn't sit on a tick.
+    lastIndex.value = index;
+    scrollRef.current?.scrollTo({ x: index * SPACING, animated: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionKey]);
+
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      const raw = Math.round(e.contentOffset.x / SPACING);
+      const index = raw < 0 ? 0 : raw > count - 1 ? count - 1 : raw;
+      if (index !== lastIndex.value) {
+        lastIndex.value = index;
+        runOnJS(report)(index);
+      }
+    },
+  });
+
+  const tickColor = light ? 'rgba(0,0,0,0.22)' : 'rgba(255,255,255,0.20)';
+  const majorColor = light ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.38)';
+  const labelColor = light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)';
+
+  return (
+    <View style={{ height: HEIGHT }}>
+      <Animated.ScrollView
+        ref={scrollRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        snapToInterval={SPACING}
+        decelerationRate="fast"
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
+        // Half the screen of empty space at each end, so the first and last
+        // ticks can still reach the centre line.
+        contentContainerStyle={{ paddingHorizontal: width / 2 - PAD }}
+        contentOffset={{ x: nearestTickIndex(initialValue) * SPACING, y: 0 }}
+      >
+        <Svg width={trackWidth} height={HEIGHT}>
+          <Path d={minorPath} stroke={tickColor} strokeWidth="1.5" strokeLinecap="round" />
+          <Path d={majorPath} stroke={majorColor} strokeWidth="2" strokeLinecap="round" />
+          {labels.map(mark => (
+            <SvgText key={mark.x} x={mark.x} y={LABEL_Y} fontSize="11" fill={labelColor} textAnchor="middle">
+              {mark.text}
+            </SvgText>
+          ))}
+        </Svg>
+      </Animated.ScrollView>
+
+      <EdgeFade side="left" color={surface} />
+      <EdgeFade side="right" color={surface} />
+
+      {/* The selection itself: whatever sits under this line is the value. */}
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute', left: '50%', marginLeft: -1.25, top: 2,
+          width: 2.5, height: MAJOR_H + 8, borderRadius: 2, backgroundColor: '#4ade80',
+        }}
+      />
+    </View>
+  );
+}
+
+export default memo(AmountRuler);
+
+const figureFormat = new Intl.NumberFormat('en-IN');
+
+// The readout that goes above the ruler: the amount it is currently on, big,
+// with a dimmed rupee sign.
+export function RulerFigure({ value, light = false }) {
+  return (
+    <Text
+      style={{ fontSize: 42, lineHeight: 50, fontWeight: '600', letterSpacing: -1, color: light ? '#111111' : '#ffffff', fontFamily: ROUNDED_FONT }}
+    >
+      <Text style={{ fontSize: 26, fontWeight: '400', color: dim(light) }}>₹ </Text>
+      {figureFormat.format(value)}
+    </Text>
+  );
+}

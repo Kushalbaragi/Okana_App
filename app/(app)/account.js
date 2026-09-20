@@ -648,6 +648,10 @@ export default function AccountPage() {
         step = 'budget';
         const { error: budgetError } = await supabase.from('monthly_budgets').delete().eq('user_id', user.id);
         if (budgetError) throw budgetError;
+        // Entries go with their goals (ON DELETE CASCADE).
+        step = 'savings';
+        const { error: savingsError } = await supabase.from('savings_goals').delete().eq('user_id', user.id);
+        if (savingsError) throw savingsError;
         // Lets the budget-setup popup fire again on the next Dashboard visit —
         // otherwise the "already shown this month" flag would keep suppressing
         // it even though there's no budget anymore.
@@ -662,7 +666,9 @@ export default function AccountPage() {
       setActionError(
         step === 'budget'
           ? `Your transactions were erased, but budgets couldn't be — ${err.message || 'please try again'}.`
-          : err.message || 'Something went wrong. Please try again.'
+          : step === 'savings'
+            ? `Your transactions and budgets were erased, but savings goals couldn't be — ${err.message || 'please try again'}.`
+            : err.message || 'Something went wrong. Please try again.'
       );
     }
   }
@@ -686,6 +692,12 @@ export default function AccountPage() {
         step = 'budget';
         const { error: budgetError } = await supabase.from('monthly_budgets').delete().eq('user_id', user.id);
         if (budgetError) throw budgetError;
+        // Cleared explicitly like the rest, even though the FK cascades, so a
+        // failure here reads as a savings problem rather than a mystery
+        // failure of delete_user().
+        step = 'savings';
+        const { error: savingsError } = await supabase.from('savings_goals').delete().eq('user_id', user.id);
+        if (savingsError) throw savingsError;
         step = 'account';
         const { error: rpcError } = await supabase.rpc('delete_user');
         if (rpcError) throw rpcError;
@@ -700,7 +712,7 @@ export default function AccountPage() {
       setActionFlow(null);
       if (isConnectivityError(err, isOnline)) { notifyOffline(); return; }
       reportError(err);
-      const partial = step === 'budget' || step === 'account';
+      const partial = step === 'budget' || step === 'savings' || step === 'account';
       setActionError(
         partial
           ? `Your transactions were deleted, but your account couldn't be fully removed — ${err.message || 'please try again'}.`

@@ -43,18 +43,20 @@ const BLUR_MAX = 14;
 // actually register as "rising from below" rather than popping in place.
 const ENTER_RISE = 26;
 
-// Mirrors the entrance in reverse: fades out, re-blurs, and drifts *up*
+// Mirrors the entrance in reverse: fades out, shrinks, and drifts *up*
 // and away (entrance comes from below) — instead of a typed-over digit
 // just vanishing outright when backspaced. Reanimated's `exiting` prop
 // keeps the outgoing character mounted just long enough to actually play
-// this before removing it from the tree.
+// this before removing it from the tree. No blur on the way out —
+// textShadowRadius isn't a supported layout-animation prop (Reanimated
+// warns and may not apply it), unlike the entrance, which animates it
+// through useAnimatedStyle.
 function digitExiting() {
   'worklet';
   return {
     initialValues: {
       opacity: 1,
       transform: [{ scale: 1 }, { translateY: 0 }],
-      textShadowRadius: 0,
     },
     animations: {
       opacity: withTiming(0, { duration: EXIT_DURATION, easing: Easing.in(Easing.cubic) }),
@@ -62,7 +64,6 @@ function digitExiting() {
         { scale: withTiming(0.5, { duration: EXIT_DURATION, easing: Easing.in(Easing.cubic) }) },
         { translateY: withTiming(-16, { duration: EXIT_DURATION, easing: Easing.in(Easing.cubic) }) },
       ],
-      textShadowRadius: withTiming(BLUR_MAX, { duration: EXIT_DURATION * 0.75, easing: Easing.out(Easing.cubic) }),
     },
   };
 }
@@ -76,11 +77,11 @@ function digitExiting() {
 // existing digits are stable-keyed by index so they never remount/replay
 // it, and it's skipped entirely when the field is populated
 // programmatically (opening pre-filled) rather than typed. Backspacing a
-// digit plays the same effect in reverse via `exiting` above.
+// digit plays a fade/shrink/rise-away via `exiting` above.
 // `delay` is optional (default 0, matching every existing caller's
 // immediate-on-keystroke behavior) — used by SummaryCard's headline to
 // stagger a fresh set of digits in left-to-right instead of all at once.
-// `instantExit` skips the blur/scale/rise-away exit entirely (an outgoing
+// `instantExit` skips the scale/rise-away exit entirely (an outgoing
 // digit just disappears immediately) — SummaryCard's headline wants the
 // *old* value gone at once so the *new* one's own entrance can start right
 // away, rather than waiting out a whole exit animation on a value the user

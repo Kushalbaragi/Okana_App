@@ -8,6 +8,12 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 const AnimatedLine = Animated.createAnimatedComponent(Line);
 const AnimatedSvgText = Animated.createAnimatedComponent(SvgText);
 
+// The two bar colours. A chart is normally all one (isIncome picks which), but
+// `negative` below lets individual bars flip to red — used by the savings
+// goal chart, where a month can be net-positive or net-negative.
+const GREEN_TONE = { active: 'rgba(74,222,128,0.95)', dim: 'rgba(74,222,128,0.62)' };
+const RED_TONE   = { active: 'rgba(255,75,75,0.92)',  dim: 'rgba(255,75,75,0.56)' };
+
 const BAR_HEIGHT = 110;
 const CHART_W    = 264;
 // A flat per-bar step (capped, not spread proportionally across a fixed
@@ -196,7 +202,10 @@ function NoSpendDot({ cx, cy, r, fill, delay }) {
 // don't correspond to a real period at all — those keep their empty slot's
 // spacing but lose the label, since a label there isn't "a day that hasn't
 // happened yet," it's not a period the account will ever have.
-function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, showAverage = false }) {
+// `negative` is an optional array of booleans, one per value: a true entry draws
+// that bar in the red tone even when the chart is otherwise green (and vice
+// versa). Omit it and every bar uses the chart's own isIncome colour, as before.
+function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, negative, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, showAverage = false }) {
   const n       = values.length;
   const GROUP_W = CHART_W / n;
   const BAR_W   = Math.min(16, Math.max(6, GROUP_W - 10));
@@ -211,8 +220,7 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
   // this is NOT the danger red used on destructive UI (248,113,113), nor
   // the delete button's own systemRed; both of those are button states
   // rather than data, and are deliberately left alone.
-  const activeColor = isIncome ? 'rgba(74,222,128,0.95)' : 'rgba(255,75,75,0.92)';
-  const dimColor    = isIncome ? 'rgba(74,222,128,0.62)' : 'rgba(255,75,75,0.56)';
+  const baseTone = isIncome ? GREEN_TONE : RED_TONE;
   const gridColor       = light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)';
   const labelActiveColor = light ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.85)';
   const labelDimColor    = light ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.22)';
@@ -349,6 +357,7 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
         // the one most likely sitting right at this knife's-edge value.
         const h          = Math.round(useSqrtScale ? Math.sqrt(v / maxVal) * BAR_HEIGHT : (v / maxVal) * BAR_HEIGHT);
         const isActive   = i === activeIndex;
+        const tone       = negative ? (negative[i] ? RED_TONE : GREEN_TONE) : baseTone;
         const isDisabled = disabledAfterIndex != null && i > disabledAfterIndex;
         const isBeforeStart = disabledBeforeIndex != null && i < disabledBeforeIndex;
         const hasData    = h > 0;
@@ -369,7 +378,7 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
                 rx={BAR_W / 3}
                 targetHeight={h}
                 delay={Math.min(i * BAR_STAGGER_STEP_MS, BAR_STAGGER_CAP_MS)}
-                fill={isActive ? activeColor : dimColor}
+                fill={isActive ? tone.active : tone.dim}
                 maskColor={bgColor}
               />
             ) : (

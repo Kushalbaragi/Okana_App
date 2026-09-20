@@ -20,6 +20,10 @@ const DELETE_HIT_SLOP = 7;
 // wash the full-bleed block used — a small circle needs the full weight to
 // read as the destructive action at this size.
 const DELETE_RED = '#FF453A';
+// How long a tapped delete waits for the swipe row's own close to report
+// finishing before applying anyway — comfortably past that spring's real
+// duration, so it only ever matters when the close event doesn't arrive.
+const DELETE_FALLBACK_MS = 600;
 
 function DateBox({ dateStr, light }) {
   const { day, month } = dateBoxParts(dateStr);
@@ -91,12 +95,31 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
     registerSwipeable?.(tx.id, r);
   }, [tx.id, registerSwipeable]);
 
+  // Delete is applied once the swipe row has finished closing, not the
+  // instant the trash button is tapped — the same "let the interaction
+  // finish, then apply the change" timing add/edit get from AddModal's
+  // close (see holdReveal in the home screen). Removing the row while its
+  // swipe is still sliding shut makes the list jump under the animation.
+  // onSwipeableClose is the normal trigger; the timer is a backstop for a
+  // close that never reports finishing (interrupted by a new drag, or the
+  // row unmounting first) so a tapped delete can't be silently lost.
+  // pendingDeleteRef makes whichever fires first the only one that runs.
+  const pendingDeleteRef = useRef(false);
+
+  const commitDelete = useCallback(() => {
+    if (!pendingDeleteRef.current) return;
+    pendingDeleteRef.current = false;
+    onDelete(tx.id);
+  }, [tx.id, onDelete]);
+
   const handleDelete = useCallback(() => {
+    if (pendingDeleteRef.current) return;
+    pendingDeleteRef.current = true;
     swipeableRef.current?.close();
     // Heavy impact — the strongest discrete pulse the API offers.
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    onDelete(tx.id);
-  }, [tx.id, onDelete]);
+    setTimeout(commitDelete, DELETE_FALLBACK_MS);
+  }, [commitDelete]);
 
   // Tapping a row opens it for editing. An already-open swipe takes
   // priority and swallows the tap (onCardPress returns true when it closed
@@ -177,6 +200,7 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
         <RightActions drag={drag} onDelete={handleDelete} />
       )}
       onSwipeableWillOpen={() => onSwipeOpen?.(tx.id)}
+      onSwipeableClose={commitDelete}
     >
       {row}
     </ReanimatedSwipeable>
