@@ -15,8 +15,8 @@ import TransactionItem from './TransactionItem';
 import { formatCurrency } from '../utils/format';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { ChevronRight, BackIcon } from './icons';
-import { SETTLE_EASING } from './AmountField';
 import { CARD_RADIUS, SMOOTH } from './Glass';
+import { SETTLE_EASING } from '../utils/motion';
 
 // Same spring shape as AmountField's AMOUNT_LAYOUT_TRANSITION (proven
 // smooth for this app's other retriggered repositioning), tuned a touch

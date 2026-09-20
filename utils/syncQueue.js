@@ -1,12 +1,17 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import { storageKeys } from './storageKeys'
+import { reportError } from './errors'
 
-const queueKey = (userId) => `okana_sync_queue_${userId}`
+const queueKey = storageKeys.syncQueue
 
 export async function loadQueue(userId) {
   try {
     const raw = await AsyncStorage.getItem(queueKey(userId))
     return raw ? JSON.parse(raw) : []
-  } catch {
+  } catch (err) {
+    // An unreadable queue is treated as empty so the app carries on, but the
+    // changes that were in it are gone — worth knowing about.
+    reportError(err)
     return []
   }
 }
@@ -14,7 +19,11 @@ export async function loadQueue(userId) {
 export async function saveQueue(userId, queue) {
   try {
     await AsyncStorage.setItem(queueKey(userId), JSON.stringify(queue))
-  } catch { /* best-effort, same as the transaction cache */ }
+  } catch (err) {
+    // The queue is the only copy of a change made offline, so a write that
+    // fails here is a change that will never reach the server.
+    reportError(err)
+  }
 }
 
 // Serializes every load-modify-save cycle against a given user's queue.

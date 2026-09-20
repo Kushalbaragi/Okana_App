@@ -1,18 +1,20 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Modal, View, Text, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, Easing, runOnJS } from 'react-native-reanimated';
 import { GlassPressable, POPUP_RADIUS, SMOOTH, CARD_RADIUS } from './Glass';
-import { NumericKeypad, nextAmountValue } from './NumericKeypad';
-import { AmountRow, SETTLE_EASING } from './AmountField';
+import { NumericKeypad } from './NumericKeypad';
+import { useAmountEntry } from '../hooks/useAmountEntry';
+import { AmountRow } from './AmountField';
 import AmountRuler, { RulerFigure, BUDGET_SCALE } from './AmountRuler';
 import { TrendArrowIcon } from './icons';
 import { SuccessBadge } from './SuccessBadge';
 import { formatCurrency, currentMonthYear } from '../utils/format';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { FLAGS } from '../utils/flags';
+import { hapticAdded } from '../utils/haptics';
+import { SETTLE_EASING } from '../utils/motion';
 
 // Same drag-to-dismiss tuning as AddModal — one consistent feel for every
 // bottom-sheet page in the app.
@@ -70,7 +72,7 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
   // were — and `session` tells the ruler to go back there on each open.
   const rulerOn = FLAGS.budgetRuler;
   const startValue = lastMonthAmount ?? DEFAULT_BUDGET;
-  const [amount, setAmount] = useState(rulerOn ? String(startValue) : '');
+  const { amount, prevAmountLength, skipDigitAnim, onKeyPress: handleKeypadPress, setProgrammatic: setAmountProgrammatically } = useAmountEntry(rulerOn ? String(startValue) : '');
   const [session, setSession] = useState(0);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -79,27 +81,6 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
   // CONFIRM_HOLD_MS before auto-closing. Null means "show the form".
   const [confirmDelta, setConfirmDelta] = useState(null);
   const confirmProgress = useSharedValue(0);
-
-  const prevAmountLengthRef = useRef(0);
-  const prevAmountLength = prevAmountLengthRef.current;
-  useEffect(() => {
-    prevAmountLengthRef.current = amount.length;
-  });
-  const skipDigitAnimRef = useRef(true);
-
-  // NumericKeypad is memo()-wrapped — see AddModal's identical pattern for
-  // why onKeyPress goes through a ref instead of being handed inline (this
-  // modal re-renders on every keystroke via `amount`, which would otherwise
-  // hand NumericKeypad a fresh onKeyPress each time and defeat its memo).
-  const handleKeypadPressRef = useRef();
-  handleKeypadPressRef.current = (key) => {
-    const next = nextAmountValue(amount, key);
-    if (next !== amount) {
-      skipDigitAnimRef.current = false;
-      setAmount(next);
-    }
-  };
-  const handleKeypadPress = useCallback((key) => handleKeypadPressRef.current(key), []);
 
   // Same "keep the native Modal mounted through the close animation" setup
   // as AddModal — see the comment there for why.
@@ -144,8 +125,7 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
 
   useEffect(() => {
     if (open) {
-      skipDigitAnimRef.current = true;
-      setAmount(rulerOn ? String(startValue) : '');
+      setAmountProgrammatically(rulerOn ? String(startValue) : '');
       setSession(n => n + 1);
       setError('');
       setSubmitting(false);
@@ -191,7 +171,7 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
     // A queued (offline) set is still a success here — same as adding a
     // transaction offline, it applies locally and syncs once reconnected;
     // useBudget's setBudget already showed the offline banner.
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    hapticAdded();
     if (lastMonthAmount != null && val !== lastMonthAmount) {
       confirmProgress.value = withTiming(1, { duration: 520, easing: SETTLE_EASING });
       setConfirmDelta({ diff: Math.abs(val - lastMonthAmount), up: val > lastMonthAmount });
@@ -305,13 +285,13 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
                         scale={BUDGET_SCALE}
                         initialValue={startValue}
                         sessionKey={session}
-                        onChange={v => setAmount(String(v))}
+                        onChange={v => setAmountProgrammatically(String(v))}
                         surface={SHEET_COLOR}
                       />
                     </>
                   ) : (
                     <View className="items-center mb-6">
-                      <AmountRow amount={amount} prevAmountLength={prevAmountLength} skipDigitAnim={skipDigitAnimRef.current} />
+                      <AmountRow amount={amount} prevAmountLength={prevAmountLength} skipDigitAnim={skipDigitAnim} />
                     </View>
                   )}
 

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { View, Text, Pressable, useWindowDimensions } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { CARD_RADIUS, SMOOTH } from './Glass';
+import { SETTLE_EASING } from '../utils/motion';
 
 // Same "settle" ease-out-expo feel used everywhere else in the app.
-const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 const TOOLTIP_MARGIN = 14;
 const TOOLTIP_WIDTH = 280;
 const HOLE_PADDING = 8;

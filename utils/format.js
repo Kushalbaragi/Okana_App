@@ -1,7 +1,6 @@
 import { parseISO, getDaysInMonth } from 'date-fns'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-const MONTHS_ABBR  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 export function formatCurrency(amount) {
   return new Intl.NumberFormat('en-IN', {
@@ -49,7 +48,16 @@ export function shiftDate(dateStr, days) {
 
 export function dateBoxParts(dateStr) {
   const d = parseISO(dateStr)
-  return { day: d.getDate(), month: MONTHS_ABBR[d.getMonth()].toUpperCase() }
+  return { day: d.getDate(), month: MONTHS[d.getMonth()].toUpperCase() }
+}
+
+// "Today", "Yesterday", or "12 Sep 2026" — how a date reads on the button that
+// opens the calendar in the add-transaction and savings sheets.
+export function formatDayLabel(dateStr) {
+  const todayStr = today()
+  if (dateStr === todayStr) return 'Today'
+  if (dateStr === shiftDate(todayStr, -1)) return 'Yesterday'
+  return formatDateFull(dateStr)
 }
 
 export function formatDateFull(dateStr) {

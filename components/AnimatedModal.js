@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Modal, View, Pressable, StyleSheet, useWindowDimensions, Platform, Keyboard } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
 import { DialogBackdrop } from './DialogBackdrop';
+import { SETTLE_EASING } from '../utils/motion';
 
 // Shared fade-backdrop + slide/scale-content shell, extracted from AddModal's
 // pattern. RN's built-in Modal animationType only animates the whole modal
@@ -52,7 +53,7 @@ export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', dim
     if (open) {
       setVisible(true);
       backdropOpacity.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) });
-      progress.value = withTiming(1, { duration: 380, easing: Easing.bezier(0.16, 1, 0.3, 1) });
+      progress.value = withTiming(1, { duration: 380, easing: SETTLE_EASING });
     } else {
       backdropOpacity.value = withTiming(0, { duration: 220, easing: Easing.in(Easing.cubic) });
       progress.value = withTiming(

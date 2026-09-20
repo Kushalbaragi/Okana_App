@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { View, Text, Pressable, useWindowDimensions } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
 import Animated from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
@@ -10,6 +9,7 @@ import { isConnectivityError, reportError } from '../../utils/errors';
 import { NumericKeypad, DIGIT_ONLY_KEYPAD_ROWS } from '../../components/NumericKeypad';
 import { BackIcon } from '../../components/icons';
 import { useShake } from '../../hooks/useShake';
+import { hapticAdded, hapticTick } from '../../utils/haptics';
 
 // Must match the "Email OTP Length" set in Supabase Dashboard ->
 // Authentication -> Sign In / Providers -> Email, or auto-submit fires
@@ -59,7 +59,7 @@ export default function OtpScreen() {
     setError('');
     try {
       const { isNewUser } = await verifyOtp({ email, token: fullCode });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      hapticAdded();
       if (isNewUser) {
         router.replace({ pathname: '/(auth)/name' });
       } else {
@@ -80,7 +80,7 @@ export default function OtpScreen() {
 
   function handleKeyPress(key) {
     if (verifying) return;
-    Haptics.selectionAsync();
+    hapticTick();
     setError('');
     if (key === 'backspace') {
       setCode(c => c.slice(0, -1));

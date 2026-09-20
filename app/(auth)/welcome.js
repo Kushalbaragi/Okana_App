@@ -15,13 +15,14 @@ import { useAudioPlayer } from 'expo-audio';
 import { useAuth } from '../../context/AuthContext';
 import { SuccessBadge } from '../../components/SuccessBadge';
 import { ChevronRight } from '../../components/icons';
+import { reportError } from '../../utils/errors';
+import { SETTLE_EASING } from '../../utils/motion';
 
 const SUCCESS_SOUND = require('../../assets/sounds/success.wav');
 
 // Shared "settle" ease-out-expo feel used for every reveal in this flow —
 // keeps the whole sequence reading as one calm motion language rather than
 // a pile of one-off effects.
-const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 
 const ITEM_DURATION_MS = 650;
 const HOLD_MS = 6000; // dwell time on a popup/reveal page before auto-advancing
@@ -243,7 +244,8 @@ export default function WelcomeScreen() {
   }
 
   function finish() {
-    if (user) AsyncStorage.setItem(welcomeSeenKey(user.id), '1');
+    // If this can't be saved, the welcome carousel just shows again next launch.
+    if (user) AsyncStorage.setItem(welcomeSeenKey(user.id), '1').catch(reportError);
     router.replace('/(app)');
   }
 

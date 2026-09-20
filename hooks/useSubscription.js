@@ -2,14 +2,17 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { useNetwork } from '../context/NetworkContext';
+import { isConnectivityError, reportError } from '../utils/errors';
+import { storageKeys } from '../utils/storageKeys';
 
-const cacheKey = (userId) => `okana_subscription_cache_${userId}`;
+const cacheKey = storageKeys.subscription;
 
 async function loadCachedSubscription(userId) {
   try {
     const raw = await AsyncStorage.getItem(cacheKey(userId));
     return raw ? JSON.parse(raw) : null;
-  } catch {
+  } catch (err) {
+    reportError(err);
     return null;
   }
 }
@@ -18,8 +21,9 @@ async function saveCachedSubscription(userId, data) {
   try {
     if (data) await AsyncStorage.setItem(cacheKey(userId), JSON.stringify(data));
     else await AsyncStorage.removeItem(cacheKey(userId));
-  } catch {
-    // best-effort
+  } catch (err) {
+    // Best-effort: the subscription still works without its cache.
+    reportError(err);
   }
 }
 
@@ -82,12 +86,14 @@ export function useSubscription(user) {
       setSubscription(data);
       await saveCachedSubscription(user.id, data);
       return data;
-    } catch {
+    } catch (err) {
       // Supabase returns network failures as `{ data: null, error }` rather
       // than throwing, so this catches both that and a genuine thrown
       // error the same way — either means "couldn't refresh", not "there's
       // no subscription". Fall back to the last synced state on disk
-      // instead of leaving it cleared to null.
+      // instead of leaving it cleared to null. A dropped connection is
+      // expected; anything else (a rejected query, say) is reported.
+      if (!isConnectivityError(err, isOnlineRef.current)) reportError(err);
       const cached = await loadCachedSubscription(user.id);
       if (user.id === latestUserIdRef.current && cached) setSubscription(cached);
       return cached;

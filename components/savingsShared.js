@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
 import { Platform, View } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
-import { SETTLE_EASING } from './AmountField';
 import { formatCurrency, formatCurrencyFull } from '../utils/format';
 import { CARD_RADIUS, SMOOTH } from './Glass';
+import { SETTLE_EASING } from '../utils/motion';
 
 // Small pieces shared by the savings list and its goal cards.
 

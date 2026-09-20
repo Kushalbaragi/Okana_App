@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNetwork } from '../context/NetworkContext'
 import { isConnectivityError, reportError } from '../utils/errors'
+import { storageKeys } from '../utils/storageKeys'
 import { hapticAdded, hapticDeleted } from '../utils/haptics'
 import { today } from '../utils/format'
 
@@ -35,7 +36,7 @@ const EMPTY = { goals: [], entries: [] }
 const OFFLINE_MESSAGE = "You're offline. Try again once you're back online."
 const FALLBACK_MESSAGE = 'Something went wrong. Please try again.'
 
-const cacheKey = (userId) => `okana_savings_${userId}`
+const cacheKey = storageKeys.savings
 
 async function saveCache(userId, store) {
   // Best-effort: the list works without its cache, but a failing write is worth knowing about.

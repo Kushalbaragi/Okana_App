@@ -3,7 +3,7 @@ import { Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { useNetwork } from '../context/NetworkContext';
-import { SETTLE_EASING } from './AmountField';
+import { SETTLE_EASING } from '../utils/motion';
 
 const COPY = {
   offline: { text: "You're offline", color: 'rgba(255,255,255,0.55)' },

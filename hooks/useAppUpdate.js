@@ -3,6 +3,7 @@ import { Platform } from 'react-native'
 import Constants from 'expo-constants'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from '../lib/supabase'
+import { isConnectivityError, reportError } from '../utils/errors'
 
 const DISMISSED_KEY = 'okana_dismissed_update_version'
 
@@ -37,21 +38,29 @@ export function useAppUpdate() {
     const platform = Platform.OS === 'ios' ? 'ios' : 'android'
 
     ;(async () => {
-      const { data, error } = await supabase
-        .from('app_config')
-        .select('latest_version')
-        .eq('id', platform)
-        .single()
-      if (cancelled || error || !data) return
+      try {
+        const { data, error } = await supabase
+          .from('app_config')
+          .select('latest_version')
+          .eq('id', platform)
+          .single()
+        if (error) throw error
+        if (cancelled || !data) return
 
-      setLatestVersion(data.latest_version)
-      if (!isNewer(data.latest_version, currentVersion)) return
+        setLatestVersion(data.latest_version)
+        if (!isNewer(data.latest_version, currentVersion)) return
 
-      const dismissedVersion = await AsyncStorage.getItem(DISMISSED_KEY)
-      if (cancelled) return
-      if (dismissedVersion && !isNewer(data.latest_version, dismissedVersion)) return
+        const dismissedVersion = await AsyncStorage.getItem(DISMISSED_KEY)
+        if (cancelled) return
+        if (dismissedVersion && !isNewer(data.latest_version, dismissedVersion)) return
 
-      setShowUpdate(true)
+        setShowUpdate(true)
+      } catch (err) {
+        // Not being able to check for an update (offline, say) just means no
+        // prompt this time. A dropped connection is expected; anything else
+        // (the table missing, a rejected query) is reported.
+        if (!isConnectivityError(err)) reportError(err)
+      }
     })()
 
     return () => { cancelled = true }
@@ -60,7 +69,8 @@ export function useAppUpdate() {
 
   const dismiss = () => {
     setShowUpdate(false)
-    if (latestVersion) AsyncStorage.setItem(DISMISSED_KEY, latestVersion)
+    // If this can't be saved the prompt just shows again next time.
+    if (latestVersion) AsyncStorage.setItem(DISMISSED_KEY, latestVersion).catch(reportError)
   }
 
   return { showUpdate, latestVersion, dismiss }

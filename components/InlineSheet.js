@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Keyboard, View, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
-import { SETTLE_EASING } from './AmountField';
 import { POPUP_RADIUS, SMOOTH } from './Glass';
+import { SETTLE_EASING } from '../utils/motion';
 
 // Backdrop opacity while open — the same soft tint AddModal uses.
 const BACKDROP_MAX_OPACITY = 0.55;

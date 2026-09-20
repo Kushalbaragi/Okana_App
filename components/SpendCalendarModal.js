@@ -17,7 +17,6 @@ import {
 } from '../utils/format';
 import { MONTH_NAMES as MONTHS } from '../utils/monthlyRecap';
 import BudgetStatusBar from './BudgetStatusBar';
-import { SETTLE_EASING } from './AmountField';
 import { TourHint } from './TourHint';
 import { BackIcon } from './icons';
 import SegmentedSwitch from './SegmentedSwitch';
@@ -25,6 +24,7 @@ import SavingsSection, { SavingsSheetsHost, useSavingsUI } from './SavingsSectio
 import SavingsBoundary from './SavingsBoundary';
 import ErrorBoundary from './ErrorBoundary';
 import { useTourStep } from '../hooks/useTourStep';
+import { SETTLE_EASING } from '../utils/motion';
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // Monday-first
 

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
-import { SETTLE_EASING } from './AmountField';
 import { POPUP_RADIUS, SMOOTH } from './Glass';
 import { DialogBackdrop } from './DialogBackdrop';
+import { SETTLE_EASING } from '../utils/motion';
 
 const OPEN_MS = 220;
 const CLOSE_MS = 160;

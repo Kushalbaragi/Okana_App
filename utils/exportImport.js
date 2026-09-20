@@ -1,6 +1,16 @@
+import { isValid, parseISO } from 'date-fns';
 import { toDateStr } from './format';
 
 const HEADERS = ['Date', 'Type', 'Amount', 'Description'];
+
+// Limits on what a spreadsheet can bring in. A row over one of them is skipped
+// like any other bad row, except the row count, which stops the import outright:
+// a file that big is read fully into memory and sent in one go, and it is far more
+// likely to be the wrong file than a real ledger. The amount cap is the keypad's own.
+const MAX_IMPORT_ROWS = 10000;
+const MAX_IMPORT_AMOUNT = 99999999.99;
+const MIN_YEAR = 1970;
+const MAX_YEAR = 2100;
 
 // One workbook, one sheet, oldest transaction first — reads like a ledger
 // from account start through today rather than most-recent-first, which is
@@ -47,24 +57,29 @@ function normalizeType(raw) {
 
 // Accepts either a real Date (from a genuinely date-formatted Excel cell —
 // see cellDates:true below) or plain text someone typed into the column.
+// Only a real calendar date within a sane range gets through: a string that just
+// looks like one (2024-13-45) would make the database reject the whole chunk of
+// rows it was sent in, so one typo would fail the import.
 function normalizeDate(raw) {
   if (raw == null || raw === '') return null;
+  let d;
   if (raw instanceof Date) {
-    if (isNaN(raw.getTime())) return null;
-    return toDateStr(raw);
+    d = raw;
+  } else {
+    const str = raw.toString().trim();
+    d = /^\d{4}-\d{2}-\d{2}$/.test(str) ? parseISO(str) : new Date(str);
   }
-  const str = raw.toString().trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-  const d = new Date(str);
-  if (isNaN(d.getTime())) return null;
+  if (!isValid(d)) return null;
+  const year = d.getFullYear();
+  if (year < MIN_YEAR || year > MAX_YEAR) return null;
   return toDateStr(d);
 }
 
+// Whole cents, so a value like 0.1 + 0.2 in the sheet doesn't arrive as
+// 0.30000000000000004.
 function normalizeAmount(raw) {
-  if (typeof raw === 'number') return raw;
-  const cleaned = (raw ?? '').toString().replace(/[^0-9.-]/g, '');
-  const n = parseFloat(cleaned);
-  return Number.isFinite(n) ? n : NaN;
+  const n = typeof raw === 'number' ? raw : parseFloat((raw ?? '').toString().replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : NaN;
 }
 
 // Reads the first sheet of any .xlsx/.xls, expecting the same
@@ -93,6 +108,9 @@ export function parseTransactionsWorkbook(base64) {
   // to just skipping row 0 if the sheet doesn't look like it has one.
   const looksLikeHeader = rows[0] && /date/i.test(String(rows[0][0]));
   const dataRows = looksLikeHeader ? rows.slice(1) : rows;
+  if (dataRows.length > MAX_IMPORT_ROWS) {
+    throw new Error(`That file has more than ${MAX_IMPORT_ROWS.toLocaleString('en-IN')} rows — split it into smaller files and import them one at a time.`);
+  }
 
   const parsed = [];
   const skipped = [];
@@ -105,7 +123,7 @@ export function parseTransactionsWorkbook(base64) {
     const type = normalizeType(rawType);
     const amount = normalizeAmount(rawAmount);
 
-    if (!date || !type || !Number.isFinite(amount) || amount <= 0) {
+    if (!date || !type || !Number.isFinite(amount) || amount <= 0 || amount > MAX_IMPORT_AMOUNT) {
       skipped.push(row);
       continue;
     }

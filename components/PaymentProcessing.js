@@ -12,13 +12,13 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useAudioPlayer } from 'expo-audio';
 import { SuccessBadge } from './SuccessBadge';
+import { SETTLE_EASING } from '../utils/motion';
 
 const SUCCESS_SOUND = require('../assets/sounds/success.wav');
 
 // Same "settle" ease-out-expo feel used throughout the app's onboarding/
 // reveal sequences (see welcome.js) — keeps this reading as the same motion
 // language rather than a one-off effect.
-const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 const SUCCESS_HOLD_MS = 3000;
 // How far above true screen-center the coin sits while it's still grouped
 // with the two labels below it — animated back to 0 once those labels are

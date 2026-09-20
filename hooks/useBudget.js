@@ -4,6 +4,7 @@ import { usePostHog } from 'posthog-react-native'
 import { supabase } from '../lib/supabase'
 import { useNetwork } from '../context/NetworkContext'
 import { isConnectivityError, reportError } from '../utils/errors'
+import { storageKeys } from '../utils/storageKeys'
 import { currentMonthYear, getMonthTotal } from '../utils/format'
 import { prevMonthYear } from '../utils/monthlyRecap'
 
@@ -15,7 +16,7 @@ function monthStartStr(month, year) {
 // value per month — unlike transactions (many independent rows), setting
 // a budget twice for the same month just overwrites, so a single pending
 // slot (not an ordered queue) is all this needs.
-const pendingKey = (userId) => `okana_pending_budget_${userId}`
+const pendingKey = storageKeys.pendingBudget
 
 async function loadPendingBudget(userId) {
   try {
@@ -38,7 +39,7 @@ async function savePendingBudget(userId, pending) {
 // already has one. Scoped to the month it was fetched for, same as the
 // pending cache, so an old month's cached amount can't silently apply after
 // the calendar rolls over.
-const syncedKey = (userId) => `okana_synced_budget_${userId}`
+const syncedKey = storageKeys.syncedBudget
 
 async function loadSyncedBudget(userId, monthStart) {
   try {
@@ -162,13 +163,14 @@ export function useBudget(user, transactions) {
         setBudgetRow(current || null)
       }
       setLastMonthAmount(last?.budget_amount ?? null)
-    } catch {
+    } catch (err) {
       // Supabase returns network failures as `{ data: null, error }` rather
       // than throwing, so this catches both that and a genuine thrown
       // error the same way — fall back to the last synced state on disk
       // instead of leaving budgetRow cleared, which would read as "no
       // budget" and re-trigger the setup prompt for a month that already
-      // has one.
+      // has one. A dropped connection is expected; anything else is reported.
+      if (!isConnectivityError(err, isOnlineRef.current)) reportError(err)
       await applyCacheFallback()
     } finally {
       setLoading(false)

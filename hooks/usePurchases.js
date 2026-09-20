@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { Linking, Platform } from 'react-native';
+import { Platform } from 'react-native';
 import { usePostHog } from 'posthog-react-native';
 import { reportError } from '../utils/errors';
+import { openLink } from '../utils/links';
 
 const API_KEY = Platform.select({
   android: process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY,
@@ -99,6 +100,6 @@ export async function openManageSubscription() {
   } catch {
     // fall through to the generic list below
   }
-  if (Platform.OS === 'ios') Linking.openURL('itms-apps://apps.apple.com/account/subscriptions');
-  else if (Platform.OS === 'android') Linking.openURL('https://play.google.com/store/account/subscriptions');
+  if (Platform.OS === 'ios') await openLink('itms-apps://apps.apple.com/account/subscriptions');
+  else if (Platform.OS === 'android') await openLink('https://play.google.com/store/account/subscriptions');
 }

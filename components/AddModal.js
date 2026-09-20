@@ -2,15 +2,17 @@ import { memo, useCallback, useState, useEffect, useRef } from 'react';
 import { Modal, View, Text, TextInput, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import * as Haptics from 'expo-haptics';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, Easing } from 'react-native-reanimated';
-import Svg, { Rect, Line } from 'react-native-svg';
-import { today, shiftDate } from '../utils/format';
+import { today, formatDayLabel } from '../utils/format';
 import CalendarPicker from './CalendarPicker';
 import { GlassPressable, PILL_ACTIVE_COLOR, INPUT_TEXT_STYLE, POPUP_RADIUS, SMOOTH } from './Glass';
-import { NumericKeypad, nextAmountValue } from './NumericKeypad';
-import { AmountRow, SETTLE_EASING } from './AmountField';
+import { NumericKeypad } from './NumericKeypad';
+import { useAmountEntry } from '../hooks/useAmountEntry';
+import { AmountRow } from './AmountField';
 import { useShake } from '../hooks/useShake';
+import { hapticHeavy } from '../utils/haptics';
+import { SETTLE_EASING } from '../utils/motion';
+import { CalendarIcon } from './icons';
 
 // Height of the description pill. Shared by the pill itself, the input
 // inside it and the placeholder overlay on top, so all three are centring
@@ -43,26 +45,6 @@ const DRAG_CLOSE_EASING = Easing.out(Easing.cubic);
 const DISMISS_DISTANCE = 120;
 const DISMISS_VELOCITY = 800;
 
-const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-function formatDisplay(dateStr) {
-  const todayStr = today();
-  if (dateStr === todayStr) return 'Today';
-  if (dateStr === shiftDate(todayStr, -1)) return 'Yesterday';
-  const [year, month, day] = dateStr.split('-').map(Number);
-  return `${day} ${MONTHS_SHORT[month - 1]} ${year}`;
-}
-
-function CalIcon({ color = 'rgba(255,255,255,0.35)' }) {
-  return (
-    <Svg width={14} height={14} viewBox="0 0 14 14" fill="none">
-      <Rect x="1" y="2.5" width="12" height="10.5" rx="2" stroke={color} strokeWidth="1.2" />
-      <Line x1="1" y1="5.5" x2="13" y2="5.5" stroke={color} strokeWidth="1.2" />
-      <Line x1="4.5" y1="1" x2="4.5" y2="4" stroke={color} strokeWidth="1.2" strokeLinecap="round" />
-      <Line x1="9.5" y1="1" x2="9.5" y2="4" stroke={color} strokeWidth="1.2" strokeLinecap="round" />
-    </Svg>
-  );
-}
-
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard (and the flows it opens) — see the matching comment in
 // Header.js. Callers outside the Dashboard keep passing nothing.
@@ -83,7 +65,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
     const pillWidth = (typeToggleWidth - 6) / 2; // p-[3px] container padding on both sides
     typePillX.value = withTiming((type === 'income' ? 1 : 0) * pillWidth, { duration: 260, easing: SETTLE_EASING });
   }, [type, typeToggleWidth]);
-  const [amount, setAmount] = useState('');
+  const { amount, prevAmountLength, skipDigitAnim, onKeyPress: handleKeypadPress, setProgrammatic: setAmountProgrammatically } = useAmountEntry();
   const [date, setDate] = useState(today());
   const [description, setDescription] = useState('');
   const [calOpen, setCalOpen] = useState(false);
@@ -133,36 +115,6 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
   // inline arrow here would defeat that memo the whole time the calendar
   // overlay is open.
   const closeCalendar = useCallback(() => setCalOpen(false), []);
-
-  // Tracks the Amount string's length as of the previous render, so a
-  // freshly-typed trailing digit can be told apart from ones that were
-  // already there — read during render (still holds the prior value at that
-  // point), written after every render for the next one to see.
-  const prevAmountLengthRef = useRef(0);
-  const prevAmountLength = prevAmountLengthRef.current;
-  useEffect(() => {
-    prevAmountLengthRef.current = amount.length;
-  });
-  // Suppressed when the field is populated programmatically (opening in
-  // edit mode, or resetting on close) rather than actually typed — those
-  // digits should just appear, not play the per-keystroke blur-in.
-  const skipDigitAnimRef = useRef(true);
-
-  // NumericKeypad is memo()-wrapped and re-renders on every keystroke in
-  // this modal (amount AND description both live here) — an inline
-  // onKeyPress would hand it a new function identity every render and
-  // defeat that memo the whole time the keypad is on screen. The ref keeps
-  // the latest `amount` reachable without onKeyPress itself ever changing
-  // identity.
-  const handleKeypadPressRef = useRef();
-  handleKeypadPressRef.current = (key) => {
-    const next = nextAmountValue(amount, key);
-    if (next !== amount) {
-      skipDigitAnimRef.current = false;
-      setAmount(next);
-    }
-  };
-  const handleKeypadPress = useCallback((key) => handleKeypadPressRef.current(key), []);
 
   // RN's built-in Modal animationType only animates the WHOLE modal content
   // as one transform — managed independently here instead so `visible`
@@ -227,15 +179,14 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
 
   useEffect(() => {
     if (open) {
-      skipDigitAnimRef.current = true;
       if (editData) {
         setType(editData.type);
-        setAmount(String(editData.amount));
+        setAmountProgrammatically(String(editData.amount));
         setDate(editData.date);
         setDescription(editData.description);
       } else {
         setType('expense');
-        setAmount('');
+        setAmountProgrammatically('');
         setDate(today());
         setDescription('');
       }
@@ -285,10 +236,8 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
       setError(result.error || 'Something went wrong. Please try again.');
       return;
     }
-    // Heavy impact — the strongest discrete pulse the API offers, for both
-    // add and edit (NotificationFeedbackType's Success/Warning patterns are
-    // more of a semantic "ding" than something you feel firmly).
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    // Heavy, for both add and edit — see hapticHeavy.
+    hapticHeavy();
     onClose();
   }
 
@@ -477,7 +426,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
             <AmountRow
               amount={amount}
               prevAmountLength={prevAmountLength}
-              skipDigitAnim={skipDigitAnimRef.current}
+              skipDigitAnim={skipDigitAnim}
               light={light}
               digitFontSize={72}
               lineHeight={80}
@@ -574,9 +523,9 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
               onPress={() => setCalOpen(true)}
               className="flex-row items-center"
             >
-              <CalIcon color={light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'} />
+              <CalendarIcon color={light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'} />
               <Text className="text-[15px] ml-1.5" style={{ color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>
-                {formatDisplay(date)}
+                {formatDayLabel(date)}
               </Text>
             </Pressable>
 

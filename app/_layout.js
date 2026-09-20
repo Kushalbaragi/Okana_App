@@ -15,6 +15,7 @@ import { useNotificationRouting } from '../hooks/useNotificationRouting';
 import { usePurchases } from '../hooks/usePurchases';
 import { useAnalyticsIdentity } from '../hooks/useAnalyticsIdentity';
 import { useScreenTracking } from '../hooks/useScreenTracking';
+import { reportError } from '../utils/errors';
 
 // A blank DSN makes Sentry.init a documented no-op (it just logs a warning
 // and every later Sentry.* call is silently skipped) — safe for local dev
@@ -22,7 +23,10 @@ import { useScreenTracking } from '../hooks/useScreenTracking';
 // configured" branch needed anywhere else in the app.
 Sentry.init({
   dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
-  tracesSampleRate: 1.0,
+  // A fraction of performance traces, not every one: tracing a whole user base
+  // at 1.0 costs battery and data on their phones and quota on ours, and a
+  // sample says the same thing. Errors are always captured regardless.
+  tracesSampleRate: 0.2,
   // Development builds are extremely noisy (every Fast Refresh, every dev
   // menu warning) and none of that is signal — only report from release/
   // preview builds, where a captured error actually means something.
@@ -45,7 +49,7 @@ function AppShell() {
   // once at the app root rather than per-sound-effect component, since both
   // mount/unmount repeatedly as their modals open and close.
   useEffect(() => {
-    setAudioModeAsync({ interruptionMode: 'mixWithOthers' });
+    setAudioModeAsync({ interruptionMode: 'mixWithOthers' }).catch(reportError);
   }, []);
 
   return (

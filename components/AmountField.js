@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring, withDelay, Easing, LinearTransition } from 'react-native-reanimated';
+import { SETTLE_EASING } from '../utils/motion';
 
 // Same ease-out-expo "settle" feel used for reveals throughout the app
 // (welcome flow, account.js, onboarding).
-export const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 
 // iOS-only rounded system-font design — 'SF Pro Rounded' is NOT a resolvable
 // PostScript name (UIFont(name:) returns nil for it), which silently fell

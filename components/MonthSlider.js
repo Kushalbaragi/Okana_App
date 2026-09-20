@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, View, Text, ScrollView, Pressable } from 'react-native';
+import { AccessibilityInfo, View, Text, Pressable } from 'react-native';
+import Animated, { runOnJS, useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 import { hapticTick } from '../utils/haptics';
 import { reportError } from '../utils/errors';
 import { POSITIVE, dim, money } from './savingsShared';
@@ -49,9 +50,14 @@ function MonthSlider({ months, initialIndex, light = false }) {
   const [selected, setSelected] = useState(initialIndex);
   const scrollRef = useRef(null);
   const centred = useRef(false);
+  // The month in the middle as the scroll handler last saw it. That handler runs
+  // on the UI thread, so it can tell whether a scroll event changed the month
+  // without a round trip to JS, and only calls across when it did.
+  const lastIndex = useSharedValue(initialIndex);
   // While the drift is running the row is moving without anyone having chosen
-  // a month, so the selection and its tick stay where they are.
-  const nudging = useRef(false);
+  // a month, so the selection and its tick stay where they are. A shared value,
+  // because the scroll handler that has to respect it isn't on the JS thread.
+  const nudging = useSharedValue(false);
   const timers = useRef([]);
 
   const max = useMemo(() => Math.max(...months.map(m => Math.abs(m.net)), 1), [months]);
@@ -60,18 +66,26 @@ function MonthSlider({ months, initialIndex, light = false }) {
   const stopNudge = useCallback(() => {
     timers.current.forEach(clearTimeout);
     timers.current = [];
-    nudging.current = false;
+    nudging.value = false;
+  }, [nudging]);
+
+  const select = useCallback((i) => {
+    setSelected(i);
+    hapticTick();
   }, []);
 
-  const onScroll = useCallback((e) => {
-    if (nudging.current) return;
-    const i = Math.max(0, Math.min(months.length - 1, Math.round(e.nativeEvent.contentOffset.x / STEP)));
-    setSelected(prev => {
-      if (prev === i) return prev;
-      hapticTick();
-      return i;
-    });
-  }, [months.length]);
+  const lastMonth = months.length - 1;
+  const onScroll = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      if (nudging.value) return;
+      const raw = Math.round(e.contentOffset.x / STEP);
+      const i = raw < 0 ? 0 : raw > lastMonth ? lastMonth : raw;
+      if (i !== lastIndex.value) {
+        lastIndex.value = i;
+        runOnJS(select)(i);
+      }
+    },
+  });
 
   const goTo = useCallback((i, animated = true) => scrollRef.current?.scrollTo({ x: i * STEP, y: 0, animated }), []);
   // A month chosen by hand (a tap, or a screen reader) also ends any drift.
@@ -86,9 +100,9 @@ function MonthSlider({ months, initialIndex, light = false }) {
       if (cancelled || reduce) return;
       const dir = initialIndex > 0 ? -1 : 1;
       const later = (ms, fn) => timers.current.push(setTimeout(fn, ms));
-      later(NUDGE_START_MS, () => { nudging.current = true; goTo(initialIndex + dir); });
+      later(NUDGE_START_MS, () => { nudging.value = true; goTo(initialIndex + dir); });
       later(NUDGE_BACK_MS, () => goTo(initialIndex));
-      later(NUDGE_END_MS, () => { nudging.current = false; });
+      later(NUDGE_END_MS, () => { nudging.value = false; });
     }).catch(reportError);
     return () => { cancelled = true; stopNudge(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -111,7 +125,7 @@ function MonthSlider({ months, initialIndex, light = false }) {
 
       <View style={{ height: CHART_H, marginTop: 8 }}>
         {width > 0 && (
-          <ScrollView
+          <Animated.ScrollView
             ref={scrollRef}
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -132,7 +146,7 @@ function MonthSlider({ months, initialIndex, light = false }) {
             {months.map((m, i) => (
               <MonthBar key={i} index={i} net={m.net} max={max} on={i === selected} light={light} onPick={pick} />
             ))}
-          </ScrollView>
+          </Animated.ScrollView>
         )}
       </View>
 

@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, Platform, Linking, useWindowDimensions } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, Platform, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
@@ -17,6 +17,8 @@ import { usePostHog } from 'posthog-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
 import { isConnectivityError, reportError } from '../../utils/errors';
+import { clearAllUserData, clearDataCaches } from '../../utils/localData';
+import { openLink, openStoreListing } from '../../utils/links';
 import { useSubscription } from '../../hooks/useSubscription';
 import { useTransactions } from '../../hooks/useTransactions';
 import { openManageSubscription } from '../../hooks/usePurchases';
@@ -33,6 +35,7 @@ import * as SettingsUI from '../../components/SettingsUI';
 import { TourHint, TOUR_HINT_BORDER_WIDTH, TOUR_HINT_BORDER_COLOR } from '../../components/TourHint';
 import { useTourStep } from '../../hooks/useTourStep';
 import { CARD_RADIUS, SMOOTH } from '../../components/Glass';
+import { SETTLE_EASING } from '../../utils/motion';
 
 // One-flag experiment: a light theme for just this screen. Flip back to
 // false to fully revert. Mirrors the same LIGHT_HOME flag in app/(app)/index.js.
@@ -44,31 +47,11 @@ const SETTINGS_BG = LIGHT_SETTINGS ? '#FAFAF8' : '#000000';
 // blurred backdrop (see AnimatedModal).
 const MODAL_DIM = LIGHT_SETTINGS ? 0.4 : undefined;
 
-const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 // Reads the real version from app.json (via Expo's config, not a second
 // hardcoded copy that silently drifts from the real one — it already had,
 // showing 1.0.0 while the actual shipped version was 1.0.2).
 const APP_VERSION = Constants.expoConfig?.version ?? '—';
-
-// Deep-links straight to the review-writing screen on each store rather than
-// just the listing page — itms-apps:// (iOS) and market:// (Android) open
-// the native store app directly; falls back to the plain https listing if
-// the store app itself isn't available to handle the custom scheme (e.g.
-// Play Store missing on some Android builds/emulators).
-async function rateApp() {
-  const storeUrl = Platform.OS === 'ios'
-    ? 'itms-apps://apps.apple.com/app/id6805307127?action=write-review'
-    : 'market://details?id=com.kushalbaragi.okana&showAllReviews=true';
-  const webUrl = Platform.OS === 'ios'
-    ? 'https://apps.apple.com/app/id6805307127'
-    : 'https://play.google.com/store/apps/details?id=com.kushalbaragi.okana';
-  try {
-    await Linking.openURL(storeUrl);
-  } catch {
-    Linking.openURL(webUrl);
-  }
-}
 
 function InstagramIcon() {
   const c = LIGHT_SETTINGS ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
@@ -629,11 +612,18 @@ export default function AccountPage() {
         step = 'savings';
         const { error: savingsError } = await supabase.from('savings_goals').delete().eq('user_id', user.id);
         if (savingsError) throw savingsError;
-        // Lets the budget-setup popup fire again on the next Dashboard visit —
-        // otherwise the "already shown this month" flag would keep suppressing
-        // it even though there's no budget anymore.
-        await AsyncStorage.removeItem(`okana_budget_setup_shown_${user.id}`);
       })()]);
+      // The server side is done, so clear the device's copy — including the
+      // offline queue, which would otherwise be replayed on the next refresh and
+      // put erased transactions straight back. This also lets the budget-setup
+      // popup fire again on the next Dashboard visit, which the "already shown
+      // this month" flag would otherwise keep suppressing. Failing here doesn't
+      // undo the erase, so it is reported rather than shown as a failed erase.
+      try {
+        await clearDataCaches(user.id);
+      } catch (err) {
+        reportError(err);
+      }
       setActionFlow({ type: 'erase', phase: 'success' });
       posthog?.capture('data_erased');
     } catch (err) {
@@ -679,6 +669,14 @@ export default function AccountPage() {
         const { error: rpcError } = await supabase.rpc('delete_user');
         if (rpcError) throw rpcError;
       })()]);
+      // Everything this device kept for that account: its cached transactions,
+      // savings and budget, and the offline queue. Reported, not shown, if it
+      // fails — the account itself is already gone.
+      try {
+        await clearAllUserData(user.id);
+      } catch (err) {
+        reportError(err);
+      }
       setActionFlow({ type: 'delete', phase: 'success' });
       // Fired here, before the eventual sign-out resets PostHog's identity
       // (useAnalyticsIdentity, keyed off `user` going null) — this is the
@@ -738,7 +736,14 @@ export default function AccountPage() {
     // Deleting the account is one of the three conditions (fresh install,
     // reinstall, account deletion) that brings the first-run onboarding
     // animation back — clearing the flag first, then routing there.
-    await AsyncStorage.removeItem(ONBOARDING_SEEN_KEY);
+    try {
+      await AsyncStorage.removeItem(ONBOARDING_SEEN_KEY);
+    } catch (err) {
+      // Only means onboarding won't replay; it must not stop the navigation and
+      // sign-out below, which would leave the user on the screen of an account
+      // that no longer exists.
+      reportError(err);
+    }
     // Navigate away from the (app) stack BEFORE signing out — app/(app)/_layout.js
     // has its own `if (!user) redirect to /login` guard, and it's still mounted
     // here. Calling logout() first flips `user` to null while that guard is
@@ -844,9 +849,13 @@ export default function AccountPage() {
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri, { mimeType: XLSX_MIME, dialogTitle: 'Okana import template' });
       }
-    } catch {
-      // Best-effort — worst case the user just doesn't get the template
-      // this time and can retry from the same Import Data entry point.
+    } catch (err) {
+      // Tell the user, or the tap just does nothing — and report it, since a
+      // template that can't be written or shared is not the user's doing.
+      reportError(err);
+      setImportErrorMsg("Couldn't create the template. Please try again.");
+      setImportFormatError(false);
+      setImportStage('error');
     } finally {
       setDownloadingTemplate(false);
     }
@@ -1103,11 +1112,11 @@ export default function AccountPage() {
                 right={<Text className="text-xs" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}>XLSX</Text>}
               />
               <Divider />
-              <Row label="Privacy Policy" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Privacy-Policy-3c58f887c3c9806180c1ed51844d872e?source=copy_link')} />
+              <Row label="Privacy Policy" onPress={() => openLink('https://kushalbaragiokana.notion.site/Privacy-Policy-3c58f887c3c9806180c1ed51844d872e?source=copy_link')} />
               <Divider />
-              <Row label="Terms & Conditions" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Terms-and-Condition-3c58f887c3c9806d86eae7473775949c?source=copy_link')} />
+              <Row label="Terms & Conditions" onPress={() => openLink('https://kushalbaragiokana.notion.site/Terms-and-Condition-3c58f887c3c9806d86eae7473775949c?source=copy_link')} />
               <Divider />
-              <Row label="Refunds & Cancellations" onPress={() => Linking.openURL('https://kushalbaragiokana.notion.site/Refund-Cancellation-Policy-3c58f887c3c980c48cb6ded1520897ed?source=copy_link')} />
+              <Row label="Refunds & Cancellations" onPress={() => openLink('https://kushalbaragiokana.notion.site/Refund-Cancellation-Policy-3c58f887c3c980c48cb6ded1520897ed?source=copy_link')} />
             </Card>
             {!!exportError && (
               <Text className="text-red-400 text-sm mt-2 px-1">{exportError}</Text>
@@ -1121,7 +1130,7 @@ export default function AccountPage() {
               <Divider />
               <Row label="Support" onPress={() => setModal('feedback')} />
               <Divider />
-              <Row label="Rate Us" onPress={() => { posthog?.capture('rated_us'); rateApp(); }} />
+              <Row label="Rate Us" onPress={() => { posthog?.capture('rated_us'); openStoreListing({ review: true }); }} />
             </Card>
           </View>
 
@@ -1256,7 +1265,7 @@ export default function AccountPage() {
 
           <View className="flex-row" style={{ gap: 12 }}>
             <Pressable
-              onPress={() => Linking.openURL('https://instagram.com/kushalbaragi')}
+              onPress={() => openLink('https://instagram.com/kushalbaragi')}
               className="flex-row items-center px-4 py-2 rounded-full"
               style={{ gap: 8, borderWidth: 1, borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }}
             >
@@ -1264,7 +1273,7 @@ export default function AccountPage() {
               <Text style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 12 }}>Instagram</Text>
             </Pressable>
             <Pressable
-              onPress={() => Linking.openURL('https://www.youtube.com/@kushalbaragi')}
+              onPress={() => openLink('https://www.youtube.com/@kushalbaragi')}
               className="flex-row items-center px-4 py-2 rounded-full"
               style={{ gap: 8, borderWidth: 1, borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }}
             >

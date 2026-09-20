@@ -13,6 +13,7 @@ import { useBudget } from '../../hooks/useBudget';
 import { useSavings } from '../../hooks/useSavings';
 import { useSubscription } from '../../hooks/useSubscription';
 import { getSubscriptionDisplayStatus } from '../../utils/trial';
+import { storageKeys } from '../../utils/storageKeys';
 import Header from '../../components/Header';
 import SummaryCard from '../../components/SummaryCard';
 import TransactionList from '../../components/TransactionList';
@@ -30,6 +31,7 @@ import { PlusIcon } from '../../components/icons';
 import { PILL_ACTIVE_COLOR, POPUP_RADIUS, SMOOTH } from '../../components/Glass';
 import { currentMonthYear, today, formatCurrency, formatCurrencyFull } from '../../utils/format';
 import { getMonthlyRecapSlides, hasAnyRecapData, prevMonthYear, MONTH_NAMES } from '../../utils/monthlyRecap';
+import { SETTLE_EASING } from '../../utils/motion';
 
 // One-flag experiment: a light theme for just this screen (Header,
 // SummaryCard, TransactionList). Flip back to false to fully revert —
@@ -128,7 +130,7 @@ export default function Dashboard() {
   // the actual app-open moment only, not on every visit here.
   const entranceProgress = useSharedValue(0);
   useEffect(() => {
-    entranceProgress.value = withTiming(1, { duration: 480, easing: Easing.bezier(0.16, 1, 0.3, 1) });
+    entranceProgress.value = withTiming(1, { duration: 480, easing: SETTLE_EASING });
   }, []);
 
   // Home stays static while the Calendar page slides in/out on top of it —
@@ -373,7 +375,7 @@ export default function Dashboard() {
     (async () => {
       const { month, year: cy } = currentMonthYear();
       const monthId = `${cy}-${String(month + 1).padStart(2, '0')}`;
-      const shownMonth = await AsyncStorage.getItem(`okana_budget_setup_shown_${user.id}`);
+      const shownMonth = await AsyncStorage.getItem(storageKeys.budgetSetupShown(user.id));
       if (!cancelled && shownMonth !== monthId) setBudgetSetupPending(true);
     })();
 
@@ -450,7 +452,7 @@ export default function Dashboard() {
     if (!user) return;
     const { month, year: cy } = currentMonthYear();
     const monthId = `${cy}-${String(month + 1).padStart(2, '0')}`;
-    await AsyncStorage.setItem(`okana_budget_setup_shown_${user.id}`, monthId);
+    await AsyncStorage.setItem(storageKeys.budgetSetupShown(user.id), monthId);
   }, [user]);
 
   // Same deferred-open reasoning as openRecapFromCalendar above.
@@ -778,7 +780,7 @@ export default function Dashboard() {
         open={deleteOpen}
         title="Delete transaction?"
         message={deleteTx
-          ? `${deleteTx.description ? `“${deleteTx.description}” · ` : ''}${formatCurrencyFull(deleteTx.amount)} ${deleteTx.type === 'income' ? 'income' : 'expense'} will be deleted. This can't be undone.`
+          ? `${deleteTx.description ? `“${deleteTx.description}” · ` : ''}${formatCurrencyFull(deleteTx.amount)} ${deleteTx.type === 'income' ? 'income' : 'expense'} will be deleted.`
           : ''}
         confirmLabel="Delete"
         onConfirm={confirmDelete}

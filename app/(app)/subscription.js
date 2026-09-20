@@ -11,8 +11,8 @@ import { formatChargeDate, getSubscriptionDisplayStatus, PRICE_PER_YEAR, WHY_ITE
 import { today } from '../../utils/format';
 import { BackIcon, CheckIcon, RefreshIcon } from '../../components/icons';
 import { PaymentProcessing } from '../../components/PaymentProcessing';
-import { SETTLE_EASING } from '../../components/AmountField';
 import { Card, Divider, SectionLabel } from '../../components/SettingsUI';
+import { SETTLE_EASING } from '../../utils/motion';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 

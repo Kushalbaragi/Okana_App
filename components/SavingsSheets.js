@@ -2,17 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, Keyboard, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS, interpolateColor, FadeIn, FadeOut } from 'react-native-reanimated';
-import Svg, { Rect, Line } from 'react-native-svg';
 import { InlineSheet } from './InlineSheet';
 import SegmentedSwitch from './SegmentedSwitch';
 import CalendarPicker from './CalendarPicker';
-import { NumericKeypad, nextAmountValue } from './NumericKeypad';
+import { NumericKeypad } from './NumericKeypad';
+import { useAmountEntry } from '../hooks/useAmountEntry';
 import { AmountRow } from './AmountField';
 import { GlassPressable, INPUT_TEXT_STYLE } from './Glass';
 import { useShake } from '../hooks/useShake';
 import { ROUNDED_FONT } from './savingsShared';
 import AmountRuler, { RulerFigure, MIN_TARGET } from './AmountRuler';
-import { formatCurrency, shiftDate, today } from '../utils/format';
+import { formatCurrency, formatDayLabel, today } from '../utils/format';
+import { CalendarIcon } from './icons';
 
 // Same as AddModal's description pill, so the two sheets read as one family.
 const PILL_H = 40;
@@ -25,43 +26,6 @@ const MONEY_TYPES = [
   { id: 'add', label: 'Add' },
   { id: 'withdraw', label: 'Withdraw' },
 ];
-
-// The amount-entry plumbing AddModal does inline, shared by both sheets here:
-// what's been typed, which digits are new (so only a freshly typed one plays
-// its entrance), and a stable key handler for the memo'd keypad.
-function useAmountEntry() {
-  const [amount, setAmount] = useState('');
-
-  // Length as of the previous render, so a freshly-typed trailing digit can be
-  // told apart from ones already there — read during render (still the prior
-  // value), written after every render for the next one to see.
-  const prevLengthRef = useRef(0);
-  const prevAmountLength = prevLengthRef.current;
-  useEffect(() => { prevLengthRef.current = amount.length; });
-
-  // Suppressed when the field is filled programmatically (opening in edit mode
-  // or resetting) rather than typed — those digits should just appear.
-  const skipDigitAnimRef = useRef(true);
-
-  // NumericKeypad is memo()-wrapped; the ref keeps the latest `amount`
-  // reachable without the handler itself ever changing identity.
-  const keyPressRef = useRef();
-  keyPressRef.current = (key) => {
-    const next = nextAmountValue(amount, key);
-    if (next !== amount) {
-      skipDigitAnimRef.current = false;
-      setAmount(next);
-    }
-  };
-  const onKeyPress = useCallback((key) => keyPressRef.current(key), []);
-
-  const setProgrammatic = useCallback((value) => {
-    skipDigitAnimRef.current = true;
-    setAmount(value);
-  }, []);
-
-  return { amount, prevAmountLength, skipDigitAnim: skipDigitAnimRef.current, onKeyPress, setProgrammatic };
-}
 
 function TextPill({ value, onChangeText, placeholder, maxLength, shake, light, autoCapitalize }) {
   return (
@@ -305,26 +269,6 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
   );
 }
 
-const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-function formatDisplay(dateStr) {
-  const todayStr = today();
-  if (dateStr === todayStr) return 'Today';
-  if (dateStr === shiftDate(todayStr, -1)) return 'Yesterday';
-  const [year, month, day] = dateStr.split('-').map(Number);
-  return `${day} ${MONTHS_SHORT[month - 1]} ${year}`;
-}
-
-function CalIcon({ color }) {
-  return (
-    <Svg width={14} height={14} viewBox="0 0 14 14" fill="none">
-      <Rect x="1" y="2.5" width="12" height="10.5" rx="2" stroke={color} strokeWidth="1.2" />
-      <Line x1="1" y1="5.5" x2="13" y2="5.5" stroke={color} strokeWidth="1.2" />
-      <Line x1="4.5" y1="1" x2="4.5" y2="4" stroke={color} strokeWidth="1.2" strokeLinecap="round" />
-      <Line x1="9.5" y1="1" x2="9.5" y2="4" stroke={color} strokeWidth="1.2" strokeLinecap="round" />
-    </Svg>
-  );
-}
-
 // Add money to / withdraw from a goal, or edit an existing entry. This is the
 // Add Transaction sheet with Add / Withdraw where Expense / Income would be:
 // the same toggle, big amount, note pill, date field (which opens the same
@@ -429,9 +373,9 @@ export function MoneySheet({ open, onClose, onClosed, goalName, entry, initialTy
           accessibilityRole="button"
           accessibilityLabel="Choose date"
         >
-          <CalIcon color={light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'} />
+          <CalendarIcon color={light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'} />
           <Text className="text-[15px]" style={{ marginLeft: 6, color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>
-            {formatDisplay(date)}
+            {formatDayLabel(date)}
           </Text>
         </Pressable>
 

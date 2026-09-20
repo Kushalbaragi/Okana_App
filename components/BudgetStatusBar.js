@@ -1,7 +1,8 @@
 import { memo, useEffect, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { formatCurrency } from '../utils/format';
+import { SETTLE_EASING } from '../utils/motion';
 
 // Always green — the bar previously shifted to yellow/red as spend
 // approached or passed the budget, but that's no longer wanted; one
@@ -18,7 +19,6 @@ const SEGMENT_COUNT = 63;
 // the target fast, then eases off gradually instead of cubic's milder,
 // more even taper — keeps the initial burst but gives the last stretch a
 // longer, more visible slowdown.
-const GROW_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard (and the flows it opens) — see the matching comment in
@@ -50,7 +50,7 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, 
   useEffect(() => {
     if (!hasBudget || !barWidth) return;
     progress.value = 0;
-    progress.value = withTiming(1, { duration: 2600, easing: GROW_EASING });
+    progress.value = withTiming(1, { duration: 2600, easing: SETTLE_EASING });
   }, [hasBudget, barWidth, cappedPercent]);
 
   const fillStyle = useAnimatedStyle(() => ({
