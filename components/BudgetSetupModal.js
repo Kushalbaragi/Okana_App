@@ -1,22 +1,36 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Modal, View, Text, ScrollView, useWindowDimensions } from 'react-native';
+import { Modal, View, Text, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming, runOnJS } from 'react-native-reanimated';
-import { GlassPressable, GlassView } from './Glass';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming, Easing, runOnJS } from 'react-native-reanimated';
+import { GlassPressable } from './Glass';
 import { NumericKeypad, nextAmountValue } from './NumericKeypad';
 import { AmountRow, SETTLE_EASING } from './AmountField';
+import AmountRuler, { RulerFigure, BUDGET_SCALE } from './AmountRuler';
 import { TrendArrowIcon } from './icons';
 import { SuccessBadge } from './SuccessBadge';
 import { formatCurrency, currentMonthYear } from '../utils/format';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
+import { FLAGS } from '../utils/flags';
 
 // Same drag-to-dismiss tuning as AddModal — one consistent feel for every
 // bottom-sheet page in the app.
 const DISMISS_DISTANCE = 120;
 const DISMISS_VELOCITY = 800;
 const OFF_SCREEN_Y = 1200;
+
+// A bottom sheet the height of its content, on the same surface, corners,
+// backdrop and timing as the new-goal sheet (InlineSheet) — so the two read as
+// one family.
+const SHEET_COLOR = '#161616';
+const BACKDROP_MAX_OPACITY = 0.55;
+const OPEN_MS = 340;
+const CLOSE_MS = 240;
+
+// Where the ruler starts when there is no previous month to carry over — a
+// visible suggestion to adjust, not a blank to fill in.
+const DEFAULT_BUDGET = 20000;
 
 // How long the "you set X more/less" confirmation holds on screen before
 // auto-redirecting home — long enough to actually read, short enough not to
@@ -50,7 +64,14 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
   const { height: windowHeight } = useWindowDimensions();
   const { month: currMonth } = currentMonthYear();
 
-  const [amount, setAmount] = useState('');
+  // A string either way, so the keypad path and the ruler path share the
+  // submit logic below. With the ruler it starts as last month's budget — the
+  // natural starting point, so leaving it untouched just keeps things as they
+  // were — and `session` tells the ruler to go back there on each open.
+  const rulerOn = FLAGS.budgetRuler;
+  const startValue = lastMonthAmount ?? DEFAULT_BUDGET;
+  const [amount, setAmount] = useState(rulerOn ? String(startValue) : '');
+  const [session, setSession] = useState(0);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   // Set once the budget is saved AND it differs from last month's — holds
@@ -106,11 +127,11 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
     if (open) {
       setVisible(true);
       dragY.value = 0;
-      pageTranslateY.value = withTiming(0, { duration: 950, easing: SETTLE_EASING });
+      pageTranslateY.value = withTiming(0, { duration: OPEN_MS, easing: SETTLE_EASING });
     } else {
       pageTranslateY.value = withTiming(
         windowHeight,
-        { duration: 420, easing: SETTLE_EASING },
+        { duration: CLOSE_MS, easing: Easing.in(Easing.cubic) },
         finished => {
           if (!finished) return;
           runOnJS(setVisible)(false);
@@ -124,7 +145,8 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
   useEffect(() => {
     if (open) {
       skipDigitAnimRef.current = true;
-      setAmount('');
+      setAmount(rulerOn ? String(startValue) : '');
+      setSession(n => n + 1);
       setError('');
       setSubmitting(false);
       setConfirmDelta(null);
@@ -193,27 +215,34 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
   const canSubmit = !!amount && parseFloat(amount) > 0 && !submitting;
   const recap = lastMonthMessage(lastMonthAmount, lastMonthSpent);
 
-  const nativeScroll = Gesture.Native();
   const pan = Gesture.Pan()
     .activeOffsetY(12)
     .failOffsetY(-12)
-    .simultaneousWithExternalGesture(nativeScroll)
     .onUpdate(e => {
       if (e.translationY > 0) dragY.value = e.translationY;
     })
     .onEnd(e => {
       const pastThreshold = e.translationY > DISMISS_DISTANCE || e.velocityY > DISMISS_VELOCITY;
       if (pastThreshold && !requestInFlightSV.value) {
-        dragY.value = withTiming(OFF_SCREEN_Y, { duration: 420, easing: SETTLE_EASING });
+        dragY.value = withTiming(OFF_SCREEN_Y, { duration: CLOSE_MS, easing: Easing.in(Easing.cubic) });
         runOnJS(onClose)();
       } else {
-        dragY.value = withTiming(0, { duration: 380, easing: SETTLE_EASING });
+        dragY.value = withTiming(0, { duration: 300, easing: SETTLE_EASING });
       }
     });
 
-  const pageStyle = useAnimatedStyle(() => ({
+  const sheetStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: pageTranslateY.value + dragY.value }],
   }));
+
+  // Fades in step with the slide, like AddModal's.
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: (1 - Math.min(1, Math.max(0, (pageTranslateY.value + dragY.value) / windowHeight))) * BACKDROP_MAX_OPACITY,
+  }));
+
+  // The form stays mounted (holding the sheet at its height) and fades out as
+  // the confirmation fades in over it, so the sheet doesn't jump between sizes.
+  const formStyle = useAnimatedStyle(() => ({ opacity: 1 - confirmProgress.value }));
 
   const confirmStyle = useAnimatedStyle(() => ({
     opacity: confirmProgress.value,
@@ -231,93 +260,131 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={handleRequestClose}>
-      <Animated.View className="flex-1 bg-bg" style={pageStyle} pointerEvents={open ? 'auto' : 'none'}>
-      <GestureDetector gesture={pan}>
-      <View style={{ flex: 1 }}>
-        <View style={{ paddingTop: insets.top + 10, paddingBottom: 24, alignItems: 'center' }}>
-          <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.2)' }} />
-        </View>
+      {/* A Modal is a separate native hierarchy, so the app-root gesture root
+          doesn't reach in here — see AddModal. */}
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <View style={{ flex: 1 }}>
+          <Animated.View pointerEvents={open ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, { backgroundColor: '#000000' }, backdropStyle]}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={handleRequestClose} accessibilityLabel="Close" />
+          </Animated.View>
 
-        {confirmDelta ? (
-          // Absolutely positioned over the whole sheet (not the leftover
-          // flex space below the drag-handle bar) so it centers on the
-          // actual full screen — a flex:1 sibling of the handle only
-          // centers within the space after it, which visibly sits lower
-          // than true center.
           <Animated.View
+            pointerEvents={open ? 'auto' : 'none'}
             style={[
-              { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
-              confirmStyle,
+              {
+                position: 'absolute', left: 0, right: 0, bottom: 0,
+                backgroundColor: SHEET_COLOR,
+                borderTopLeftRadius: 28, borderTopRightRadius: 28,
+                overflow: 'hidden',
+              },
+              sheetStyle,
             ]}
           >
-            {confirmDelta.greeting ? (
-              <>
-                <SuccessBadge style={{ marginBottom: 24 }} />
-                <Text className="text-white text-lg font-semibold text-center" style={{ lineHeight: 26 }}>
-                  You set {formatCurrency(confirmDelta.amount)} budget{'\n'}for {MONTH_NAMES[currMonth]}. Stick with it!
-                </Text>
-              </>
-            ) : (
-              <>
-                <View
-                  className="items-center justify-center mb-6"
-                  style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: confirmBg }}
-                >
-                  <TrendArrowIcon up={confirmDelta.up} color={confirmColor} size={28} />
-                </View>
-                <Text className="text-white text-lg font-semibold text-center" style={{ lineHeight: 26 }}>
-                  You decided to spend{'\n'}{formatCurrency(confirmDelta.diff)} {confirmDelta.up ? 'more' : 'less'} this month
-                </Text>
-              </>
-            )}
-          </Animated.View>
-        ) : (
-          <>
-            <GestureDetector gesture={nativeScroll}>
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingBottom: 24 }}
-            >
-              <Text className="text-white text-lg font-semibold text-center mb-2">
-                Set your {MONTH_NAMES[currMonth]} budget
-              </Text>
-              <Text className="text-white/50 text-base text-center mb-8" style={{ lineHeight: 22 }}>
-                How much do you want to spend this month?
-              </Text>
+            <GestureDetector gesture={pan}>
+              <View>
+                <Animated.View style={formStyle} pointerEvents={confirmDelta ? 'none' : 'auto'}>
+                  <View style={{ paddingTop: 10, paddingBottom: 16, alignItems: 'center' }}>
+                    <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.2)' }} />
+                  </View>
 
-              <View className="items-center mb-8">
-                <AmountRow amount={amount} prevAmountLength={prevAmountLength} skipDigitAnim={skipDigitAnimRef.current} />
+                  <Text className="text-white text-lg font-semibold text-center mb-2 px-6">
+                    Set your {MONTH_NAMES[currMonth]} budget
+                  </Text>
+                  <Text className="text-white/50 text-base text-center mb-6 px-6" style={{ lineHeight: 22 }}>
+                    How much do you want to spend this month?
+                  </Text>
+
+                  {rulerOn ? (
+                    <>
+                      <View className="items-center mb-2">
+                        <RulerFigure value={parseFloat(amount) || 0} />
+                      </View>
+
+                      {/* Edge to edge, so the ticks can run off both sides of the screen. */}
+                      <AmountRuler
+                        scale={BUDGET_SCALE}
+                        initialValue={startValue}
+                        sessionKey={session}
+                        onChange={v => setAmount(String(v))}
+                        surface={SHEET_COLOR}
+                      />
+                    </>
+                  ) : (
+                    <View className="items-center mb-6">
+                      <AmountRow amount={amount} prevAmountLength={prevAmountLength} skipDigitAnim={skipDigitAnimRef.current} />
+                    </View>
+                  )}
+
+                  {recap && (
+                    <View className="px-6" style={{ marginTop: rulerOn ? 24 : 0 }}>
+                      <View
+                        className="px-4 py-3 w-full"
+                        style={{
+                          maxWidth: 320, alignSelf: 'center', borderRadius: 16, borderWidth: 1,
+                          // The same recessed fill the new-goal sheet's fields use.
+                          backgroundColor: 'rgba(0,0,0,0.18)', borderColor: 'rgba(255,255,255,0.07)',
+                        }}
+                      >
+                        <Text className="text-white/40 text-xs font-semibold uppercase tracking-wide mb-1.5">Last month</Text>
+                        <Text className="text-white text-base font-medium mb-1">{recap.stat}</Text>
+                        <Text className="text-sm" style={{ color: recap.color, lineHeight: 18 }}>{recap.hint}</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {!!error && <Text className="text-red-400 text-base text-center mx-5 mt-4">{error}</Text>}
+
+                  <View style={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: rulerOn ? Math.max(insets.bottom, 8) + 12 : 20 }}>
+                    <GlassPressable
+                      variant="active"
+                      radius={16}
+                      disabled={!canSubmit}
+                      onPress={handleSubmit}
+                      className="w-full py-[14px] items-center"
+                    >
+                      <Text className="text-black text-base font-semibold">{submitting ? 'Setting…' : 'Set Budget'}</Text>
+                    </GlassPressable>
+                  </View>
+
+                  {!rulerOn && <NumericKeypad onKeyPress={handleKeypadPress} insetBottom={insets.bottom} />}
+                </Animated.View>
+
+                {confirmDelta && (
+                  // Over the whole sheet, so it centres on the sheet rather than
+                  // on what is left below the grabber.
+                  <Animated.View
+                    style={[
+                      { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
+                      confirmStyle,
+                    ]}
+                  >
+                    {confirmDelta.greeting ? (
+                      <>
+                        <SuccessBadge style={{ marginBottom: 24 }} />
+                        <Text className="text-white text-lg font-semibold text-center" style={{ lineHeight: 26 }}>
+                          You set {formatCurrency(confirmDelta.amount)} budget{'\n'}for {MONTH_NAMES[currMonth]}. Stick with it!
+                        </Text>
+                      </>
+                    ) : (
+                      <>
+                        <View
+                          className="items-center justify-center mb-6"
+                          style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: confirmBg }}
+                        >
+                          <TrendArrowIcon up={confirmDelta.up} color={confirmColor} size={28} />
+                        </View>
+                        <Text className="text-white text-lg font-semibold text-center" style={{ lineHeight: 26 }}>
+                          You decided to spend{'\n'}{formatCurrency(confirmDelta.diff)} {confirmDelta.up ? 'more' : 'less'} this month
+                        </Text>
+                      </>
+                    )}
+                  </Animated.View>
+                )}
               </View>
-
-              {recap && (
-                <GlassView variant="glass" radius={16} className="px-4 py-3 w-full" style={{ maxWidth: 320, alignSelf: 'center' }}>
-                  <Text className="text-white/40 text-xs font-semibold uppercase tracking-wide mb-1.5">Last month</Text>
-                  <Text className="text-white text-base font-medium mb-1">{recap.stat}</Text>
-                  <Text className="text-sm" style={{ color: recap.color, lineHeight: 18 }}>{recap.hint}</Text>
-                </GlassView>
-              )}
-            </ScrollView>
             </GestureDetector>
-
-            {!!error && <Text className="text-red-400 text-base text-center mx-5 mb-3">{error}</Text>}
-            <View style={{ paddingHorizontal: 20, paddingBottom: 20 }}>
-              <GlassPressable
-                variant="active"
-                radius={16}
-                disabled={!canSubmit}
-                onPress={handleSubmit}
-                className="w-full py-[14px] items-center"
-              >
-                <Text className="text-black text-base font-semibold">{submitting ? 'Setting…' : 'Set Budget'}</Text>
-              </GlassPressable>
-            </View>
-
-            <NumericKeypad onKeyPress={handleKeypadPress} insetBottom={insets.bottom} />
-          </>
-        )}
-      </View>
-      </GestureDetector>
-      </Animated.View>
+          </Animated.View>
+        </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }

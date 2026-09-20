@@ -12,7 +12,7 @@ import { GlassPressable, INPUT_TEXT_STYLE } from './Glass';
 import { useShake } from '../hooks/useShake';
 import { TrashIcon } from './icons';
 import { ROUNDED_FONT } from './savingsShared';
-import AmountRuler, { MIN_TARGET } from './AmountRuler';
+import AmountRuler, { RulerFigure, MIN_TARGET } from './AmountRuler';
 import { formatCurrency, shiftDate, today } from '../utils/format';
 
 // Same as AddModal's description pill, so the two sheets read as one family.
@@ -149,7 +149,6 @@ function FieldRow({ label, active, onPress, shake, light, children }) {
 // A goal opens at DEFAULT_TARGET rather than zero — an empty ruler gives the
 // user nothing to adjust, and most goals are nearer a lakh than nothing.
 const DEFAULT_TARGET = 100000;
-const targetFormat = new Intl.NumberFormat('en-IN');
 
 export function GoalSheet({ open, onClose, goal, initialName = '', onSubmit, light = false }) {
   const isEdit = !!goal;
@@ -209,6 +208,7 @@ export function GoalSheet({ open, onClose, goal, initialName = '', onSubmit, lig
     // a tall sheet with nothing in the bottom half reads as unfinished.
     <InlineSheet open={open} onClose={handleClose} light={light} heightRatio={0.6}>
       <ScrollView
+        style={{ flexGrow: 0 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingHorizontal: 20 }}
@@ -270,17 +270,14 @@ export function GoalSheet({ open, onClose, goal, initialName = '', onSubmit, lig
 
       {!!error && <Text className="text-red-400 text-base text-center mx-5 mb-2">{error}</Text>}
 
-      {/* The ruler runs edge to edge, so only the label, the figure and the
-          button carry the sheet's own side padding. */}
-      <View style={{ marginTop: 'auto' }}>
+      {/* Whatever room is left between the name field and the button goes to
+          the target, centred in it and nudged a little above true centre (the
+          bottom padding). The ruler runs edge to edge, so only the label and
+          the figure sit inside the sheet's own side padding. */}
+      <View style={{ flex: 1, justifyContent: 'center', paddingBottom: 24 }}>
         <Text className="text-center text-[13px]" style={{ color: muted }}>Target</Text>
         <Animated.View style={[{ alignItems: 'center', marginTop: 2, marginBottom: 6 }, amountShake.style]}>
-          <Text
-            style={{ fontSize: 42, lineHeight: 50, fontWeight: '600', letterSpacing: -1, color: light ? '#111111' : '#ffffff', fontFamily: ROUNDED_FONT }}
-          >
-            <Text style={{ fontSize: 26, fontWeight: '400', color: muted }}>₹</Text>
-            {targetFormat.format(target)}
-          </Text>
+          <RulerFigure value={target} light={light} />
         </Animated.View>
 
         <AmountRuler
@@ -290,15 +287,13 @@ export function GoalSheet({ open, onClose, goal, initialName = '', onSubmit, lig
           light={light}
           surface={surface}
         />
-
-        <View style={{ marginTop: 22 }}>
-          <ActionRow
-            primaryLabel={isEdit ? (submitting ? 'Saving' : 'Save') : (submitting ? 'Adding' : 'Add Goal')}
-            onPrimary={handleSubmit}
-            disabled={submitting}
-          />
-        </View>
       </View>
+
+      <ActionRow
+        primaryLabel={isEdit ? (submitting ? 'Saving' : 'Save') : (submitting ? 'Adding' : 'Add Goal')}
+        onPrimary={handleSubmit}
+        disabled={submitting}
+      />
     </InlineSheet>
   );
 }

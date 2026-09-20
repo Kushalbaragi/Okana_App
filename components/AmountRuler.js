@@ -1,8 +1,9 @@
 import { memo, useCallback, useEffect, useRef } from 'react';
-import { View, useWindowDimensions } from 'react-native';
+import { View, Text, useWindowDimensions } from 'react-native';
 import Animated, { useSharedValue, useAnimatedScrollHandler, runOnJS } from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient, Stop, Path, Rect, Text as SvgText } from 'react-native-svg';
 import { hapticTick } from '../utils/haptics';
+import { ROUNDED_FONT, dim } from './savingsShared';
 
 // A ruler you drag sideways to set an amount: the ticks scroll under a fixed
 // centre line and the value is whichever one sits under it.
@@ -30,69 +31,85 @@ const FADE_W = 44;
 // The step between ticks grows with the amount. A flat step can't serve both
 // ends: fine enough for a ₹20,000 goal means thousands of ticks to reach ₹20
 // lakh. Widening it keeps small goals precise and big ones a few swipes away.
-const BANDS = [
+// Each use gets its own set of bands — a monthly budget lives at a smaller
+// scale than a savings goal, so it wants finer steps down there.
+export const GOAL_BANDS = [
   { upTo: 100000, step: 1000 },
   { upTo: 1000000, step: 10000 },
   { upTo: 5000000, step: 50000 },
 ];
 
-function buildTicks() {
-  const values = [0];
-  let prev = 0;
-  for (const band of BANDS) {
-    for (let v = prev + band.step; v <= band.upTo; v += band.step) values.push(v);
-    prev = band.upTo;
-  }
-  return values;
-}
+export const BUDGET_BANDS = [
+  { upTo: 20000, step: 500 },
+  { upTo: 100000, step: 1000 },
+  { upTo: 1000000, step: 10000 },
+];
 
-const TICKS = buildTicks();
-const N = TICKS.length;
-const TRACK_W = (N - 1) * SPACING + PAD * 2;
-
-export const MIN_TARGET = TICKS[1];
-export const MAX_TARGET = TICKS[N - 1];
-
-// Nearest tick to a value — an amount typed before this picker existed (or one
-// carried over from an older goal) won't sit exactly on one.
-export function nearestTickIndex(value) {
-  if (!(value > 0)) return 0;
-  let lo = 0, hi = N - 1;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (TICKS[mid] < value) lo = mid + 1; else hi = mid;
-  }
-  if (lo > 0 && value - TICKS[lo - 1] < TICKS[lo] - value) return lo - 1;
-  return lo;
-}
-
-// "₹5K", "₹1.5L", "₹1Cr" — short enough to sit under a tick without crowding
+// "5K", "1.5L", "1Cr" — short enough to sit under a tick without crowding
 // its neighbours.
 function shortLabel(v) {
   if (v === 0) return '0';
-  if (v >= 10000000) return `₹${+(v / 10000000).toFixed(1)}Cr`;
-  if (v >= 100000) return `₹${+(v / 100000).toFixed(1)}L`;
-  return `₹${Math.round(v / 1000)}K`;
+  if (v >= 10000000) return `${+(v / 10000000).toFixed(1)}Cr`;
+  if (v >= 100000) return `${+(v / 100000).toFixed(1)}L`;
+  return `${Math.round(v / 1000)}K`;
 }
 
-// Every tick as two path strings (one for the short ones, one for the tall) so
-// the whole ruler is two native nodes instead of a few hundred. Built once, at
-// module load: the ruler is the same at every size and in every theme.
-const { minorPath, majorPath, labels } = (() => {
+// Everything that depends only on the bands, built once at module load: the
+// tick values, and every tick as two path strings (one for the short ones, one
+// for the tall) so the whole ruler is two native nodes instead of a few
+// hundred. The ruler is otherwise the same at every size and in every theme.
+export function createScale(bands) {
+  const ticks = [0];
+  let prev = 0;
+  for (const band of bands) {
+    for (let v = prev + band.step; v <= band.upTo; v += band.step) ticks.push(v);
+    prev = band.upTo;
+  }
+  const count = ticks.length;
+
   let minor = '';
   let major = '';
-  const marks = [];
-  for (let i = 0; i < N; i++) {
+  const labels = [];
+  for (let i = 0; i < count; i++) {
     const x = PAD + i * SPACING;
     if (i % MAJOR_EVERY === 0) {
       major += `M${x} ${TICK_TOP}V${TICK_TOP + MAJOR_H}`;
-      marks.push({ x, text: shortLabel(TICKS[i]) });
+      labels.push({ x, text: shortLabel(ticks[i]) });
     } else {
       minor += `M${x} ${TICK_TOP}V${TICK_TOP + MINOR_H}`;
     }
   }
-  return { minorPath: minor, majorPath: major, labels: marks };
-})();
+
+  // Nearest tick to a value — an amount typed before this picker existed (or
+  // one carried over from an older goal or budget) won't sit exactly on one.
+  function nearestTickIndex(value) {
+    if (!(value > 0)) return 0;
+    let lo = 0, hi = count - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (ticks[mid] < value) lo = mid + 1; else hi = mid;
+    }
+    if (lo > 0 && value - ticks[lo - 1] < ticks[lo] - value) return lo - 1;
+    return lo;
+  }
+
+  return {
+    ticks,
+    count,
+    trackWidth: (count - 1) * SPACING + PAD * 2,
+    minorPath: minor,
+    majorPath: major,
+    labels,
+    min: ticks[1],
+    max: ticks[count - 1],
+    nearestTickIndex,
+  };
+}
+
+export const GOAL_SCALE = createScale(GOAL_BANDS);
+export const BUDGET_SCALE = createScale(BUDGET_BANDS);
+
+export const MIN_TARGET = GOAL_SCALE.min;
 
 // One edge of the ruler dissolving into the sheet, so ticks arrive and leave
 // rather than being cut off at a hard border.
@@ -119,8 +136,11 @@ function EdgeFade({ side, color }) {
 // `sessionKey` changing means "start again from initialValue" — the sheet
 // reopening, say. The scroll position is the source of truth the rest of the
 // time, so the value is reported out rather than pushed in.
-function AmountRuler({ initialValue, sessionKey, onChange, light = false, surface }) {
+function AmountRuler({ initialValue, sessionKey, onChange, light = false, surface, scale = GOAL_SCALE }) {
   const { width } = useWindowDimensions();
+  // Pulled out as plain values: the scroll handler below is a worklet, and
+  // capturing the whole scale would copy every tick across to the UI thread.
+  const { ticks, count, trackWidth, minorPath, majorPath, labels, nearestTickIndex } = scale;
   const scrollRef = useRef(null);
   const lastIndex = useSharedValue(nearestTickIndex(initialValue));
   const lastHapticRef = useRef(0);
@@ -128,7 +148,7 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
   onChangeRef.current = onChange;
 
   const report = useCallback((index) => {
-    onChangeRef.current(TICKS[index]);
+    onChangeRef.current(ticks[index]);
     // A fast fling crosses ticks quicker than a tap can be felt as separate;
     // spacing them out keeps the ruler buzzing rather than mushing.
     const now = Date.now();
@@ -136,7 +156,7 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
       lastHapticRef.current = now;
       hapticTick();
     }
-  }, []);
+  }, [ticks]);
 
   useEffect(() => {
     const index = nearestTickIndex(initialValue);
@@ -151,7 +171,7 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (e) => {
       const raw = Math.round(e.contentOffset.x / SPACING);
-      const index = raw < 0 ? 0 : raw > N - 1 ? N - 1 : raw;
+      const index = raw < 0 ? 0 : raw > count - 1 ? count - 1 : raw;
       if (index !== lastIndex.value) {
         lastIndex.value = index;
         runOnJS(report)(index);
@@ -178,7 +198,7 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
         contentContainerStyle={{ paddingHorizontal: width / 2 - PAD }}
         contentOffset={{ x: nearestTickIndex(initialValue) * SPACING, y: 0 }}
       >
-        <Svg width={TRACK_W} height={HEIGHT}>
+        <Svg width={trackWidth} height={HEIGHT}>
           <Path d={minorPath} stroke={tickColor} strokeWidth="1.5" strokeLinecap="round" />
           <Path d={majorPath} stroke={majorColor} strokeWidth="2" strokeLinecap="round" />
           {labels.map(mark => (
@@ -205,3 +225,18 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
 }
 
 export default memo(AmountRuler);
+
+const figureFormat = new Intl.NumberFormat('en-IN');
+
+// The readout that goes above the ruler: the amount it is currently on, big,
+// with a dimmed rupee sign.
+export function RulerFigure({ value, light = false }) {
+  return (
+    <Text
+      style={{ fontSize: 42, lineHeight: 50, fontWeight: '600', letterSpacing: -1, color: light ? '#111111' : '#ffffff', fontFamily: ROUNDED_FONT }}
+    >
+      <Text style={{ fontSize: 26, fontWeight: '400', color: dim(light) }}>₹ </Text>
+      {figureFormat.format(value)}
+    </Text>
+  );
+}
