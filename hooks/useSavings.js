@@ -324,7 +324,13 @@ export function useSavings() {
       const percent = g.target > 0 ? Math.min(100, Math.round((saved / g.target) * 100)) : 0
       return { ...g, entries, saved, percent, reached: saved >= g.target }
     })
-    const active = all.filter(g => !g.completedAt)
+    // Closest to done first. Compared on the exact ratio rather than the
+    // rounded percent the list shows, so two goals both at "61%" (or both capped
+    // at 100%) still order by who is really further along; a dead heat keeps the
+    // order the goals were created in.
+    const active = all
+      .filter(g => !g.completedAt)
+      .sort((x, y) => (y.saved / y.target) - (x.saved / x.target) || x.createdAt.localeCompare(y.createdAt))
     const completed = all.filter(g => g.completedAt).sort((a, b) => b.completedAt.localeCompare(a.completedAt))
     return {
       all,

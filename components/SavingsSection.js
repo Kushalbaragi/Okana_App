@@ -1,25 +1,18 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Platform, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, FadeIn } from 'react-native-reanimated';
 import { GlassPressable } from './Glass';
 import BarChart from './BarChart';
 import BudgetStatusBar from './BudgetStatusBar';
 import { InlineConfirm } from './InlineConfirm';
-import { SETTLE_EASING } from './AmountField';
-import { GoalSheet, MoneySheet } from './SavingsSheets';
+import { GOAL_SUGGESTIONS, GoalSheet, MoneySheet } from './SavingsSheets';
+import { GoalCard } from './GoalCard';
+import { Card, ROUNDED_FONT, POSITIVE, dim, money } from './savingsShared';
 import { CheckIcon, ChevronRight, EditIcon, PlusIcon, TrashIcon } from './icons';
-import { currentMonthYear, dateBoxParts, formatCurrency, formatCurrencyFull } from '../utils/format';
+import { currentMonthYear, dateBoxParts } from '../utils/format';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 
-// 'ui-rounded' for the numerals, as everywhere else the amounts are shown —
-// see AmountField.js.
-const ROUNDED_FONT = Platform.OS === 'ios' ? 'ui-rounded' : undefined;
-
-const CARD_COLOR = '#151515';
-const FILL_COLOR = '#4ade80';
-const POSITIVE = 'rgba(74,222,128,0.85)';
-const SUGGESTIONS = ['Bike', 'Home', 'Emergency fund'];
 // A softer red than the one used for errors — a resting delete icon shouldn't
 // shout.
 const DANGER_SOFT = 'rgba(248,113,113,0.65)';
@@ -32,16 +25,11 @@ const SWAP_MS = 220;
 // GlassPressables below: className on an animated component depends on
 // NativeWind's interop, which react-native-web doesn't apply, so an inline
 // style is the one form that renders identically everywhere.
-const ROW_PAD = { paddingHorizontal: 16, paddingVertical: 14 };
 const HISTORY_PAD = { paddingHorizontal: 16, paddingVertical: 12 };
 const CENTERED = { alignItems: 'center', justifyContent: 'center' };
 
 // How many months the goal chart covers, ending with the current one.
 const CHART_MONTHS = 6;
-
-const money = (n) => (Number.isInteger(n) ? formatCurrency(n) : formatCurrencyFull(n));
-
-const dim = (light, a = 0.4) => (light ? `rgba(0,0,0,${a})` : `rgba(255,255,255,${a})`);
 
 // ---------------------------------------------------------------------------
 // Sheet state. Owned by the calendar page (not this section) because the
@@ -269,64 +257,8 @@ function AddFab({ onPress, label }) {
   );
 }
 
-// Solid rounded bar. Fills toward its value whenever it changes, and on first
-// mount — the width is a percentage string on the UI thread, so no layout
-// measuring is needed.
-function ProgressBar({ percent, height = 6, light }) {
-  const progress = useSharedValue(0);
-  useEffect(() => {
-    progress.value = withTiming(percent / 100, { duration: 420, easing: SETTLE_EASING });
-  }, [percent, progress]);
-  const fillStyle = useAnimatedStyle(() => ({ width: `${progress.value * 100}%` }));
-
-  return (
-    <View style={{ height, borderRadius: height / 2, overflow: 'hidden', backgroundColor: dim(light, 0.08) }}>
-      <Animated.View style={[{ height: '100%', borderRadius: height / 2, backgroundColor: FILL_COLOR }, fillStyle]} />
-    </View>
-  );
-}
-
 function Divider({ inset = 16, light }) {
   return <View style={{ height: StyleSheet.hairlineWidth, marginHorizontal: inset, backgroundColor: light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }} />;
-}
-
-function Card({ children, light }) {
-  return (
-    <View style={{ backgroundColor: light ? '#FFFFFF' : CARD_COLOR, borderRadius: 24, overflow: 'hidden' }}>
-      {children}
-    </View>
-  );
-}
-
-function GoalRow({ goal, onPress, light }) {
-  return (
-    <GlassPressable variant="field" pressScale={false} onPress={() => onPress(goal.id)} style={ROW_PAD} accessibilityRole="button" accessibilityLabel={goal.name}>
-      <View className="flex-row items-baseline justify-between" style={{ gap: 12 }}>
-        <Text className="text-base" numberOfLines={1} style={{ flexShrink: 1, color: light ? '#111111' : '#ffffff' }}>{goal.name}</Text>
-        <Text className="text-[13px]" numberOfLines={1} style={{ color: dim(light, 0.4) }}>
-          {money(goal.saved)} / {money(goal.target)}
-        </Text>
-      </View>
-      <View className="flex-row items-center" style={{ gap: 10, marginTop: 10 }}>
-        <View style={{ flex: 1 }}><ProgressBar percent={goal.percent} light={light} /></View>
-        <Text className="text-xs" style={{ width: 34, textAlign: 'right', color: POSITIVE }}>{goal.percent}%</Text>
-      </View>
-    </GlassPressable>
-  );
-}
-
-function CompletedRow({ goal, onPress, light }) {
-  return (
-    <GlassPressable variant="field" pressScale={false} onPress={() => onPress(goal.id)} style={ROW_PAD} accessibilityRole="button" accessibilityLabel={`${goal.name}, completed`}>
-      <View className="flex-row items-center justify-between" style={{ gap: 12 }}>
-        <View className="flex-row items-center" style={{ gap: 8, flexShrink: 1 }}>
-          <CheckIcon size={14} color={POSITIVE} />
-          <Text className="text-base" numberOfLines={1} style={{ flexShrink: 1, color: dim(light, 0.6) }}>{goal.name}</Text>
-        </View>
-        <Text className="text-[13px]" style={{ color: dim(light, 0.4) }}>{money(goal.target)}</Text>
-      </View>
-    </GlassPressable>
-  );
 }
 
 function EmptyState({ onNew, light }) {
@@ -340,7 +272,7 @@ function EmptyState({ onNew, light }) {
         <Text className="text-black text-[15px] font-semibold">New goal</Text>
       </GlassPressable>
       <View className="flex-row flex-wrap justify-center" style={{ gap: 8, marginTop: 20 }}>
-        {SUGGESTIONS.map(name => (
+        {GOAL_SUGGESTIONS.map(name => (
           <GlassPressable key={name} variant="field" radius={9999} onPress={() => onNew(name)} style={{ paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1, borderColor: dim(light, 0.14) }}>
             <Text className="text-sm" style={{ color: dim(light, 0.7) }}>{name}</Text>
           </GlassPressable>
@@ -545,27 +477,15 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
           ) : (
             <>
               <View className="items-center" style={{ paddingBottom: 22 }}>
-                <Text className="text-sm" style={{ color: dim(light, 0.4) }}>Total saved</Text>
+                <Text className="text-sm" style={{ color: dim(light, 0.4) }}>Total Savings</Text>
                 <Text
                   style={{ fontSize: 44, lineHeight: 52, fontWeight: '600', letterSpacing: -1, color: light ? '#111111' : '#ffffff', fontFamily: ROUNDED_FONT }}
                 >
                   {money(totalSaved)}
                 </Text>
-                <Text className="text-[13px]" style={{ color: dim(light, 0.4) }}>
-                  {goals.length === 0 ? 'No active goals' : `across ${goals.length} ${goals.length === 1 ? 'goal' : 'goals'}`}
-                </Text>
               </View>
 
-              {goals.length > 0 && (
-                <Card light={light}>
-                  {goals.map((g, i) => (
-                    <View key={g.id}>
-                      <GoalRow goal={g} onPress={onOpenGoal} light={light} />
-                      {i < goals.length - 1 && <Divider light={light} />}
-                    </View>
-                  ))}
-                </Card>
-              )}
+              {goals.map(g => <GoalCard key={g.id} goal={g} onPress={onOpenGoal} light={light} />)}
 
               {completedGoals.length > 0 && (
                 <>
@@ -583,14 +503,7 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
                   </Pressable>
                   {showCompleted && (
                     <Animated.View entering={FadeIn.duration(SWAP_MS)}>
-                      <Card light={light}>
-                        {completedGoals.map((g, i) => (
-                          <View key={g.id}>
-                            <CompletedRow goal={g} onPress={onOpenGoal} light={light} />
-                            {i < completedGoals.length - 1 && <Divider light={light} />}
-                          </View>
-                        ))}
-                      </Card>
+                      {completedGoals.map(g => <GoalCard key={g.id} goal={g} onPress={onOpenGoal} light={light} done />)}
                     </Animated.View>
                   )}
                 </>

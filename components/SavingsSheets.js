@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, Keyboard, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS, interpolateColor, FadeIn, FadeOut } from 'react-native-reanimated';
 import Svg, { Rect, Line } from 'react-native-svg';
 import { InlineSheet } from './InlineSheet';
 import SegmentedSwitch from './SegmentedSwitch';
@@ -11,10 +11,16 @@ import { AmountRow } from './AmountField';
 import { GlassPressable, INPUT_TEXT_STYLE } from './Glass';
 import { useShake } from '../hooks/useShake';
 import { TrashIcon } from './icons';
+import { ROUNDED_FONT } from './savingsShared';
+import AmountRuler, { MIN_TARGET } from './AmountRuler';
 import { formatCurrency, shiftDate, today } from '../utils/format';
 
 // Same as AddModal's description pill, so the two sheets read as one family.
 const PILL_H = 40;
+
+// Ideas for a goal's name, offered under the name field and on the empty
+// state. Tapping one just fills the name in; it can still be edited.
+export const GOAL_SUGGESTIONS = ['Emergency fund', 'Vacation', 'Bike', 'Home', 'New phone', 'Wedding'];
 
 const MONEY_TYPES = [
   { id: 'add', label: 'Add' },
@@ -88,40 +94,85 @@ function TextPill({ value, onChangeText, placeholder, maxLength, shake, light, a
   );
 }
 
-// The primary button that sits right above the keypad, on the right.
+// The primary button above the keypad, running the full width of the sheet.
 function ActionRow({ primaryLabel, onPrimary, disabled }) {
   return (
-    <View className="flex-row items-center justify-end" style={{ paddingHorizontal: 32, paddingBottom: 20 }}>
+    <View style={{ paddingHorizontal: 20, paddingBottom: 20 }}>
       <GlassPressable
         variant="active"
         radius={9999}
         disabled={disabled}
         onPress={onPrimary}
-        style={{ paddingHorizontal: 32, paddingVertical: 12, alignItems: 'center' }}
+        style={{ paddingVertical: 16, alignItems: 'center' }}
       >
-        <Text className="text-black text-[15px] font-semibold">{primaryLabel}</Text>
+        <Text className="text-black text-base font-semibold">{primaryLabel}</Text>
       </GlassPressable>
     </View>
   );
 }
 
-// New goal / edit goal. The amount is the goal's target.
+// A labelled field row. The one being edited wears a green outline that fades in
+// and out as the focus moves between rows, so it is always clear which one the
+// keypad (or keyboard) is talking to.
+function FieldRow({ label, active, onPress, shake, light, children }) {
+  const on = useSharedValue(active ? 1 : 0);
+  useEffect(() => {
+    on.value = withTiming(active ? 1 : 0, { duration: 180, easing: Easing.out(Easing.cubic) });
+  }, [active, on]);
+  const outline = useAnimatedStyle(() => ({
+    borderColor: interpolateColor(on.value, [0, 1], [light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)', 'rgba(74,222,128,0.5)']),
+  }));
+
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>
+      <Animated.View
+        style={[
+          {
+            height: 48, borderRadius: 14, borderWidth: 1, paddingHorizontal: 16,
+            flexDirection: 'row', alignItems: 'center', gap: 10,
+            backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.18)',
+          },
+          outline,
+        ]}
+      >
+        <Text style={{ width: 56, fontSize: 13, color: light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)' }}>{label}</Text>
+        <Animated.View style={[{ flex: 1, justifyContent: 'center' }, shake.style]}>{children}</Animated.View>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+// New goal / edit goal. The target is set on a ruler rather than typed: a goal
+// is a round-ish number you feel your way to, not a figure you know to the
+// rupee, and dragging to it is quicker (and more fun) than tapping it out.
+//
+// A goal opens at DEFAULT_TARGET rather than zero — an empty ruler gives the
+// user nothing to adjust, and most goals are nearer a lakh than nothing.
+const DEFAULT_TARGET = 100000;
+const targetFormat = new Intl.NumberFormat('en-IN');
+
 export function GoalSheet({ open, onClose, goal, initialName = '', onSubmit, light = false }) {
-  const insets = useSafeAreaInsets();
   const isEdit = !!goal;
-  const { amount, prevAmountLength, skipDigitAnim, onKeyPress, setProgrammatic } = useAmountEntry();
   const [name, setName] = useState('');
+  const [target, setTarget] = useState(DEFAULT_TARGET);
+  const [nameFocused, setNameFocused] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Bumped each time the sheet opens, which is what tells the ruler to go back
+  // to the target it is being given rather than wherever it was left.
+  const [session, setSession] = useState(0);
+  const nameRef = useRef(null);
   const nameShake = useShake();
   const amountShake = useShake();
 
   useEffect(() => {
     if (!open) return;
     setName(goal ? goal.name : initialName);
-    setProgrammatic(goal ? String(goal.target) : '');
+    setTarget(goal ? goal.target : DEFAULT_TARGET);
+    setNameFocused(false);
     setError('');
     setSubmitting(false);
+    setSession(n => n + 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -131,18 +182,17 @@ export function GoalSheet({ open, onClose, goal, initialName = '', onSubmit, lig
 
   async function handleSubmit() {
     if (submitting) return;
-    const value = parseFloat(amount);
     const nameInvalid = !name.trim();
-    const amountInvalid = !value || value <= 0;
-    if (nameInvalid || amountInvalid) {
+    const targetInvalid = !(target >= MIN_TARGET);
+    if (nameInvalid || targetInvalid) {
       if (nameInvalid) nameShake.shake();
-      if (amountInvalid) amountShake.shake();
+      if (targetInvalid) amountShake.shake();
       return;
     }
     Keyboard.dismiss();
     setSubmitting(true);
     setError('');
-    const result = await onSubmit({ name, target: value });
+    const result = await onSubmit({ name, target });
     if (result?.success === false) {
       setSubmitting(false);
       setError(result.error || 'Something went wrong. Please try again.');
@@ -152,43 +202,102 @@ export function GoalSheet({ open, onClose, goal, initialName = '', onSubmit, lig
   }
 
   const muted = light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)';
+  const surface = light ? '#FAFAF8' : '#161616';
 
   return (
-    <InlineSheet open={open} onClose={handleClose} light={light}>
-      <View style={{ paddingHorizontal: 20 }}>
-        <Text className="text-center text-[13px]" style={{ color: muted }}>{isEdit ? 'Target' : 'New goal · target'}</Text>
-        <Animated.View style={[{ alignItems: 'center', marginTop: 6, marginBottom: 28 }, amountShake.style]}>
-          <AmountRow
-            amount={amount}
-            prevAmountLength={prevAmountLength}
-            skipDigitAnim={skipDigitAnim}
-            light={light}
-            digitFontSize={64}
-            lineHeight={72}
-            zeroColor={light ? 'rgba(0,0,0,0.82)' : 'rgba(255,255,255,0.82)'}
-            weight="500"
+    // Shorter than the sheets that carry a keypad — the ruler replaces it, and
+    // a tall sheet with nothing in the bottom half reads as unfinished.
+    <InlineSheet open={open} onClose={handleClose} light={light} heightRatio={0.6}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingHorizontal: 20 }}
+        bounces={false}
+        overScrollMode="never"
+      >
+        <Text
+          className="text-center"
+          style={{ fontSize: 21, fontWeight: '600', letterSpacing: -0.3, marginBottom: 18, color: light ? '#111111' : '#ffffff', fontFamily: ROUNDED_FONT }}
+        >
+          {isEdit ? 'Edit goal' : 'New goal'}
+        </Text>
+
+        <FieldRow label="Goal" active={nameFocused} onPress={() => nameRef.current?.focus()} shake={nameShake} light={light}>
+          <TextInput
+            ref={nameRef}
+            value={name}
+            onChangeText={setName}
+            onFocus={() => setNameFocused(true)}
+            onBlur={() => setNameFocused(false)}
+            placeholder="Goal name"
+            placeholderTextColor={light ? '#b0b0b0' : '#4d4d4d'}
+            maxLength={60}
+            autoCapitalize="sentences"
+            returnKeyType="done"
+            onSubmitEditing={Keyboard.dismiss}
+            style={[INPUT_TEXT_STYLE, { fontSize: 16, color: light ? '#111111' : '#ffffff', height: 48, paddingVertical: 0 }]}
           />
-        </Animated.View>
-        <TextPill
-          value={name}
-          onChangeText={setName}
-          placeholder="Goal name, e.g. Bike"
-          maxLength={60}
-          shake={nameShake}
-          light={light}
-          autoCapitalize="sentences"
-        />
-      </View>
+        </FieldRow>
 
-      {!!error && <Text className="text-red-400 text-base text-center mx-5 mt-3">{error}</Text>}
+        {/* Ideas for the name, only while there isn't one — once something is
+            there they would just take up room. */}
+        {!isEdit && !name.trim() && (
+          <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              style={{ marginHorizontal: -20, marginTop: 8, flexGrow: 0 }}
+              contentContainerStyle={{ paddingHorizontal: 20, gap: 8 }}
+            >
+              {GOAL_SUGGESTIONS.map(suggestion => (
+                <GlassPressable
+                  key={suggestion}
+                  variant="field"
+                  radius={9999}
+                  onPress={() => { Keyboard.dismiss(); setName(suggestion); }}
+                  accessibilityRole="button"
+                  accessibilityLabel={suggestion}
+                  style={{ paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)' }}
+                >
+                  <Text className="text-sm" style={{ color: light ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.65)' }}>{suggestion}</Text>
+                </GlassPressable>
+              ))}
+            </ScrollView>
+          </Animated.View>
+        )}
+      </ScrollView>
 
+      {!!error && <Text className="text-red-400 text-base text-center mx-5 mb-2">{error}</Text>}
+
+      {/* The ruler runs edge to edge, so only the label, the figure and the
+          button carry the sheet's own side padding. */}
       <View style={{ marginTop: 'auto' }}>
-        <ActionRow
-          primaryLabel={isEdit ? (submitting ? 'Saving' : 'Save') : (submitting ? 'Creating' : 'Create')}
-          onPrimary={handleSubmit}
-          disabled={submitting}
+        <Text className="text-center text-[13px]" style={{ color: muted }}>Target</Text>
+        <Animated.View style={[{ alignItems: 'center', marginTop: 2, marginBottom: 6 }, amountShake.style]}>
+          <Text
+            style={{ fontSize: 42, lineHeight: 50, fontWeight: '600', letterSpacing: -1, color: light ? '#111111' : '#ffffff', fontFamily: ROUNDED_FONT }}
+          >
+            <Text style={{ fontSize: 26, fontWeight: '400', color: muted }}>₹</Text>
+            {targetFormat.format(target)}
+          </Text>
+        </Animated.View>
+
+        <AmountRuler
+          initialValue={isEdit ? goal.target : DEFAULT_TARGET}
+          sessionKey={session}
+          onChange={setTarget}
+          light={light}
+          surface={surface}
         />
-        <NumericKeypad onKeyPress={onKeyPress} insetBottom={insets.bottom} light={light} />
+
+        <View style={{ marginTop: 22 }}>
+          <ActionRow
+            primaryLabel={isEdit ? (submitting ? 'Saving' : 'Save') : (submitting ? 'Adding' : 'Add Goal')}
+            onPrimary={handleSubmit}
+            disabled={submitting}
+          />
+        </View>
       </View>
     </InlineSheet>
   );
