@@ -12,6 +12,7 @@ import {
   getLifetimeYearly,
   getLifetimeMonthly,
   getEarliestDate,
+  firstBarWithData,
   currentMonthYear,
 } from '../utils/format';
 
@@ -272,18 +273,17 @@ function SummaryCard({
   // because nothing was spent," and every day before signup showed a false
   // no-spend dot.
   const disabledBeforeIndex = useMemo(() => {
-    if (timeRange !== 'month') return null;
-    // No transactions at all yet — nothing anchors "no spend before this,"
-    // so every day through today stays blank rather than dotted, same as
-    // the Calendar page treats a brand new account.
-    if (!earliestDateStr) return disabledAfterIndex + 1;
-    const d = parseISO(earliestDateStr);
-    // Only applies when the earliest transaction actually falls within the
-    // month being shown; an account with history from an earlier month has
-    // nothing to cut off this month.
-    if (d.getFullYear() !== currYear || d.getMonth() !== currMonth) return null;
-    return d.getDate() - 1;
-  }, [timeRange, earliestDateStr, currYear, currMonth, disabledAfterIndex]);
+    if (timeRange !== 'month' && timeRange !== 'year') return null;
+    // No transactions at all yet — nothing anchors "no spend before this," so
+    // every day through today stays blank rather than dotted, same as the
+    // Calendar page treats a brand new account. (Only the month view has dots.)
+    if (!earliestDateStr) return timeRange === 'month' ? disabledAfterIndex + 1 : null;
+    // Only applies when the first transaction falls within the period being
+    // shown; an account with history from before it has nothing to cut off. In
+    // the year view this is also what keeps the average from being spread over
+    // the months before the first transaction, which had nothing in them.
+    return firstBarWithData({ timeRange, earliestDateStr, year, currYear, currMonth });
+  }, [timeRange, earliestDateStr, year, currYear, currMonth, disabledAfterIndex]);
 
   // Overview's income/expense split for whatever period is currently
   // shown — same per-period drill-down as Expense/Income's displayAmount

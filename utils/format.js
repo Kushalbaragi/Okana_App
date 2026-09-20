@@ -51,6 +51,20 @@ export function dateBoxParts(dateStr) {
   return { day: d.getDate(), month: MONTHS[d.getMonth()].toUpperCase() }
 }
 
+// Where a chart's real data begins: the index of the first bar that falls on or
+// after the account's first transaction, or null when that is not in the period
+// being shown (the account already existed for all of it, or has no data there
+// yet). The days of a month before the first transaction, or the months of a year
+// before it, are not "no spend" but "before there was anything to spend from", so
+// an average must not count them. Month view is indexed by day, year view by month.
+export function firstBarWithData({ timeRange, earliestDateStr, year, currYear, currMonth }) {
+  if (!earliestDateStr) return null
+  const d = parseISO(earliestDateStr)
+  if (timeRange === 'month') return d.getFullYear() === currYear && d.getMonth() === currMonth ? d.getDate() - 1 : null
+  if (timeRange === 'year') return d.getFullYear() === year ? d.getMonth() : null
+  return null
+}
+
 // "Today", "Yesterday", or "12 Sep 2026" — how a date reads on the button that
 // opens the calendar in the add-transaction and savings sheets.
 export function formatDayLabel(dateStr) {
