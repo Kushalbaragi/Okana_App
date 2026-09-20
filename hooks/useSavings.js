@@ -38,14 +38,19 @@ const FALLBACK_MESSAGE = 'Something went wrong. Please try again.'
 const cacheKey = (userId) => `okana_savings_${userId}`
 
 async function saveCache(userId, store) {
-  try { await AsyncStorage.setItem(cacheKey(userId), JSON.stringify(store)) } catch { /* best-effort */ }
+  // Best-effort: the list works without its cache, but a failing write is worth knowing about.
+  try { await AsyncStorage.setItem(cacheKey(userId), JSON.stringify(store)) } catch (err) { reportError(err) }
 }
 
 async function loadCache(userId) {
   try {
     const raw = await AsyncStorage.getItem(cacheKey(userId))
     return raw ? JSON.parse(raw) : null
-  } catch { return null }
+  } catch (err) {
+    // An unreadable cache is treated as no cache, and reported.
+    reportError(err)
+    return null
+  }
 }
 
 // Newest first, the same ordering the transaction list uses.
@@ -100,15 +105,21 @@ export function useSavings() {
           supabase.from('savings_goals').select('*').eq('user_id', user.id).order('created_at', { ascending: true }),
           supabase.from('savings_entries').select('*').eq('user_id', user.id),
         ])
-        if (goalsRes.error || entriesRes.error) return // keep showing what we have
+        const failure = goalsRes.error || entriesRes.error
+        if (failure) {
+          // Keep showing what we have; being offline isn't worth a report, a rejection is.
+          if (!isConnectivityError(failure, isOnlineRef.current)) reportError(failure)
+          return
+        }
         if (writesInFlightRef.current > 0) return
         hydratedRef.current = true
         setStore({
           goals: goalsRes.data.map(goalFromRow),
           entries: entriesRes.data.map(entryFromRow),
         })
-      } catch {
-        // Network failure — keep showing cached data.
+      } catch (err) {
+        // Keep showing cached data; a dropped connection is expected, anything else is reported.
+        if (!isConnectivityError(err, isOnlineRef.current)) reportError(err)
       } finally {
         setLoading(false)
         refreshInFlightRef.current = null

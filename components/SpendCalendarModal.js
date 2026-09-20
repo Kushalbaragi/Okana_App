@@ -21,6 +21,8 @@ import { TourHint } from './TourHint';
 import { BackIcon } from './icons';
 import SegmentedSwitch from './SegmentedSwitch';
 import SavingsSection, { SavingsSheetsHost, useSavingsUI } from './SavingsSection';
+import SavingsBoundary from './SavingsBoundary';
+import ErrorBoundary from './ErrorBoundary';
 import { useTourStep } from '../hooks/useTourStep';
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // Monday-first
@@ -465,15 +467,17 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
               </Animated.View>
 
               <Animated.View style={[StyleSheet.absoluteFill, savingsLayerStyle]} pointerEvents={section === 'savings' ? 'auto' : 'none'}>
-                <SavingsSection
-                  savings={savings}
-                  ui={savingsUI}
-                  active={open && section === 'savings'}
-                  light={light}
-                  detailGoalId={detailGoalId}
-                  onOpenGoal={openGoal}
-                  onCloseGoal={closeGoal}
-                />
+                <SavingsBoundary light={light} onReset={closeGoal}>
+                  <SavingsSection
+                    savings={savings}
+                    ui={savingsUI}
+                    active={open && section === 'savings'}
+                    light={light}
+                    detailGoalId={detailGoalId}
+                    onOpenGoal={openGoal}
+                    onCloseGoal={closeGoal}
+                  />
+                </SavingsBoundary>
               </Animated.View>
             </View>
 
@@ -498,7 +502,12 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
 
             {/* Last child of the page, so its sheets slide up over everything
                 above — header included. */}
-            <SavingsSheetsHost savings={savings} ui={savingsUI} light={light} />
+            <ErrorBoundary
+              resetKeys={[savingsUI.sheetData, savingsUI.confirmData]}
+              onError={() => { savingsUI.closeSheet(); savingsUI.closeConfirm(); }}
+            >
+              <SavingsSheetsHost savings={savings} ui={savingsUI} light={light} />
+            </ErrorBoundary>
         </View>
       </Animated.View>
     </Modal>

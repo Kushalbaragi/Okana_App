@@ -8,9 +8,7 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 const AnimatedLine = Animated.createAnimatedComponent(Line);
 const AnimatedSvgText = Animated.createAnimatedComponent(SvgText);
 
-// The two bar colours. A chart is normally all one (isIncome picks which), but
-// `negative` below lets individual bars flip to red — used by the savings
-// goal chart, where a month can be net-positive or net-negative.
+// The two bar colours; isIncome picks which one a chart uses.
 const GREEN_TONE = { active: 'rgba(74,222,128,0.95)', dim: 'rgba(74,222,128,0.62)' };
 const RED_TONE   = { active: 'rgba(255,75,75,0.92)',  dim: 'rgba(255,75,75,0.56)' };
 
@@ -202,10 +200,7 @@ function NoSpendDot({ cx, cy, r, fill, delay }) {
 // don't correspond to a real period at all — those keep their empty slot's
 // spacing but lose the label, since a label there isn't "a day that hasn't
 // happened yet," it's not a period the account will ever have.
-// `negative` is an optional array of booleans, one per value: a true entry draws
-// that bar in the red tone even when the chart is otherwise green (and vice
-// versa). Omit it and every bar uses the chart's own isIncome colour, as before.
-function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, negative, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, showAverage = false }) {
+function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, showAverage = false }) {
   const n       = values.length;
   const GROUP_W = CHART_W / n;
   const BAR_W   = Math.min(16, Math.max(6, GROUP_W - 10));
@@ -357,7 +352,6 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
         // the one most likely sitting right at this knife's-edge value.
         const h          = Math.round(useSqrtScale ? Math.sqrt(v / maxVal) * BAR_HEIGHT : (v / maxVal) * BAR_HEIGHT);
         const isActive   = i === activeIndex;
-        const tone       = negative ? (negative[i] ? RED_TONE : GREEN_TONE) : baseTone;
         const isDisabled = disabledAfterIndex != null && i > disabledAfterIndex;
         const isBeforeStart = disabledBeforeIndex != null && i < disabledBeforeIndex;
         const hasData    = h > 0;
@@ -378,7 +372,7 @@ function BarChart({ values, labels, activeIndex, onBarClick, onDeselect, disable
                 rx={BAR_W / 3}
                 targetHeight={h}
                 delay={Math.min(i * BAR_STAGGER_STEP_MS, BAR_STAGGER_CAP_MS)}
-                fill={isActive ? tone.active : tone.dim}
+                fill={isActive ? baseTone.active : baseTone.dim}
                 maskColor={bgColor}
               />
             ) : (

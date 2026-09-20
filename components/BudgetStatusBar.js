@@ -23,15 +23,10 @@ const GROW_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard (and the flows it opens) — see the matching comment in
 // Header.js.
-// `summary` (optional) swaps the budget wording — the big figure, its suffix and
-// the two captions under the bar — for someone else's, so a savings goal can
-// use this exact bar (same figure, same segmented bar, same captions) without
-// a second copy of it: { hero, suffix, left, right }. Left out, this behaves
-// exactly as a budget bar always has.
 // `hideDivider` drops the bottom border-line — SpendCalendarModal sits this
 // right above its own calendar grid with a wider blank gap instead, so the
 // line there just reads as clutter; MonthlyRecapModal's slide keeps it.
-function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, light = false, hideDivider = false, summary }) {
+function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, light = false, hideDivider = false }) {
   const wrapperStyle = {
     paddingBottom: 10,
     marginBottom: 16,
@@ -75,10 +70,10 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, 
 
   const remaining = amount - spent;
   const isOver = remaining < 0;
-  const heroAmount = summary ? summary.hero : formatCurrency(Math.abs(remaining));
-  const heroSuffix = summary ? summary.suffix : isOver ? 'over' : 'left';
-  const usedLabel = summary ? summary.left : isOver ? `${Math.round(percent - 100)}% over budget` : `${Math.round(percent)}% used`;
-  const totalLabel = summary ? summary.right : `${formatCurrency(amount)} total`;
+  const heroAmount = formatCurrency(Math.abs(remaining));
+  const heroSuffix = isOver ? 'over' : 'left';
+  const usedLabel = isOver ? `${Math.round(percent - 100)}% over budget` : `${Math.round(percent)}% used`;
+  const totalLabel = `${formatCurrency(amount)} total`;
 
   return (
     <View style={wrapperStyle}>
