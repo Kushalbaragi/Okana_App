@@ -7,7 +7,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, Easing
 import Svg, { Rect, Line } from 'react-native-svg';
 import { today, shiftDate } from '../utils/format';
 import CalendarPicker from './CalendarPicker';
-import { GlassPressable, PILL_ACTIVE_COLOR, INPUT_TEXT_STYLE } from './Glass';
+import { GlassPressable, PILL_ACTIVE_COLOR, INPUT_TEXT_STYLE, POPUP_RADIUS, SMOOTH } from './Glass';
 import { NumericKeypad, nextAmountValue } from './NumericKeypad';
 import { AmountRow, SETTLE_EASING } from './AmountField';
 import { useShake } from '../hooks/useShake';
@@ -411,7 +411,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
               // reads as the sheet sitting slightly elevated above the
               // backdrop instead of blending into it.
               backgroundColor: light ? '#FAFAF8' : '#161616',
-              borderTopLeftRadius: 28, borderTopRightRadius: 28,
+              borderTopLeftRadius: POPUP_RADIUS, borderTopRightRadius: POPUP_RADIUS, ...SMOOTH,
               overflow: 'hidden',
             },
             pageStyle,

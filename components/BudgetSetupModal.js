@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, Easing, runOnJS } from 'react-native-reanimated';
-import { GlassPressable } from './Glass';
+import { GlassPressable, POPUP_RADIUS, SMOOTH, CARD_RADIUS } from './Glass';
 import { NumericKeypad, nextAmountValue } from './NumericKeypad';
 import { AmountRow, SETTLE_EASING } from './AmountField';
 import AmountRuler, { RulerFigure, BUDGET_SCALE } from './AmountRuler';
@@ -274,7 +274,7 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
               {
                 position: 'absolute', left: 0, right: 0, bottom: 0,
                 backgroundColor: SHEET_COLOR,
-                borderTopLeftRadius: 28, borderTopRightRadius: 28,
+                borderTopLeftRadius: POPUP_RADIUS, borderTopRightRadius: POPUP_RADIUS, ...SMOOTH,
                 overflow: 'hidden',
               },
               sheetStyle,
@@ -320,7 +320,7 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
                       <View
                         className="px-4 py-3 w-full"
                         style={{
-                          maxWidth: 320, alignSelf: 'center', borderRadius: 16, borderWidth: 1,
+                          maxWidth: 320, alignSelf: 'center', borderRadius: CARD_RADIUS, ...SMOOTH, borderWidth: 1,
                           // The same recessed fill the new-goal sheet's fields use.
                           backgroundColor: 'rgba(0,0,0,0.18)', borderColor: 'rgba(255,255,255,0.07)',
                         }}
@@ -337,7 +337,7 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
                   <View style={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: rulerOn ? Math.max(insets.bottom, 8) + 12 : 20 }}>
                     <GlassPressable
                       variant="active"
-                      radius={16}
+                      radius={9999}
                       disabled={!canSubmit}
                       onPress={handleSubmit}
                       className="w-full py-[14px] items-center"

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Modal, View, Pressable, StyleSheet, useWindowDimensions, Platform, Keyboard } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
+import { DialogBackdrop } from './DialogBackdrop';
 
 // Shared fade-backdrop + slide/scale-content shell, extracted from AddModal's
 // pattern. RN's built-in Modal animationType only animates the whole modal
@@ -8,7 +9,13 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS
 // a backdrop) — this drives backdrop opacity and content transform
 // independently with Reanimated instead, and keeps the Modal mounted
 // through the close animation so it can actually play.
-export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', dim = 1, children }) {
+// `dim` is how dark the page behind goes. Left out, whatever this shows (a
+// dialog, or a sheet) gets the blurred, lightly dimmed DialogBackdrop. Passing a
+// `dim` asks for the plain tint of that strength instead — a loading overlay
+// that has to hide the page passes 1.
+export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', dim, children }) {
+  const blurred = dim === undefined;
+  const scrim = dim ?? 1;
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const [visible, setVisible] = useState(open);
   const backdropOpacity = useSharedValue(0);
@@ -91,10 +98,14 @@ export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', dim
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <View style={{ flex: 1 }}>
-        <Pressable style={{ flex: 1 }} onPress={onClose}>
-          <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(0,0,0,${dim})` }]} />
-          </Animated.View>
+        <Pressable style={{ flex: 1 }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
+          {blurred ? (
+            <DialogBackdrop progress={backdropOpacity} />
+          ) : (
+            <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(0,0,0,${scrim})` }]} />
+            </Animated.View>
+          )}
         </Pressable>
 
         {variant === 'center' ? (

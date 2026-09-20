@@ -2,22 +2,20 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, FadeIn } from 'react-native-reanimated';
-import { GlassPressable } from './Glass';
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
+import { GlassPressable, CARD_RADIUS, SMOOTH } from './Glass';
 import MonthSlider from './MonthSlider';
 import Celebration from './Celebration';
 import ErrorBoundary from './ErrorBoundary';
 import { InlineConfirm } from './InlineConfirm';
 import { GOAL_SUGGESTIONS, GoalSheet, MoneySheet } from './SavingsSheets';
-import { GoalCard } from './GoalCard';
-import { Card, ProgressBar, ROUNDED_FONT, POSITIVE, dim, money } from './savingsShared';
-import { CheckIcon, ChevronRight, EditIcon, PlusIcon, TrashIcon } from './icons';
+import GoalCard from './GoalCard';
+import { SwipeDeleteAction, useSwipeDelete, useSwipeGroup } from './SwipeDeleteAction';
+import { Card, ProgressBar, ROUNDED_FONT, POSITIVE, cardFill, dim, money } from './savingsShared';
+import { CheckIcon, ChevronRight, EditIcon, PlusIcon } from './icons';
 import { currentMonthYear, dateBoxParts } from '../utils/format';
 import { hapticAdded } from '../utils/haptics';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
-
-// A softer red than the one used for errors — a resting delete icon shouldn't
-// shout.
-const DANGER_SOFT = 'rgba(248,113,113,0.65)';
 
 // List and detail swap by crossfade — the same fade the home screen uses for a
 // tab switch, and cheap because it's opacity only.
@@ -33,6 +31,10 @@ const CENTERED = { alignItems: 'center', justifyContent: 'center' };
 // Empty months drawn after the current one on the goal's slider, as a place for
 // what's still to come.
 const PLACEHOLDER_MONTHS = 12;
+
+// How long after a delete is confirmed it goes ahead even if the dialog never
+// reports having closed (see flushGoalDelete): longer than its close animation.
+const GOAL_DELETE_BACKSTOP_MS = 700;
 
 // A line on how the goal got there: how many deposits, over how long, since
 // when. Empty when there are no deposits to speak of.
@@ -151,13 +153,23 @@ export function SavingsSheetsHost({ savings, ui, light = false }) {
     confirmMessage = `This ${money(confirmEntry.amount)} ${confirmEntry.type === 'add' ? 'deposit' : 'withdrawal'} will be removed from ${confirmGoal.name}.`;
   }
 
+  // A goal is deleted once the dialog has closed, not while it is still on
+  // screen, so the card leaving the list is something you see. `flushGoalDelete`
+  // runs from the dialog's own "closed" and from a timer behind it, in case that
+  // never comes; whichever is first does it, once.
+  const goalToDelete = useRef(null);
+  const flushGoalDelete = useCallback(() => {
+    const id = goalToDelete.current;
+    goalToDelete.current = null;
+    if (id) savings.deleteGoal(id);
+  }, [savings]);
+
   const handleConfirm = useCallback(async () => {
     if (confirmBusy || !confirmData) return;
     if (confirmData.kind === 'goal') {
-      // The goal leaves the list at once (the write is optimistic), which is
-      // what closes its page — nothing more to do here.
-      savings.deleteGoal(confirmData.goalId);
+      goalToDelete.current = confirmData.goalId;
       closeConfirm();
+      setTimeout(flushGoalDelete, GOAL_DELETE_BACKSTOP_MS);
       return;
     }
     setConfirmBusy(true);
@@ -170,8 +182,7 @@ export function SavingsSheetsHost({ savings, ui, light = false }) {
       return;
     }
     closeConfirm();
-    closeSheet();
-  }, [confirmBusy, confirmData, savings, closeConfirm, closeSheet]);
+  }, [confirmBusy, confirmData, savings, closeConfirm, flushGoalDelete]);
 
   return (
     <>
@@ -193,7 +204,6 @@ export function SavingsSheetsHost({ savings, ui, light = false }) {
         initialType={sheetData?.type || 'add'}
         maxWithdraw={goal?.saved || 0}
         onSubmit={submitMoney}
-        onRequestDelete={() => ui.openDeleteEntry(goalId, entry?.id)}
         light={light}
       />
       {/* Last, so it sits above the sheets as well as the page. */}
@@ -205,6 +215,7 @@ export function SavingsSheetsHost({ savings, ui, light = false }) {
         busy={confirmBusy}
         onConfirm={handleConfirm}
         onCancel={closeConfirm}
+        onClosed={flushGoalDelete}
         light={light}
       />
     </>
@@ -323,24 +334,45 @@ function DateChip({ dateStr, light }) {
   );
 }
 
-// Memoised, with a stable `onPress`, so a page-level change (the celebration
-// coming and going, a sheet holding) doesn't repaint every row.
-const HistoryRow = memo(function HistoryRow({ entry, onPress, light }) {
+// Memoised, with stable handlers, so a page-level change (the celebration coming
+// and going, a sheet holding) doesn't repaint every row. Swiping it left reveals
+// a delete button, which asks `onDelete` (the caller confirms). It paints the
+// card's own fill, or the button underneath would show through as it slides.
+const HistoryRow = memo(function HistoryRow({ entry, onPress, onDelete, registerSwipeable, onSwipeOpen, onRowPress, light }) {
   const isAdd = entry.type === 'add';
+  const { setSwipeableRef, handleDelete } = useSwipeDelete(entry.id, onDelete, registerSwipeable);
+  // A tap that closed an open row is spent on that, so it doesn't also open the
+  // entry behind the closing swipe.
+  const handlePress = useCallback(() => {
+    if (onRowPress?.()) return;
+    onPress(entry.id);
+  }, [entry.id, onPress, onRowPress]);
+
   return (
-    <GlassPressable variant="field" pressScale={false} onPress={() => onPress(entry.id)} style={HISTORY_PAD} accessibilityRole="button">
-      <View className="flex-row items-center justify-between" style={{ gap: 12 }}>
-        <View className="flex-row items-center flex-1" style={{ gap: 10 }}>
-          <DateChip dateStr={entry.date} light={light} />
-          <Text className="text-base" numberOfLines={1} style={{ flexShrink: 1, color: light ? '#111111' : '#ffffff' }}>
-            {entry.note || (isAdd ? 'Added' : 'Withdrew')}
-          </Text>
-        </View>
-        <Text className="text-base font-medium" style={{ color: isAdd ? POSITIVE : dim(light, 0.5) }}>
-          {isAdd ? '+' : '−'}{money(entry.amount)}
-        </Text>
+    <ReanimatedSwipeable
+      ref={setSwipeableRef}
+      friction={1.8}
+      rightThreshold={32}
+      overshootRight={false}
+      renderRightActions={(_progress, drag) => <SwipeDeleteAction drag={drag} onDelete={handleDelete} label="Delete entry" />}
+      onSwipeableWillOpen={() => onSwipeOpen?.(entry.id)}
+    >
+      <View style={{ backgroundColor: cardFill(light) }}>
+        <GlassPressable variant="field" pressScale={false} onPress={handlePress} style={HISTORY_PAD} accessibilityRole="button">
+          <View className="flex-row items-center justify-between" style={{ gap: 12 }}>
+            <View className="flex-row items-center flex-1" style={{ gap: 10 }}>
+              <DateChip dateStr={entry.date} light={light} />
+              <Text className="text-base" numberOfLines={1} style={{ flexShrink: 1, color: light ? '#111111' : '#ffffff' }}>
+                {entry.note || (isAdd ? 'Added' : 'Withdrew')}
+              </Text>
+            </View>
+            <Text className="text-base font-medium" style={{ color: isAdd ? POSITIVE : dim(light, 0.5) }}>
+              {isAdd ? '+' : '−'}{money(entry.amount)}
+            </Text>
+          </View>
+        </GlassPressable>
       </View>
-    </GlassPressable>
+    </ReanimatedSwipeable>
   );
 });
 
@@ -370,38 +402,28 @@ function GoalDetail({ goal, savings, ui, light }) {
     if (celebrating) hapticAdded();
   }, [celebrating]);
   const endCelebration = useCallback(() => setCelebrating(false), []);
-  const { openEntry } = ui;
+  const swipes = useSwipeGroup();
+  const { openEntry, openDeleteEntry } = ui;
   const editEntry = useCallback((entryId) => openEntry(goal.id, entryId), [openEntry, goal.id]);
+  const deleteEntry = useCallback((entryId) => openDeleteEntry(goal.id, entryId), [openDeleteEntry, goal.id]);
 
   return (
     <View style={{ flex: 1 }}>
     {/* Everything down to the History label stays put; only the history below
         it scrolls, the way the transaction list does on the home screen. */}
     <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
-      {/* The pencil sits right beside the name; the trash stays at the far
-          right. The left spacer is as wide as the trash so the name and pencil
-          together stay centred. The name shrinks (and truncates) before it can
-          push the pencil out of the row. */}
-      <View className="flex-row items-center justify-between">
-        <View style={{ width: 32 }} />
-        <View className="flex-row items-center justify-center" style={{ flex: 1, minWidth: 0 }}>
-          <Text className="text-base" numberOfLines={1} style={{ flexShrink: 1, color: dim(light, 0.5) }}>{goal.name}</Text>
-          <Pressable
-            onPress={() => ui.openEditGoal(goal.id)}
-            className="w-8 h-8 items-center justify-center rounded-lg"
-            accessibilityRole="button"
-            accessibilityLabel="Edit goal"
-          >
-            <EditIcon color={dim(light, 0.4)} />
-          </Pressable>
-        </View>
+      {/* The name with the pencil right beside it, centred together. The name
+          shrinks (and truncates) before it can push the pencil out of the row.
+          Deleting a goal is done by swiping its card on the list. */}
+      <View className="flex-row items-center justify-center" style={{ minWidth: 0 }}>
+        <Text className="text-base" numberOfLines={1} style={{ flexShrink: 1, color: dim(light, 0.5) }}>{goal.name}</Text>
         <Pressable
-          onPress={() => ui.openDeleteGoal(goal.id)}
+          onPress={() => ui.openEditGoal(goal.id)}
           className="w-8 h-8 items-center justify-center rounded-lg"
           accessibilityRole="button"
-          accessibilityLabel="Delete goal"
+          accessibilityLabel="Edit goal"
         >
-          <TrashIcon size={16} color={DANGER_SOFT} />
+          <EditIcon color={dim(light, 0.4)} />
         </Pressable>
       </View>
 
@@ -430,7 +452,7 @@ function GoalDetail({ goal, savings, ui, light }) {
           </Pressable>
         </View>
       ) : showReached ? (
-        <Animated.View entering={FadeIn.duration(SWAP_MS)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 16, backgroundColor: 'rgba(74,222,128,0.10)' }}>
+        <Animated.View entering={FadeIn.duration(SWAP_MS)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, paddingVertical: 12, paddingHorizontal: 16, borderRadius: CARD_RADIUS, ...SMOOTH, backgroundColor: 'rgba(74,222,128,0.10)' }}>
           <View className="flex-row items-center" style={{ gap: 8 }}>
             <CheckIcon size={16} color={POSITIVE} />
             <Text className="text-base" style={{ color: POSITIVE }}>Goal reached</Text>
@@ -472,6 +494,7 @@ function GoalDetail({ goal, savings, ui, light }) {
     <ScrollView
       showsVerticalScrollIndicator={false}
       style={{ flex: 1 }}
+      onScrollBeginDrag={swipes.closeOpen}
       // Clears the round button that floats over the bottom of the page.
       contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 120 }}
     >
@@ -481,7 +504,15 @@ function GoalDetail({ goal, savings, ui, light }) {
         <Card light={light}>
           {goal.entries.map((e, i) => (
             <View key={e.id}>
-              <HistoryRow entry={e} onPress={editEntry} light={light} />
+              <HistoryRow
+                entry={e}
+                onPress={editEntry}
+                onDelete={deleteEntry}
+                registerSwipeable={swipes.registerSwipeable}
+                onSwipeOpen={swipes.onSwipeOpen}
+                onRowPress={swipes.onRowPress}
+                light={light}
+              />
               {i < goal.entries.length - 1 && <Divider inset={16} light={light} />}
             </View>
           ))}
@@ -545,11 +576,16 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
 
   const isEmpty = goals.length === 0 && completedGoals.length === 0;
 
+  const swipes = useSwipeGroup();
+  const { openDeleteGoal } = ui;
+  const cardProps = { onPress: onOpenGoal, onDelete: openDeleteGoal, registerSwipeable: swipes.registerSwipeable, onSwipeOpen: swipes.onSwipeOpen, onCardPress: swipes.onRowPress, light };
+
   return (
     <View style={{ flex: 1 }}>
       <Animated.View style={[StyleSheet.absoluteFill, listStyle]} pointerEvents={detailOpen ? 'none' : 'auto'}>
         <ScrollView
           showsVerticalScrollIndicator={false}
+          onScrollBeginDrag={swipes.closeOpen}
           contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 130 }}
         >
           {isEmpty ? (
@@ -565,7 +601,7 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
                 </Text>
               </View>
 
-              {goals.map(g => <GoalCard key={g.id} goal={g} onPress={onOpenGoal} light={light} />)}
+              {goals.map(g => <GoalCard key={g.id} goal={g} {...cardProps} />)}
 
               {completedGoals.length > 0 && (
                 <>
@@ -583,7 +619,7 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
                   </Pressable>
                   {showCompleted && (
                     <Animated.View entering={FadeIn.duration(SWAP_MS)}>
-                      {completedGoals.map(g => <GoalCard key={g.id} goal={g} onPress={onOpenGoal} light={light} done />)}
+                      {completedGoals.map(g => <GoalCard key={g.id} goal={g} {...cardProps} done />)}
                     </Animated.View>
                   )}
                 </>

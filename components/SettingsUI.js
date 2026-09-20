@@ -1,6 +1,6 @@
 import { View, Text } from 'react-native';
 import { ChevronRight } from './icons';
-import { GlassPressable } from './Glass';
+import { GlassPressable, CARD_RADIUS, SMOOTH } from './Glass';
 
 // Shared list-building-block components for Account/Subscription — a grey
 // rounded Card containing Rows separated by hairline Dividers, each Row
@@ -17,9 +17,10 @@ export function Divider({ light = false }) {
   return <View style={{ height: 1, backgroundColor: light ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)', marginHorizontal: 16 }} />;
 }
 
-// `action` is an optional trailing element (e.g. a small refresh button) —
-// every existing caller just omits it and gets the exact same plain label
-// as before; only Subscription's "Current Plan" needs the row layout.
+// `action` is an optional element that sits right beside the label (e.g. a
+// small refresh button) — every existing caller just omits it and gets the
+// exact same plain label as before; only Subscription's "Current Plan" needs
+// the row layout.
 export function SectionLabel({ children, light = false, action = null }) {
   const label = (
     <Text
@@ -28,7 +29,7 @@ export function SectionLabel({ children, light = false, action = null }) {
   );
   if (!action) return label;
   return (
-    <View className="flex-row items-center justify-between">
+    <View className="flex-row items-center" style={{ gap: 4 }}>
       {label}
       {action}
     </View>
@@ -38,8 +39,10 @@ export function SectionLabel({ children, light = false, action = null }) {
 export function Card({ children, light = false }) {
   return (
     <View
-      className="rounded-2xl overflow-hidden"
+      className="overflow-hidden"
       style={{
+        borderRadius: CARD_RADIUS,
+        ...SMOOTH,
         backgroundColor: light ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)',
         borderWidth: 1,
         borderColor: light ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)',

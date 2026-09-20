@@ -3,6 +3,7 @@ import { Platform, View } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { SETTLE_EASING } from './AmountField';
 import { formatCurrency, formatCurrencyFull } from '../utils/format';
+import { CARD_RADIUS, SMOOTH } from './Glass';
 
 // Small pieces shared by the savings list and its goal cards.
 
@@ -35,9 +36,13 @@ export function ProgressBar({ percent, height = 6, light }) {
   );
 }
 
+// The fill of a Card. A row that slides aside (swipe to delete) has to paint this
+// itself, or the button underneath shows through it.
+export const cardFill = (light) => (light ? '#FFFFFF' : CARD_COLOR);
+
 export function Card({ children, light }) {
   return (
-    <View style={{ backgroundColor: light ? '#FFFFFF' : CARD_COLOR, borderRadius: 24, overflow: 'hidden' }}>
+    <View style={{ backgroundColor: cardFill(light), borderRadius: CARD_RADIUS, ...SMOOTH, overflow: 'hidden' }}>
       {children}
     </View>
   );

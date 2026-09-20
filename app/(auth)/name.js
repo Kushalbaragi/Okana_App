@@ -83,7 +83,7 @@ export default function NameScreen() {
 
             <GlassPressable
               variant="active"
-              radius={16}
+              radius={9999}
               onPress={handleContinue}
               disabled={saving || !name.trim()}
               className="w-full py-[14px] mt-2 flex-row items-center justify-center gap-2"

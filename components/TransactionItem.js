@@ -1,29 +1,10 @@
 import { memo, useCallback, useEffect, useRef } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
-import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import { formatCurrencyFull, dateBoxParts } from '../utils/format';
-import { TrashIcon } from './icons';
+import { SwipeDeleteAction, useSwipeDelete } from './SwipeDeleteAction';
 import { CARD_COLOR } from './Glass';
-
-const ACTION_WIDTH = 68;
-// A circular button floating in the revealed area, the way Reminders does
-// its swipe actions — the button is the shape, rather than the whole
-// revealed strip being a solid colour block.
-const DELETE_SIZE = 31;
-// Keeps the actual tap target at ~45px even though the circle is drawn at
-// 31 — below Apple's 44pt minimum the button looks right but gets fiddly
-// to actually hit, especially as the thumb is still coming off a swipe.
-const DELETE_HIT_SLOP = 7;
-// iOS systemRed as it renders in dark mode. Solid, not the translucent
-// wash the full-bleed block used — a small circle needs the full weight to
-// read as the destructive action at this size.
-const DELETE_RED = '#FF453A';
-// How long a tapped delete waits for the swipe row's own close to report
-// finishing before applying anyway — comfortably past that spring's real
-// duration, so it only ever matters when the close event doesn't arrive.
-const DELETE_FALLBACK_MS = 600;
 
 function DateBox({ dateStr, light }) {
   const { day, month } = dateBoxParts(dateStr);
@@ -34,44 +15,6 @@ function DateBox({ dateStr, light }) {
     >
       <Text className="text-[11px] font-semibold leading-none" style={{ color: light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)' }}>{day}</Text>
       <Text className="text-[8px] font-medium leading-none mt-0.5 tracking-tight" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>{month}</Text>
-    </View>
-  );
-}
-
-// Fades + scales the delete action in as the row is dragged open, rather
-// than having it sit fully-opaque under the card the whole time — reads as
-// a much cleaner reveal than a static layer just being uncovered.
-//
-// Delete only. Editing used to live here too, behind the same swipe, which
-// made a gesture the sole route to it — tapping the row now opens the edit
-// sheet instead, leaving the swipe as a shortcut for the one destructive
-// action rather than the only way to reach either.
-function RightActions({ drag, onDelete }) {
-  const style = useAnimatedStyle(() => {
-    const progress = Math.min(1, Math.max(0, -drag.value / ACTION_WIDTH));
-    return { opacity: progress, transform: [{ scale: 0.7 + progress * 0.3 }] };
-  });
-
-  return (
-    <View style={{ width: ACTION_WIDTH, height: '100%', alignItems: 'center', justifyContent: 'center' }}>
-      <Animated.View style={style}>
-        <Pressable
-          onPress={onDelete}
-          hitSlop={DELETE_HIT_SLOP}
-          style={{
-            width: DELETE_SIZE,
-            height: DELETE_SIZE,
-            borderRadius: DELETE_SIZE / 2,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: DELETE_RED,
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="Delete transaction"
-        >
-          <TrashIcon size={14} color="#ffffff" />
-        </Pressable>
-      </Animated.View>
     </View>
   );
 }
@@ -88,38 +31,9 @@ function RightActions({ drag, onDelete }) {
 // true once the commit has settled (see `settled` in TransactionList),
 // moving the setup off the critical path instead of removing the feature.
 function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, onSwipeOpen, onCardPress, light = false, swipeable = true, cardColor = CARD_COLOR }) {
-  const swipeableRef = useRef(null);
-
-  const setSwipeableRef = useCallback(r => {
-    swipeableRef.current = r;
-    registerSwipeable?.(tx.id, r);
-  }, [tx.id, registerSwipeable]);
-
-  // Delete is applied once the swipe row has finished closing, not the
-  // instant the trash button is tapped — the same "let the interaction
-  // finish, then apply the change" timing add/edit get from AddModal's
-  // close (see holdReveal in the home screen). Removing the row while its
-  // swipe is still sliding shut makes the list jump under the animation.
-  // onSwipeableClose is the normal trigger; the timer is a backstop for a
-  // close that never reports finishing (interrupted by a new drag, or the
-  // row unmounting first) so a tapped delete can't be silently lost.
-  // pendingDeleteRef makes whichever fires first the only one that runs.
-  const pendingDeleteRef = useRef(false);
-
-  const commitDelete = useCallback(() => {
-    if (!pendingDeleteRef.current) return;
-    pendingDeleteRef.current = false;
-    onDelete(tx.id);
-  }, [tx.id, onDelete]);
-
-  const handleDelete = useCallback(() => {
-    if (pendingDeleteRef.current) return;
-    pendingDeleteRef.current = true;
-    swipeableRef.current?.close();
-    // Heavy impact — the strongest discrete pulse the API offers.
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    setTimeout(commitDelete, DELETE_FALLBACK_MS);
-  }, [commitDelete]);
+  // Tapping the trash slides the row shut and asks `onDelete` (which opens a
+  // confirmation) at once, rather than waiting for the slide to finish.
+  const { setSwipeableRef, handleDelete } = useSwipeDelete(tx.id, onDelete, registerSwipeable);
 
   // Tapping a row opens it for editing. An already-open swipe takes
   // priority and swallows the tap (onCardPress returns true when it closed
@@ -197,10 +111,9 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
       rightThreshold={32}
       overshootRight={false}
       renderRightActions={(_progress, drag) => (
-        <RightActions drag={drag} onDelete={handleDelete} />
+        <SwipeDeleteAction drag={drag} onDelete={handleDelete} label="Delete transaction" />
       )}
       onSwipeableWillOpen={() => onSwipeOpen?.(tx.id)}
-      onSwipeableClose={commitDelete}
     >
       {row}
     </ReanimatedSwipeable>

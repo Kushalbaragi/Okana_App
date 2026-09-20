@@ -49,9 +49,11 @@ export function ActionOverlay({
   const fillStyle = useAnimatedStyle(() => ({ width: `${fillProgress.value * 100}%` }));
 
   return (
-    // A dimmer, light-mode scrim (same value AddModal already uses behind
-    // its own light-mode sheet) so recolored dark-ink text stays readable —
-    // the default dim=1 solid-black backdrop would swallow it otherwise.
+    // A loading screen has to hide the page, so it asks for a plain tint —
+    // solid black, or in light mode a dimmer scrim (same value AddModal already
+    // uses behind its own light-mode sheet) so recolored dark-ink text stays
+    // readable. Passing any dim also opts out of AnimatedModal's default
+    // blurred backdrop, which is for alerts.
     <AnimatedModal open onClose={() => {}} variant="center" dim={light ? 0.4 : 1}>
       <View className="items-center" style={{ maxWidth: 320 }}>
         {phase === 'working' ? (

@@ -10,7 +10,6 @@ import { NumericKeypad, nextAmountValue } from './NumericKeypad';
 import { AmountRow } from './AmountField';
 import { GlassPressable, INPUT_TEXT_STYLE } from './Glass';
 import { useShake } from '../hooks/useShake';
-import { TrashIcon } from './icons';
 import { ROUNDED_FONT } from './savingsShared';
 import AmountRuler, { RulerFigure, MIN_TARGET } from './AmountRuler';
 import { formatCurrency, shiftDate, today } from '../utils/format';
@@ -206,7 +205,21 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
   return (
     // Shorter than the sheets that carry a keypad — the ruler replaces it, and
     // a tall sheet with nothing in the bottom half reads as unfinished.
-    <InlineSheet open={open} onClose={handleClose} onClosed={onClosed} light={light} heightRatio={0.6}>
+    <InlineSheet
+      open={open}
+      onClose={handleClose}
+      onClosed={onClosed}
+      light={light}
+      heightRatio={0.6}
+      dismissible={!submitting}
+      footer={(
+        <ActionRow
+          primaryLabel={isEdit ? (submitting ? 'Saving' : 'Save') : (submitting ? 'Adding' : 'Add Goal')}
+          onPrimary={handleSubmit}
+          disabled={submitting}
+        />
+      )}
+    >
       <ScrollView
         style={{ flexGrow: 0 }}
         showsVerticalScrollIndicator={false}
@@ -288,12 +301,6 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
           surface={surface}
         />
       </View>
-
-      <ActionRow
-        primaryLabel={isEdit ? (submitting ? 'Saving' : 'Save') : (submitting ? 'Adding' : 'Add Goal')}
-        onPrimary={handleSubmit}
-        disabled={submitting}
-      />
     </InlineSheet>
   );
 }
@@ -324,7 +331,7 @@ function CalIcon({ color }) {
 // calendar over the button row and keypad) and keypad. It can't literally be
 // AddModal — that is its own native Modal, and this page is already inside
 // one — so it is built from the same pieces inside an InlineSheet instead.
-export function MoneySheet({ open, onClose, onClosed, goalName, entry, initialType = 'add', maxWithdraw = 0, onSubmit, onRequestDelete, light = false }) {
+export function MoneySheet({ open, onClose, onClosed, goalName, entry, initialType = 'add', maxWithdraw = 0, onSubmit, light = false }) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const isEdit = !!entry;
@@ -409,8 +416,76 @@ export function MoneySheet({ open, onClose, onClosed, goalName, entry, initialTy
   // padding and the switch's 2px track padding come off, split across two.
   const toggleButtonWidth = Math.floor((windowWidth - 40 - 4) / 2);
 
+  // Pinned to the bottom and kept out of the sheet's drag area: a drag that starts
+  // on a key or the Save button fights the gesture for the touch. The calendar
+  // overlay inside is absolutely positioned against this wrapper, so it measures
+  // this block's real height and covers exactly the button row and keypad.
+  const footer = (
+    <View style={{ marginTop: 'auto' }} onLayout={e => setCtaKeypadHeight(e.nativeEvent.layout.height)}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 32, paddingBottom: 20 }}>
+        <Pressable
+          onPress={() => { Keyboard.dismiss(); setCalOpen(true); }}
+          style={{ flexDirection: 'row', alignItems: 'center' }}
+          accessibilityRole="button"
+          accessibilityLabel="Choose date"
+        >
+          <CalIcon color={light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'} />
+          <Text className="text-[15px]" style={{ marginLeft: 6, color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>
+            {formatDisplay(date)}
+          </Text>
+        </Pressable>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+          <GlassPressable
+            variant="active"
+            radius={9999}
+            disabled={submitting}
+            onPress={handleSubmit}
+            style={{ paddingHorizontal: 32, paddingVertical: 12, alignItems: 'center' }}
+          >
+            <Text className="text-black text-[15px] font-semibold">{submitting ? 'Saving…' : 'Save'}</Text>
+          </GlassPressable>
+        </View>
+      </View>
+
+      <NumericKeypad onKeyPress={onKeyPress} insetBottom={insets.bottom} light={light} />
+
+      {/* Tap-outside-to-dismiss, behind the calendar and stretched past this
+          wrapper (the sheet's own overflow:hidden clips it back down) so a
+          tap anywhere else on the sheet closes it. */}
+      {calendarVisible && (
+        <Pressable
+          style={{ position: 'absolute', top: -1000, left: 0, right: 0, bottom: 0, zIndex: 10, elevation: 10 }}
+          onPress={closeCalendar}
+        />
+      )}
+
+      {calendarVisible && (
+        <Animated.View
+          style={[
+            {
+              position: 'absolute', left: 0, right: 0, bottom: 0,
+              minHeight: ctaKeypadHeight,
+              zIndex: 20, elevation: 20,
+              overflow: 'hidden',
+              paddingTop: 16,
+              paddingBottom: insets.bottom + 10,
+              // Opaque, not translucent — a see-through layer over the
+              // keypad lets it bleed through as ghost digits.
+              backgroundColor: light ? '#EDEDEC' : '#131313',
+              borderTopLeftRadius: 24, borderTopRightRadius: 24,
+            },
+            calendarCardStyle,
+          ]}
+        >
+          <CalendarPicker value={date} onChange={setDate} onClose={closeCalendar} light={light} />
+        </Animated.View>
+      )}
+    </View>
+  );
+
   return (
-    <InlineSheet open={open} onClose={handleClose} onClosed={onClosed} light={light}>
+    <InlineSheet open={open} onClose={handleClose} onClosed={onClosed} light={light} dismissible={!submitting} footer={footer}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -453,84 +528,6 @@ export function MoneySheet({ open, onClose, onClosed, goalName, entry, initialTy
 
       {!!error && <Text className="text-red-400 text-base text-center mx-5 mb-3">{error}</Text>}
 
-      {/* Pinned to the bottom. The calendar overlay below is absolutely
-          positioned against THIS wrapper, so it measures this block's real
-          height and covers exactly the button row and keypad. */}
-      <View style={{ marginTop: 'auto' }} onLayout={e => setCtaKeypadHeight(e.nativeEvent.layout.height)}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 32, paddingBottom: 20 }}>
-          <Pressable
-            onPress={() => { Keyboard.dismiss(); setCalOpen(true); }}
-            style={{ flexDirection: 'row', alignItems: 'center' }}
-            accessibilityRole="button"
-            accessibilityLabel="Choose date"
-          >
-            <CalIcon color={light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'} />
-            <Text className="text-[15px]" style={{ marginLeft: 6, color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>
-              {formatDisplay(date)}
-            </Text>
-          </Pressable>
-
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-            {/* Editing an entry only: delete sits just left of Save, as an icon
-                — the confirmation dialog does the "are you sure". */}
-            {isEdit && (
-              <Pressable
-                onPress={onRequestDelete}
-                disabled={submitting}
-                hitSlop={8}
-                style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
-                accessibilityRole="button"
-                accessibilityLabel="Delete entry"
-              >
-                <TrashIcon size={20} color="rgba(248,113,113,0.8)" />
-              </Pressable>
-            )}
-            <GlassPressable
-              variant="active"
-              radius={9999}
-              disabled={submitting}
-              onPress={handleSubmit}
-              style={{ paddingHorizontal: 32, paddingVertical: 12, alignItems: 'center' }}
-            >
-              <Text className="text-black text-[15px] font-semibold">{submitting ? 'Saving…' : 'Save'}</Text>
-            </GlassPressable>
-          </View>
-        </View>
-
-        <NumericKeypad onKeyPress={onKeyPress} insetBottom={insets.bottom} light={light} />
-
-        {/* Tap-outside-to-dismiss, behind the calendar and stretched past this
-            wrapper (the sheet's own overflow:hidden clips it back down) so a
-            tap anywhere else on the sheet closes it. */}
-        {calendarVisible && (
-          <Pressable
-            style={{ position: 'absolute', top: -1000, left: 0, right: 0, bottom: 0, zIndex: 10, elevation: 10 }}
-            onPress={closeCalendar}
-          />
-        )}
-
-        {calendarVisible && (
-          <Animated.View
-            style={[
-              {
-                position: 'absolute', left: 0, right: 0, bottom: 0,
-                minHeight: ctaKeypadHeight,
-                zIndex: 20, elevation: 20,
-                overflow: 'hidden',
-                paddingTop: 16,
-                paddingBottom: insets.bottom + 10,
-                // Opaque, not translucent — a see-through layer over the
-                // keypad lets it bleed through as ghost digits.
-                backgroundColor: light ? '#EDEDEC' : '#131313',
-                borderTopLeftRadius: 24, borderTopRightRadius: 24,
-              },
-              calendarCardStyle,
-            ]}
-          >
-            <CalendarPicker value={date} onChange={setDate} onClose={closeCalendar} light={light} />
-          </Animated.View>
-        )}
-      </View>
     </InlineSheet>
   );
 }

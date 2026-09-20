@@ -6,9 +6,11 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from '
 // How long the message stays up. A tap anywhere ends it sooner.
 const TOTAL_MS = 9000;
 // The confetti goes off once and is thrown out, then falls under gravity until
-// it has left the screen; this is how long that takes, after which the message
-// is left on its own until it closes.
-const BURST_MS = 2600;
+// it has left the screen. The flight is worked out for 2.6s and played back
+// SLOWDOWN times slower; BURST_MS is how long that takes, after which the
+// message is left on its own until it closes.
+const SLOWDOWN = 1.4;
+const BURST_MS = 2600 * SLOWDOWN;
 // px/s² pulling every piece down, and how quickly its sideways speed dies away.
 const GRAVITY = 1100;
 const DRAG = 2.2;
@@ -30,7 +32,7 @@ const spread = (i, salt) => {
 
 function Piece({ t, vx, vy, size, color, round, spin }) {
   const style = useAnimatedStyle(() => {
-    const tau = Math.min(t.value * TOTAL_MS, BURST_MS) / 1000;
+    const tau = Math.min(t.value * TOTAL_MS, BURST_MS) / 1000 / SLOWDOWN;
     // Thrown out, sideways speed bleeding off, then a free fall — no fading on
     // the way, it simply drops out of sight.
     return {

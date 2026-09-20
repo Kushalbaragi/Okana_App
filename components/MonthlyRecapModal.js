@@ -594,7 +594,7 @@ function ClosingSlide({ onOpenBudgetSetup, hasBudgetThisMonth }) {
         </Text>
 
         {!hasBudgetThisMonth && (
-          <GlassPressable variant="active" radius={16} onPress={onOpenBudgetSetup} className="px-6 py-[14px]">
+          <GlassPressable variant="active" radius={9999} onPress={onOpenBudgetSetup} className="px-6 py-[14px]">
             <Text className="text-black text-base font-semibold">Set This Month's Budget</Text>
           </GlassPressable>
         )}

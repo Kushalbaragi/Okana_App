@@ -27,10 +27,12 @@ import { buildTransactionsWorkbook, parseTransactionsWorkbook } from '../../util
 import { BackIcon, EditIcon, ChevronRight, CheckIcon, CameraIcon } from '../../components/icons';
 import { ONBOARDING_SEEN_KEY } from '../onboarding';
 import { AnimatedModal } from '../../components/AnimatedModal';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { ActionOverlay } from '../../components/ActionOverlay';
 import * as SettingsUI from '../../components/SettingsUI';
 import { TourHint, TOUR_HINT_BORDER_WIDTH, TOUR_HINT_BORDER_COLOR } from '../../components/TourHint';
 import { useTourStep } from '../../hooks/useTourStep';
+import { CARD_RADIUS, SMOOTH } from '../../components/Glass';
 
 // One-flag experiment: a light theme for just this screen. Flip back to
 // false to fully revert. Mirrors the same LIGHT_HOME flag in app/(app)/index.js.
@@ -38,7 +40,9 @@ const LIGHT_SETTINGS = false;
 const SETTINGS_BG = LIGHT_SETTINGS ? '#FAFAF8' : '#000000';
 // Same lighter-scrim value AddModal/SpendCalendarModal already use behind a
 // light-mode sheet, so a modal here doesn't dim the light page to solid black.
-const MODAL_DIM = LIGHT_SETTINGS ? 0.4 : 1;
+// Only the light-theme experiment asks for a plain tint; otherwise popups get the
+// blurred backdrop (see AnimatedModal).
+const MODAL_DIM = LIGHT_SETTINGS ? 0.4 : undefined;
 
 const SETTLE_EASING = Easing.bezier(0.16, 1, 0.3, 1);
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -311,36 +315,9 @@ const AvatarPhoto = forwardRef(function AvatarPhoto({ uri, phase, onPress }, ref
   );
 });
 
-// tone 'danger' (default) is for irreversible actions (erase/delete);
-// 'neutral' is for a reversible one (logout) that still deserves a
-// confirm tap but shouldn't visually read as equally dangerous.
-function ConfirmModal({ open, title, message, confirmLabel, tone = 'danger', onConfirm, onCancel, onClosed }) {
-  const confirmBg = tone === 'danger' ? 'rgba(248,113,113,0.14)' : (LIGHT_SETTINGS ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)');
-  const confirmColor = tone === 'danger' ? 'rgba(248,113,113,0.9)' : (LIGHT_SETTINGS ? '#111111' : '#ffffff');
-  return (
-    <AnimatedModal open={open} onClose={onCancel} onClosed={onClosed} variant="center" dim={MODAL_DIM}>
-      <View
-        className="w-full rounded-2xl p-6"
-        style={{
-          maxWidth: 360,
-          backgroundColor: LIGHT_SETTINGS ? 'rgba(250,250,248,0.98)' : 'rgba(20,20,20,0.98)',
-          borderWidth: 1,
-          borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)',
-        }}
-      >
-        <Text className="font-semibold text-base mb-2" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>{title}</Text>
-        <Text className="text-base mb-6" style={{ lineHeight: 22, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{message}</Text>
-        <View className="flex-row" style={{ gap: 12 }}>
-          <Pressable onPress={onCancel} className="flex-1 py-3 rounded-xl items-center" style={{ backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)' }}>
-            <Text className="text-base font-medium" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.60)' : 'rgba(255,255,255,0.60)' }}>Cancel</Text>
-          </Pressable>
-          <Pressable onPress={onConfirm} className="flex-1 py-3 rounded-xl items-center" style={{ backgroundColor: confirmBg }}>
-            <Text className="text-base font-semibold" style={{ color: confirmColor }}>{confirmLabel}</Text>
-          </Pressable>
-        </View>
-      </View>
-    </AnimatedModal>
-  );
+// The shared confirm dialog, with this screen's theme.
+function ConfirmModal(props) {
+  return <ConfirmDialog light={LIGHT_SETTINGS} dim={MODAL_DIM} {...props} />;
 }
 
 const SUCCESS_HOLD_MS = 3000;
@@ -376,7 +353,7 @@ function DeleteAccountOverlay({ type, phase, onDone, subscriptionWarning }) {
           </Text>
           <Pressable
             onPress={() => (isOnline ? openManageSubscription() : notifyOffline())}
-            className="mt-4 px-4 py-[10px] rounded-xl"
+            className="mt-4 px-4 py-[10px] rounded-full"
             style={{ backgroundColor: 'rgba(74,222,128,0.14)' }}
           >
             <Text className="text-sm font-semibold" style={{ color: '#4ade80' }}>Manage Subscription</Text>
@@ -1193,8 +1170,8 @@ export default function AccountPage() {
         <Pressable
           onPress={() => { pendingAfterImportOptionsClose.current = 'template'; setImportOptionsOpen(false); }}
           disabled={downloadingTemplate}
-          className="w-full px-4 py-4 rounded-2xl mb-3"
-          style={{ backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)', opacity: downloadingTemplate ? 0.6 : 1 }}
+          className="w-full px-4 py-4 mb-3"
+          style={{ borderRadius: CARD_RADIUS, ...SMOOTH, backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)', opacity: downloadingTemplate ? 0.6 : 1 }}
         >
           <Text className="text-base font-semibold mb-1" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>
             {downloadingTemplate ? 'Preparing…' : 'Get template'}
@@ -1205,8 +1182,8 @@ export default function AccountPage() {
         </Pressable>
         <Pressable
           onPress={() => { pendingAfterImportOptionsClose.current = 'file'; setImportOptionsOpen(false); }}
-          className="w-full px-4 py-4 rounded-2xl"
-          style={{ backgroundColor: '#ffffff' }}
+          className="w-full px-4 py-4"
+          style={{ borderRadius: CARD_RADIUS, ...SMOOTH, backgroundColor: '#ffffff' }}
         >
           <Text className="text-black text-base font-semibold mb-1">Import file</Text>
           <Text style={{ color: 'rgba(0,0,0,0.5)', fontSize: 14, lineHeight: 18 }}>
@@ -1247,7 +1224,7 @@ export default function AccountPage() {
             <Pressable
               onPress={sendFeedback}
               disabled={!feedbackText.trim() || feedbackSending}
-              className="w-full py-[14px] rounded-2xl items-center"
+              className="w-full py-[14px] rounded-full items-center"
               style={{ backgroundColor: '#ffffff', opacity: !feedbackText.trim() || feedbackSending ? 0.3 : 1 }}
             >
               <Text className="text-black text-base font-semibold">{feedbackSending ? 'Sending…' : 'Send'}</Text>
@@ -1280,7 +1257,7 @@ export default function AccountPage() {
           <View className="flex-row" style={{ gap: 12 }}>
             <Pressable
               onPress={() => Linking.openURL('https://instagram.com/kushalbaragi')}
-              className="flex-row items-center px-4 py-2 rounded-xl"
+              className="flex-row items-center px-4 py-2 rounded-full"
               style={{ gap: 8, borderWidth: 1, borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }}
             >
               <InstagramIcon />
@@ -1288,7 +1265,7 @@ export default function AccountPage() {
             </Pressable>
             <Pressable
               onPress={() => Linking.openURL('https://www.youtube.com/@kushalbaragi')}
-              className="flex-row items-center px-4 py-2 rounded-xl"
+              className="flex-row items-center px-4 py-2 rounded-full"
               style={{ gap: 8, borderWidth: 1, borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }}
             >
               <YouTubeIcon />
@@ -1367,7 +1344,7 @@ export default function AccountPage() {
                     <Pressable
                       onPress={downloadTemplate}
                       disabled={downloadingTemplate}
-                      className="py-[13px] rounded-2xl items-center"
+                      className="py-[13px] rounded-full items-center"
                       style={{ backgroundColor: '#ffffff', opacity: downloadingTemplate ? 0.6 : 1 }}
                     >
                       <Text className="text-black text-base font-semibold">
@@ -1376,7 +1353,7 @@ export default function AccountPage() {
                     </Pressable>
                     <Pressable
                       onPress={() => setImportStage('idle')}
-                      className="py-[13px] rounded-2xl items-center"
+                      className="py-[13px] rounded-full items-center"
                       style={{ backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)' }}
                     >
                       <Text className="text-base font-medium" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>Cancel</Text>
@@ -1385,7 +1362,7 @@ export default function AccountPage() {
                 ) : (
                   <Pressable
                     onPress={() => setImportStage('idle')}
-                    className="py-[13px] rounded-2xl items-center"
+                    className="py-[13px] rounded-full items-center"
                     style={{ backgroundColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)' }}
                   >
                     <Text className="text-base font-medium" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>Dismiss</Text>

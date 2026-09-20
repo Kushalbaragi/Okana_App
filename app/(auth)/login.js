@@ -103,7 +103,7 @@ export default function LoginScreen() {
 
             <GlassPressable
               variant="active"
-              radius={16}
+              radius={9999}
               onPress={handleSubmit}
               disabled={loading}
               className="w-full py-4 flex-row items-center justify-center gap-2"
