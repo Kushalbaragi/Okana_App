@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { usePostHog } from 'posthog-react-native';
 import { supabase } from '../lib/supabase';
+import { EMPTY_WIDGET_SNAPSHOT } from '../utils/widgetSnapshot';
+import { pushWidgetSnapshot } from '../utils/widgetBridge';
 
 const AuthContext = createContext(null);
 
@@ -45,6 +47,13 @@ export function AuthProvider({ children }) {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Whatever way the session ended (logout, deleted account, expired token), the
+  // home screen widgets must stop showing that account's numbers. Waits for the
+  // initial session check so a cold start isn't treated as signed out.
+  useEffect(() => {
+    if (!loading && !user) pushWidgetSnapshot(EMPTY_WIDGET_SNAPSHOT);
+  }, [loading, user]);
 
   // Sends a 6-digit code to `email` — works for both new and returning
   // users (shouldCreateUser lets a brand-new address create the account

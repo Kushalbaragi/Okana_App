@@ -11,6 +11,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../hooks/useTransactions';
 import { useBudget } from '../../hooks/useBudget';
 import { useSavings } from '../../hooks/useSavings';
+import { useWidgetSync } from '../../hooks/useWidgetSync';
 import { useSubscription } from '../../hooks/useSubscription';
 import { getSubscriptionDisplayStatus } from '../../utils/trial';
 import { storageKeys } from '../../utils/storageKeys';
@@ -117,6 +118,7 @@ export default function Dashboard() {
   // Lives here (not inside the calendar page) so goals are already loaded the
   // first time it opens, same as the budget above.
   const savings = useSavings();
+  useWidgetSync({ transactions, budget, goals: savings.goals });
   const { subscription, loading: subLoading, refresh: refreshSubscription } = useSubscription(user);
   const trialInfo = useMemo(() => getSubscriptionDisplayStatus(subscription, today()), [subscription]);
   const posthog = usePostHog();

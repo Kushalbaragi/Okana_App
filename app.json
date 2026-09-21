@@ -12,6 +12,11 @@
       "bundleIdentifier": "com.kushalbaragi.okana",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.kushalbaragi.okana"
+        ]
       }
     },
     "android": {
@@ -48,7 +53,59 @@
         }
       ],
       "@sentry/react-native/expo",
-      "expo-localization"
+      "expo-localization",
+      "@bacons/apple-targets",
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "OkanaMonthSpend",
+              "label": "Month spend",
+              "description": "What you have spent this month against your budget.",
+              "minWidth": "110dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 2,
+              "targetCellHeight": 2,
+              "resizeMode": "none",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "OkanaGoal",
+              "label": "Savings goal",
+              "description": "The savings goal closest to done.",
+              "minWidth": "110dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 2,
+              "targetCellHeight": 2,
+              "resizeMode": "none",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "OkanaDailyChart",
+              "label": "Last 30 days",
+              "description": "Your spending for each of the last 30 days.",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "OkanaGoals",
+              "label": "All goals",
+              "description": "Progress on all your savings goals.",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            }
+          ]
+        }
+      ]
     ],
     "extra": {
       "router": {},
