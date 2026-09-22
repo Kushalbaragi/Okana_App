@@ -14,7 +14,6 @@ import { usePushToken } from '../hooks/usePushToken';
 import { useNotificationRouting } from '../hooks/useNotificationRouting';
 import { usePurchases } from '../hooks/usePurchases';
 import { useAnalyticsIdentity } from '../hooks/useAnalyticsIdentity';
-import { useScreenTracking } from '../hooks/useScreenTracking';
 import { reportError } from '../utils/errors';
 
 // A blank DSN makes Sentry.init a documented no-op (it just logs a warning
@@ -46,7 +45,6 @@ function AppShell() {
   useNotificationRouting();
   usePurchases(user?.id);
   useAnalyticsIdentity(user);
-  useScreenTracking();
 
   // expo-audio's default session requests exclusive audio focus — the
   // keypad's click sound (NumericKeypad) and the success chime
@@ -97,10 +95,10 @@ function RootLayout() {
           "safe before the env var is filled in" shape as Sentry.init above,
           so there's no separate "is analytics configured" branch needed
           anywhere else. captureScreens/captureTouches are both off:
-          expo-router doesn't expose the navigation container autocapture
-          needs (see useScreenTracking, which does this manually via the
-          router's own pathname instead), and touches are tracked as
-          purposeful named events at their call sites rather than raw
+          screen tracking was more noise than signal (a Screen event fired
+          on every route change, with no way to tell which page from the
+          activity list without opening each row), and touches are tracked
+          as purposeful named events at their call sites rather than raw
           autocaptured taps. captureAppLifecycleEvents is also off — the
           "Application Installed/Opened/Backgrounded" events it sends by
           default were judged more noise than signal; the custom events

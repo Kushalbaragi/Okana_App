@@ -95,7 +95,7 @@ const HEADLINE_TEXT_STYLE = {
   fontSize: 44,
   lineHeight: HEADLINE_HEIGHT,
   fontWeight: '600',
-  letterSpacing: -1,
+  letterSpacing: -1.75,
   fontFamily: ROUNDED_FONT,
 };
 
@@ -398,11 +398,11 @@ function SummaryCard({
   const chartAnimStyle = useAnimatedStyle(() => ({ opacity: chartOpacity.value }));
 
   return (
-    <View className="mx-4 mb-3 pt-5 pb-5">
+    <View className="mx-4 mb-1 pt-5 pb-5">
       <Animated.View style={chartAnimStyle}>
         <Text className="text-base text-center mb-2" style={{ color: textColor(light).tertiary }}>{periodLabel}</Text>
 
-        <View className="items-center justify-center mb-8">
+        <View className="items-center justify-center mb-7">
           <AnimatedAmount value={Math.abs(displayAmount)} color={isOverview ? (netPositive ? '#4ade80' : 'rgba(255,75,75,0.92)') : (light ? '#111111' : '#ffffff')} />
         </View>
 

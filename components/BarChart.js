@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, Fragment } from 'react';
-import Svg, { Line, Rect, Circle, Path, Text as SvgText } from 'react-native-svg';
+import Svg, { Line, Rect, Circle, Path, Text as SvgText, Defs, LinearGradient, Stop } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedProps, withDelay, withTiming, Easing } from 'react-native-reanimated';
 import { formatCurrency } from '../utils/format';
 import { textColor } from '../utils/colors';
@@ -8,10 +8,6 @@ const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 const AnimatedLine = Animated.createAnimatedComponent(Line);
 const AnimatedSvgText = Animated.createAnimatedComponent(SvgText);
-
-// The two bar colours; isIncome picks which one a chart uses.
-const GREEN_TONE = { active: 'rgba(74,222,128,0.95)', dim: 'rgba(74,222,128,0.62)' };
-const RED_TONE   = { active: 'rgba(255,75,75,0.92)',  dim: 'rgba(255,75,75,0.56)' };
 
 const BAR_HEIGHT = 110;
 const CHART_W    = 264;
@@ -228,7 +224,9 @@ function BarChart({ values, labels, activeIndex, disabledAfterIndex, disabledBef
   // this is NOT the danger red used on destructive UI (248,113,113), nor
   // the delete button's own systemRed; both of those are button states
   // rather than data, and are deliberately left alone.
-  const baseTone = isIncome ? GREEN_TONE : RED_TONE;
+  const barFill = isIncome
+    ? { active: 'url(#barGreenActive)', dim: 'url(#barGreenDim)' }
+    : { active: 'url(#barSilverActive)', dim: 'url(#barSilverDim)' };
   const gridColor       = light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)';
   const labelActiveColor = light ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.85)';
   const labelDimColor    = textColor(light).disabled;
@@ -334,6 +332,35 @@ function BarChart({ values, labels, activeIndex, disabledAfterIndex, disabledBef
 
   return (
     <Svg viewBox={`0 ${-topPad} ${CHART_W} ${svgH + topPad}`} style={{ width: '100%', aspectRatio: CHART_W / (svgH + topPad) }}>
+      {/* Metallic bar fill for expense — a bright highlight near the top
+          easing down into a darker shade at the base, the same top-lit,
+          glossy-pill look as the app icon's bars. Income gets a much
+          quieter treatment: just its own green at the top easing straight
+          into a darker green at the bottom, no held plateau and no
+          lightened highlight stop — a smooth two-stop fade rather than the
+          expense bars' sharper highlight/shade contrast. */}
+      <Defs>
+        <LinearGradient id="barGreenActive" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0%" stopColor="rgba(74,222,128,0.95)" stopOpacity="1" />
+          <Stop offset="100%" stopColor="rgba(48,175,100,0.95)" stopOpacity="1" />
+        </LinearGradient>
+        <LinearGradient id="barGreenDim" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0%" stopColor="rgba(74,222,128,0.62)" stopOpacity="1" />
+          <Stop offset="100%" stopColor="rgba(48,175,100,0.62)" stopOpacity="1" />
+        </LinearGradient>
+        <LinearGradient id="barSilverActive" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0%" stopColor="#ffffff" stopOpacity="0.98" />
+          <Stop offset="30%" stopColor="#f0f0f1" stopOpacity="0.96" />
+          <Stop offset="85%" stopColor="#f0f0f1" stopOpacity="0.96" />
+          <Stop offset="100%" stopColor="#a8a8ac" stopOpacity="0.96" />
+        </LinearGradient>
+        <LinearGradient id="barSilverDim" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0%" stopColor="#ffffff" stopOpacity="0.62" />
+          <Stop offset="30%" stopColor="#f0f0f1" stopOpacity="0.58" />
+          <Stop offset="85%" stopColor="#f0f0f1" stopOpacity="0.58" />
+          <Stop offset="100%" stopColor="#a8a8ac" stopOpacity="0.58" />
+        </LinearGradient>
+      </Defs>
       <Line x1={0} y1={BAR_HEIGHT} x2={CHART_W} y2={BAR_HEIGHT} stroke={gridColor} strokeWidth="0.8" strokeDasharray="3.5 3" />
 
       {/* Just the line here, drawn before the bars below (not after) so it
@@ -385,7 +412,7 @@ function BarChart({ values, labels, activeIndex, disabledAfterIndex, disabledBef
                 rx={BAR_W / 2.6}
                 targetHeight={h}
                 delay={Math.min(i * BAR_STAGGER_STEP_MS, BAR_STAGGER_CAP_MS)}
-                fill={isActive ? baseTone.active : baseTone.dim}
+                fill={isActive ? barFill.active : barFill.dim}
                 maskColor={bgColor}
               />
             ) : (

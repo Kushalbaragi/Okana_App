@@ -139,7 +139,7 @@ export default function Dashboard() {
     }
   }, [trialInfo.status, subscription, posthog]);
   const transactionListRef = useRef(null);
-  const { showUpdate, dismiss: dismissUpdate } = useAppUpdate();
+  const { showUpdate, latestVersion, dismiss: dismissUpdate } = useAppUpdate();
 
   // Scale-in-and-fade on mount — Dashboard only ever mounts once per app
   // session (it stays mounted underneath Settings/Subscription when
@@ -900,6 +900,7 @@ export default function Dashboard() {
           instant the version check itself resolves. */}
       <UpdateSheet
         open={showUpdate && dailyPopupsResolved && !recapOpen && !budgetSetupOpen && !proRequired && !budgetCrossedOpen && !modalOpen}
+        latestVersion={latestVersion}
         onDismiss={dismissUpdate}
       />
     </Animated.View>

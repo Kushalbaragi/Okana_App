@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Modal, View, Text, Pressable, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { usePostHog } from 'posthog-react-native';
 import Animated, { useSharedValue, useAnimatedStyle, useDerivedValue, withTiming, Easing, runOnJS } from 'react-native-reanimated';
 import { UpdateIcon, CloseIcon } from './icons';
 import { POPUP_RADIUS, SMOOTH } from './Glass';
@@ -17,7 +18,8 @@ const CLOSE_EASING = Easing.inOut(Easing.cubic);
 // the close icon, not by tapping the backdrop (see the missing onPress on
 // it below) or the OS back button. An update notice a user could brush
 // past without noticing isn't worth showing at all.
-export function UpdateSheet({ open, onDismiss }) {
+export function UpdateSheet({ open, latestVersion, onDismiss }) {
+  const posthog = usePostHog();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const [visible, setVisible] = useState(open);
@@ -42,6 +44,7 @@ export function UpdateSheet({ open, onDismiss }) {
   if (!visible) return null;
 
   function handleUpdate() {
+    posthog?.capture('app_update_tapped', { version: latestVersion });
     openStoreListing();
     onDismiss();
   }

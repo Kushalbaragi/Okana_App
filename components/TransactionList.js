@@ -203,10 +203,10 @@ function ListHeader({ backLabel, currentLabel, onBack, light }) {
   const labelColor = textColor(light).disabled;
   if (!onBack) {
     return (
-      // No px-1 — the card below doesn't have it, so the 4px put this label
-      // out of line with the card edge. The list's own paddingHorizontal is
-      // the only inset it should get.
-      <Text className="text-sm font-medium uppercase tracking-wide mt-4 mb-3" style={{ color: labelColor }}>
+      // px-4 to align with each row's own date badge/description, which sit
+      // one more px-4 (16) in from the card's edge than this label's plain
+      // list-level inset would otherwise leave it at.
+      <Text className="text-sm font-medium uppercase tracking-wide mt-2 mb-3 px-4" style={{ color: labelColor }}>
         Transactions
       </Text>
     );
