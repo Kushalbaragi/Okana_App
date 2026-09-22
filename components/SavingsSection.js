@@ -12,6 +12,7 @@ import { GOAL_SUGGESTIONS, GoalSheet, MoneySheet } from './SavingsSheets';
 import GoalCard from './GoalCard';
 import { SwipeDeleteAction, useSwipeDelete, useSwipeGroup } from './SwipeDeleteAction';
 import { Card, ProgressBar, ROUNDED_FONT, POSITIVE, cardFill, dim, money } from './savingsShared';
+import { textColor } from '../utils/colors';
 import { CheckIcon, ChevronRight, EditIcon, PlusIcon } from './icons';
 import { currentMonthYear, dateBoxParts } from '../utils/format';
 import { hapticAdded } from '../utils/haptics';
@@ -307,7 +308,7 @@ function EmptyState({ onNew, light }) {
   return (
     <View className="items-center" style={{ paddingTop: 72, paddingHorizontal: 16 }}>
       <Text className="text-xl font-semibold text-center" style={{ color: light ? '#111111' : '#ffffff' }}>Start your first goal</Text>
-      <Text className="text-base text-center" style={{ color: dim(light, 0.4), marginTop: 8, marginBottom: 24, lineHeight: 22 }}>
+      <Text className="text-base text-center" style={{ color: textColor(light).tertiary, marginTop: 8, marginBottom: 24, lineHeight: 22 }}>
         Track what you're setting aside for a bike, a home, or a rainy day.
       </Text>
       <GlassPressable variant="active" radius={9999} onPress={() => onNew('')} style={{ paddingHorizontal: 32, paddingVertical: 12, alignItems: 'center' }}>
@@ -330,7 +331,7 @@ function DateChip({ dateStr, light }) {
   return (
     <View className="items-center justify-center w-8 h-8 rounded shrink-0" style={{ backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)' }}>
       <Text className="text-[11px] font-semibold leading-none" style={{ color: dim(light, 0.7) }}>{day}</Text>
-      <Text className="text-[8px] font-medium leading-none mt-0.5 tracking-tight" style={{ color: dim(light, 0.3) }}>{month}</Text>
+      <Text className="text-[8px] font-medium leading-none mt-0.5 tracking-tight" style={{ color: textColor(light).disabled }}>{month}</Text>
     </View>
   );
 }
@@ -424,7 +425,7 @@ function GoalDetail({ goal, savings, ui, light }) {
           accessibilityRole="button"
           accessibilityLabel="Edit goal"
         >
-          <EditIcon color={dim(light, 0.4)} />
+          <EditIcon color={textColor(light).disabled} />
         </Pressable>
       </View>
 
@@ -437,8 +438,8 @@ function GoalDetail({ goal, savings, ui, light }) {
         </View>
         <ProgressBar percent={goal.percent} height={8} light={light} />
         <View className="flex-row items-center justify-between mt-2.5">
-          <Text className="text-xs" style={{ color: dim(light, 0.4) }}>{goal.percent}%</Text>
-          <Text className="text-xs" style={{ color: dim(light, 0.4) }}>{money(goal.target)} target</Text>
+          <Text className="text-xs" style={{ color: textColor(light).disabled }}>{goal.percent}%</Text>
+          <Text className="text-xs" style={{ color: textColor(light).tertiary }}>{money(goal.target)} target</Text>
         </View>
       </View>
 
@@ -449,7 +450,7 @@ function GoalDetail({ goal, savings, ui, light }) {
             <Text className="text-base" style={{ color: POSITIVE }}>Completed</Text>
           </View>
           <Pressable onPress={() => savings.setGoalCompleted(goal.id, false)} hitSlop={8} accessibilityRole="button">
-            <Text className="text-base" style={{ color: dim(light, 0.4) }}>Reopen</Text>
+            <Text className="text-base" style={{ color: textColor(light).disabled }}>Reopen</Text>
           </Pressable>
         </View>
       ) : showReached ? (
@@ -470,7 +471,7 @@ function GoalDetail({ goal, savings, ui, light }) {
           month when another goal's page takes over this one. */}
       {goal.entries.length > 0 && (
         <View style={{ marginTop: 12 }}>
-          <Text className="text-[11px] font-medium uppercase tracking-widest px-1 mb-2" style={{ color: dim(light, 0.3) }}>Monthly savings</Text>
+          <Text className="text-[11px] font-medium uppercase tracking-widest px-1 mb-2" style={{ color: textColor(light).disabled }}>Monthly savings</Text>
           <Card light={light}>
             {/* The average sits at the top left; the slider below has no side
                 padding, so its bars slide right out to the card's edge. */}
@@ -487,7 +488,7 @@ function GoalDetail({ goal, savings, ui, light }) {
         </View>
       )}
 
-      <Text className="text-[11px] font-medium uppercase tracking-widest px-1 mb-2" style={{ color: dim(light, 0.3), marginTop: 28 }}>
+      <Text className="text-[11px] font-medium uppercase tracking-widest px-1 mb-2" style={{ color: textColor(light).disabled, marginTop: 28 }}>
         History
       </Text>
     </View>
@@ -500,7 +501,7 @@ function GoalDetail({ goal, savings, ui, light }) {
       contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 120 }}
     >
       {goal.entries.length === 0 ? (
-        <Text className="text-base px-1" style={{ color: dim(light, 0.3) }}>Nothing added yet.</Text>
+        <Text className="text-base px-1" style={{ color: textColor(light).tertiary }}>Nothing added yet.</Text>
       ) : (
         <Card light={light}>
           {goal.entries.map((e, i) => (
@@ -594,7 +595,7 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
           ) : (
             <>
               <View className="items-center" style={{ paddingBottom: 22 }}>
-                <Text className="text-sm" style={{ color: dim(light, 0.4) }}>Total Savings</Text>
+                <Text className="text-sm" style={{ color: textColor(light).tertiary }}>Total Savings</Text>
                 <Text
                   style={{ fontSize: 44, lineHeight: 52, fontWeight: '600', letterSpacing: -1, color: light ? '#111111' : '#ffffff', fontFamily: ROUNDED_FONT }}
                 >
@@ -613,9 +614,9 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
                     accessibilityRole="button"
                     accessibilityLabel="Completed goals"
                   >
-                    <Text className="text-sm" style={{ color: dim(light, 0.4) }}>Completed · {completedGoals.length}</Text>
+                    <Text className="text-sm" style={{ color: textColor(light).tertiary }}>Completed · {completedGoals.length}</Text>
                     <View style={{ transform: [{ rotate: showCompleted ? '90deg' : '0deg' }] }}>
-                      <ChevronRight color={dim(light, 0.3)} />
+                      <ChevronRight color={textColor(light).disabled} />
                     </View>
                   </Pressable>
                   {showCompleted && (

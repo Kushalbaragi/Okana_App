@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import Animated, { useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { PILL_ACTIVE_COLOR } from './Glass';
+import { textColor } from '../utils/colors';
 
 const PAD = 2;
 // Same spring as Header's chart-tab toggle, so every pill switch in the app
@@ -41,7 +42,7 @@ function SegmentedSwitch({ options, value, onChange, buttonWidth = 88, trackColo
         >
           <Text
             className="text-base font-medium"
-            style={{ color: value === opt.id ? '#ffffff' : light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.35)' }}
+            style={{ color: value === opt.id ? '#ffffff' : textColor(light).disabled }}
           >
             {opt.label}
           </Text>

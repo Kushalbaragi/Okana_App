@@ -4,6 +4,7 @@ import Animated, { useSharedValue, useAnimatedScrollHandler, runOnJS } from 'rea
 import Svg, { Defs, LinearGradient, Stop, Path, Rect, Text as SvgText } from 'react-native-svg';
 import { hapticTick } from '../utils/haptics';
 import { ROUNDED_FONT, dim } from './savingsShared';
+import { textColor } from '../utils/colors';
 
 // A ruler you drag sideways to set an amount: the ticks scroll under a fixed
 // centre line and the value is whichever one sits under it.
@@ -181,7 +182,7 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
 
   const tickColor = light ? 'rgba(0,0,0,0.22)' : 'rgba(255,255,255,0.20)';
   const majorColor = light ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.38)';
-  const labelColor = light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)';
+  const labelColor = textColor(light).disabled;
 
   return (
     <View style={{ height: HEIGHT }}>
@@ -235,7 +236,7 @@ export function RulerFigure({ value, light = false }) {
     <Text
       style={{ fontSize: 42, lineHeight: 50, fontWeight: '600', letterSpacing: -1, color: light ? '#111111' : '#ffffff', fontFamily: ROUNDED_FONT }}
     >
-      <Text style={{ fontSize: 26, fontWeight: '400', color: dim(light) }}>₹ </Text>
+      <Text style={{ fontSize: 26, fontWeight: '400', color: textColor(light).disabled }}>₹ </Text>
       {figureFormat.format(value)}
     </Text>
   );

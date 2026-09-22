@@ -13,9 +13,10 @@ import Animated, {
 import { parseISO } from 'date-fns';
 import TransactionItem from './TransactionItem';
 import { formatCurrency } from '../utils/format';
+import { textColor } from '../utils/colors';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { ChevronRight, BackIcon } from './icons';
-import { CARD_RADIUS, SMOOTH } from './Glass';
+import { SMOOTH } from './Glass';
 import { SETTLE_EASING } from '../utils/motion';
 
 // Same spring shape as AmountField's AMOUNT_LAYOUT_TRANSITION (proven
@@ -71,7 +72,18 @@ const DIVIDER_INSET_END = 16;
 // drill rows all paint this same color, so a real alpha would stack on each
 // layer, and each swipeable row has to stay opaque or the delete button
 // underneath it shows through mid-swipe.
-const CARD_FILL_DARK = '#151515';
+// Apple's own dark-mode grouped-list card fill (secondarySystemGroupedBackground)
+// — matches the card look in iOS Settings, which is what this card is meant
+// to read as now. Home-screen only: TransactionList is the sole consumer of
+// this constant, so this doesn't touch any other screen's cards (those still
+// use Glass's own CARD_COLOR).
+const CARD_FILL_DARK = '#1C1C1E';
+// Rounder than Apple's own flat 10pt grouped-table radius — a straight
+// match looked like a boxy default card against this app's much rounder
+// pill tabs/selectors elsewhere on the same screen. Still short of Glass's
+// shared CARD_RADIUS (28, tuned for this app's other, pill-like cards), so
+// it reads as a distinct card rather than another pill.
+const CARD_RADIUS_APPLE = 20;
 
 // How long a step deeper (or back out) takes to slide across. The outgoing
 // and incoming content are on screen together for this whole window — one
@@ -188,7 +200,7 @@ function DrillRow({ label, total, leading, dividerInset, isLast, cardColor, divi
 // right — one row doing both jobs rather than stacking a breadcrumb above
 // the label.
 function ListHeader({ backLabel, currentLabel, onBack, light }) {
-  const labelColor = light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.25)';
+  const labelColor = textColor(light).disabled;
   if (!onBack) {
     return (
       // No px-1 — the card below doesn't have it, so the 4px put this label
@@ -548,7 +560,7 @@ function TransactionList({
 
   const drillAmountColor = isIncome && !isOverview
     ? 'rgba(74,222,128,0.8)'
-    : light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)';
+    : textColor(light).tertiary;
 
   const renderYear = useCallback(({ item, index }) => (
     <DrillRow
@@ -763,10 +775,10 @@ function TransactionList({
   } else if (items.length === 0) {
     rows = (
       <View className="items-center justify-center py-14 px-4">
-        <Text className="text-base text-center" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.25)' }}>
+        <Text className="text-base text-center" style={{ color: textColor(light).tertiary }}>
           No Transaction yet
         </Text>
-        <Text className="text-base mt-1" style={{ color: light ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.15)' }}>Tap + to add Transactions</Text>
+        <Text className="text-base mt-1" style={{ color: textColor(light).disabled }}>Tap + to add Transactions</Text>
       </View>
     );
   } else {
@@ -805,7 +817,7 @@ function TransactionList({
         <Animated.View
           ref={cardRef}
           style={[
-            { backgroundColor: cardColor, borderRadius: CARD_RADIUS, ...SMOOTH, overflow: 'hidden' },
+            { backgroundColor: cardColor, borderRadius: CARD_RADIUS_APPLE, ...SMOOTH, overflow: 'hidden' },
             cardHeightStyle,
           ]}
         >

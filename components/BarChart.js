@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, Fragment } from 'react';
 import Svg, { Line, Rect, Circle, Path, Text as SvgText } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedProps, withDelay, withTiming, Easing } from 'react-native-reanimated';
 import { formatCurrency } from '../utils/format';
+import { textColor } from '../utils/colors';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -230,7 +231,7 @@ function BarChart({ values, labels, activeIndex, disabledAfterIndex, disabledBef
   const baseTone = isIncome ? GREEN_TONE : RED_TONE;
   const gridColor       = light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)';
   const labelActiveColor = light ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.85)';
-  const labelDimColor    = light ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.22)';
+  const labelDimColor    = textColor(light).disabled;
   // Same card background the bars themselves sit on (matches the bg/light
   // pair used everywhere else in the app, e.g. TransactionItem) — used as
   // an opaque mask under each bar so the average line actually disappears
@@ -245,7 +246,7 @@ function BarChart({ values, labels, activeIndex, disabledAfterIndex, disabledBef
   // across on top of every bar regardless of whether that bar is the one
   // the average is even about.
   const avgLineColor  = light ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.12)';
-  const avgLabelColor = light ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.30)';
+  const avgLabelColor = textColor(light).disabled;
 
   // Only real periods count — the same start/end bounds disabledBefore/
   // AfterIndex already use to mark "before the account existed" and

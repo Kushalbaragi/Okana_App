@@ -124,7 +124,7 @@ export default function OtpScreen() {
 
       <View className="flex-1 items-center justify-center px-8">
         <Text className="text-white text-[22px] font-semibold mb-2 text-center">Enter the code</Text>
-        <Text className="text-white/40 text-base text-center mb-10">
+        <Text className="text-white/48 text-base text-center mb-10">
           We sent a {CODE_LENGTH}-digit code to{'\n'}
           <Text className="text-white/60">{email}</Text>
         </Text>
@@ -151,7 +151,7 @@ export default function OtpScreen() {
         </Text>
 
         <Pressable onPress={handleResend} disabled={cooldown > 0 || resending || verifying} className="mt-3 py-1">
-          <Text className="text-white/40 text-base">
+          <Text className="text-white/48 text-base">
             {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
           </Text>
         </Pressable>

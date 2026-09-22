@@ -1,4 +1,5 @@
 import { parseISO, getDaysInMonth } from 'date-fns'
+import { darkText, lightText } from './colors'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -80,7 +81,7 @@ export function formatDateFull(dateStr) {
 }
 
 const SPEND_SHADES = {
-  neutral: { bg: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.25)' },
+  neutral: { bg: 'rgba(255,255,255,0.04)', color: darkText.disabled },
   green:   { bg: 'rgba(34,197,94,0.18)',  color: '#4ade80' },
   red: [
     null,
@@ -96,7 +97,7 @@ const SPEND_SHADES = {
 // is explicitly asked for it (the light-theme experiment on the Calendar
 // screen); every other caller keeps the dark set unchanged.
 const SPEND_SHADES_LIGHT = {
-  neutral: { bg: 'rgba(0,0,0,0.04)', color: 'rgba(0,0,0,0.25)' },
+  neutral: { bg: 'rgba(0,0,0,0.04)', color: lightText.disabled },
   green:   { bg: 'rgba(34,197,94,0.16)', color: '#15803d' },
   red: [
     null,

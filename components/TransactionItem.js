@@ -5,6 +5,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } 
 import { formatCurrencyFull, dateBoxParts } from '../utils/format';
 import { SwipeDeleteAction, useSwipeDelete } from './SwipeDeleteAction';
 import { CARD_COLOR } from './Glass';
+import { textColor } from '../utils/colors';
 
 function DateBox({ dateStr, light }) {
   const { day, month } = dateBoxParts(dateStr);
@@ -14,7 +15,7 @@ function DateBox({ dateStr, light }) {
       style={{ backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)' }}
     >
       <Text className="text-[11px] font-semibold leading-none" style={{ color: light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)' }}>{day}</Text>
-      <Text className="text-[8px] font-medium leading-none mt-0.5 tracking-tight" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>{month}</Text>
+      <Text className="text-[8px] font-medium leading-none mt-0.5 tracking-tight" style={{ color: textColor(light).disabled }}>{month}</Text>
     </View>
   );
 }
@@ -89,7 +90,7 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
           )}
           <Text
             className="text-base font-medium"
-            style={{ color: isIncome ? 'rgba(74,222,128,0.8)' : light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}
+            style={{ color: isIncome ? 'rgba(74,222,128,0.8)' : textColor(light).tertiary }}
           >
             {isIncome ? '+' : '-'}{formatCurrencyFull(tx.amount)}
           </Text>

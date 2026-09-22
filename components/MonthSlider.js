@@ -4,6 +4,7 @@ import Animated, { runOnJS, useAnimatedScrollHandler, useSharedValue } from 'rea
 import { hapticTick } from '../utils/haptics';
 import { reportError } from '../utils/errors';
 import { POSITIVE, dim, money } from './savingsShared';
+import { textColor } from '../utils/colors';
 
 // Width each month takes along the slider, and the bar drawn inside it.
 const STEP = 28;
@@ -117,7 +118,7 @@ function MonthSlider({ months, initialIndex, light = false }) {
   }, [goTo, initialIndex]);
 
   const figure = current.net === 0 ? money(0) : `${current.net > 0 ? '+' : '−'}${money(Math.abs(current.net))}`;
-  const figureColor = current.net === 0 ? dim(light, 0.4) : current.net > 0 ? POSITIVE : RED_TEXT;
+  const figureColor = current.net === 0 ? textColor(light).tertiary : current.net > 0 ? POSITIVE : RED_TEXT;
 
   return (
     <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
@@ -150,7 +151,7 @@ function MonthSlider({ months, initialIndex, light = false }) {
         )}
       </View>
 
-      <Text style={{ textAlign: 'center', fontSize: 13, color: dim(light, 0.4), marginTop: 10 }}>{current.name}</Text>
+      <Text style={{ textAlign: 'center', fontSize: 13, color: textColor(light).tertiary, marginTop: 10 }}>{current.name}</Text>
     </View>
   );
 }

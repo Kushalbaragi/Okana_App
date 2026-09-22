@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { HamburgerIcon, WalletIcon } from './icons';
 import { PILL_ACTIVE_COLOR } from './Glass';
+import { textColor } from '../utils/colors';
 
 const BTN_W = 88; // a hair under the original 92 — "Overview" still fits at text-base
 const PAD   = 2;
@@ -44,7 +45,7 @@ function ChartTabToggle({ value, onChange, light, toggleRef }) {
         >
           <Text
             className="text-base font-medium"
-            style={{ color: value === tab ? '#ffffff' : light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.35)' }}>
+            style={{ color: value === tab ? '#ffffff' : textColor(light).disabled }}>
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
           </Text>
         </Pressable>

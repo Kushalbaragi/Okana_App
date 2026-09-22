@@ -3,6 +3,7 @@ import { View, useWindowDimensions } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import Svg, { Defs, LinearGradient, Stop, Path, Circle, Line, Text as SvgText, G } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
+import { textColor } from '../utils/colors';
 
 const CHART_W = 300;
 const CHART_H = 90;
@@ -210,7 +211,7 @@ function LineChart({ incomeData, expenseData, labels, light = false, activeIndex
                 y={svgH - 2}
                 textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}
                 fontSize="8.5"
-                fill={light ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.22)'}
+                fill={textColor(light).disabled}
               >
                 {lbl}
               </SvgText>

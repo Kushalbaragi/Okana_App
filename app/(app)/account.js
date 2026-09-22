@@ -27,6 +27,7 @@ import { getSubscriptionDisplayStatus } from '../../utils/trial';
 import { today } from '../../utils/format';
 import { supabase } from '../../lib/supabase';
 import { buildWorkbook, parseWorkbook } from '../../utils/exportImport';
+import { textColor } from '../../utils/colors';
 import { BackIcon, EditIcon, ChevronRight, CheckIcon, CameraIcon } from '../../components/icons';
 import { ONBOARDING_SEEN_KEY } from '../onboarding';
 import { AnimatedModal } from '../../components/AnimatedModal';
@@ -332,7 +333,7 @@ function DeleteAccountOverlay({ type, phase, onDone, subscriptionWarning }) {
     >
       {subscriptionWarning && (
         <>
-          <Text className="text-sm text-center mt-3" style={{ lineHeight: 19, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>
+          <Text className="text-sm text-center mt-3" style={{ lineHeight: 19, color: textColor(LIGHT_SETTINGS).tertiary }}>
             Your {Platform.OS === 'ios' ? 'App Store' : 'Play Store'} subscription is still active — cancel it to stop future charges.
           </Text>
           <Pressable
@@ -1074,7 +1075,7 @@ export default function AccountPage() {
           <View>
             <Card>
               <View className="px-4 py-4">
-                <Text className="text-xs font-medium mb-1" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.40)' }}>Name</Text>
+                <Text className="text-xs font-medium mb-1" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>Name</Text>
                 {editingName ? (
                   <View className="flex-row items-center" style={{ gap: 8 }}>
                     <TextInput
@@ -1113,7 +1114,7 @@ export default function AccountPage() {
               <Divider />
 
               <View className="px-4 py-4">
-                <Text className="text-xs font-medium mb-1" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.40)' }}>Email</Text>
+                <Text className="text-xs font-medium mb-1" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>Email</Text>
                 <Text className="text-base" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.60)' : 'rgba(255,255,255,0.60)' }}>{profile?.email || '—'}</Text>
               </View>
             </Card>
@@ -1145,14 +1146,14 @@ export default function AccountPage() {
                 label="Export Data"
                 onPress={exportData}
                 right={exporting
-                  ? <Text className="text-xs" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}>Exporting…</Text>
-                  : <Text className="text-xs" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}>XLSX</Text>}
+                  ? <Text className="text-xs" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>Exporting…</Text>
+                  : <Text className="text-xs" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>XLSX</Text>}
               />
               <Divider />
               <Row
                 label="Import Data"
                 onPress={() => setImportOptionsOpen(true)}
-                right={<Text className="text-xs" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}>XLSX</Text>}
+                right={<Text className="text-xs" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>XLSX</Text>}
               />
               <Divider />
               <Row label="Privacy Policy" onPress={() => openLink('https://kushalbaragiokana.notion.site/Privacy-Policy-3c58f887c3c9806180c1ed51844d872e?source=copy_link')} />
@@ -1196,7 +1197,7 @@ export default function AccountPage() {
             </Card>
           </View>
 
-          <Text className="text-xs text-center mt-2 mb-8" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)' }}>v{APP_VERSION}</Text>
+          <Text className="text-xs text-center mt-2 mb-8" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>v{APP_VERSION}</Text>
         </View>
       </ScrollView>
 
@@ -1228,7 +1229,7 @@ export default function AccountPage() {
           <Text className="text-base font-semibold mb-1" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>
             {downloadingTemplate ? 'Preparing…' : 'Get template'}
           </Text>
-          <Text className="text-sm" style={{ lineHeight: 18, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.40)' }}>
+          <Text className="text-sm" style={{ lineHeight: 18, color: textColor(LIGHT_SETTINGS).tertiary }}>
             Download an empty Excel file with the right columns.
           </Text>
         </Pressable>
@@ -1247,7 +1248,7 @@ export default function AccountPage() {
       <InfoModal open={modal === 'feedback'} title={feedbackSent ? '✓ Message sent!' : 'Support'} onClose={closeFeedbackModal}>
         {!feedbackSent && (
           <>
-            <Text className="text-base mb-4" style={{ lineHeight: 22, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.40)' }}>
+            <Text className="text-base mb-4" style={{ lineHeight: 22, color: textColor(LIGHT_SETTINGS).tertiary }}>
               Need help, found a bug, or have a question? Let us know and we'll get back to you.
             </Text>
             <TextInput
@@ -1281,7 +1282,7 @@ export default function AccountPage() {
             >
               <Text className="text-black text-base font-semibold">Send</Text>
             </Pressable>
-            <Text className="mt-3 text-center" style={{ fontSize: 12, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.20)' : 'rgba(255,255,255,0.20)' }}>We typically respond within 1–2 business days.</Text>
+            <Text className="mt-3 text-center" style={{ fontSize: 12, color: textColor(LIGHT_SETTINGS).disabled }}>We typically respond within 1–2 business days.</Text>
           </>
         )}
       </InfoModal>
@@ -1325,7 +1326,7 @@ export default function AccountPage() {
             </Pressable>
           </View>
 
-          <Text className="mt-5" style={{ fontSize: 12, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.20)' : 'rgba(255,255,255,0.20)' }}>Okana v{APP_VERSION} · Made with ♥ in India</Text>
+          <Text className="mt-5" style={{ fontSize: 12, color: textColor(LIGHT_SETTINGS).disabled }}>Okana v{APP_VERSION} · Made with ♥ in India</Text>
         </View>
       </InfoModal>
 

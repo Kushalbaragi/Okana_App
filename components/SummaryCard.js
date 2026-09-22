@@ -15,6 +15,7 @@ import {
   firstBarWithData,
   currentMonthYear,
 } from '../utils/format';
+import { textColor } from '../utils/colors';
 
 const LIFETIME_YEARLY_THRESHOLD = 2; // years of history before "All Time" switches from monthly to yearly bars
 import { MONTH_NAMES } from '../utils/monthlyRecap';
@@ -175,7 +176,7 @@ function RangeSelector({ value, onChange, light }) {
             onPress={() => onChange(opt.id)}
             className="px-3 py-1"
           >
-            <Text className="text-base font-medium" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>{opt.label}</Text>
+            <Text className="text-base font-medium" style={{ color: textColor(light).disabled }}>{opt.label}</Text>
           </GlassPressable>
         )
       ))}
@@ -399,7 +400,7 @@ function SummaryCard({
   return (
     <View className="mx-4 mb-3 pt-5 pb-5">
       <Animated.View style={chartAnimStyle}>
-        <Text className="text-base text-center mb-2" style={{ color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.40)' }}>{periodLabel}</Text>
+        <Text className="text-base text-center mb-2" style={{ color: textColor(light).tertiary }}>{periodLabel}</Text>
 
         <View className="items-center justify-center mb-8">
           <AnimatedAmount value={Math.abs(displayAmount)} color={isOverview ? (netPositive ? '#4ade80' : 'rgba(255,75,75,0.92)') : (light ? '#111111' : '#ffffff')} />

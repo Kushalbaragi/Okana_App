@@ -59,7 +59,7 @@ export default function NameScreen() {
         <View className="w-full max-w-[400px] self-center">
           <View className="items-center mb-10">
             <Text className="text-white text-[22px] font-semibold mb-1">Okana</Text>
-            <Text className="text-white/30 text-base">Your money, beautifully tracked.</Text>
+            <Text className="text-white/48 text-base">Your money, beautifully tracked.</Text>
           </View>
 
           <Text className="text-white text-2xl font-semibold mb-8 text-center">What should we call you?</Text>

@@ -868,7 +868,7 @@ export default function Dashboard() {
         >
           <Text style={{ fontSize: 30 }} className="mb-3">🔒</Text>
           <Text className="text-white font-semibold text-base mb-2 text-center">Subscription Required</Text>
-          <Text className="text-white/45 text-base text-center mb-6" style={{ lineHeight: 22 }}>
+          <Text className="text-white/48 text-base text-center mb-6" style={{ lineHeight: 22 }}>
             Your existing transactions are still here. Subscribe to Okana Plus to keep adding new ones.
           </Text>
           <Pressable onPress={subscribeFromProRequired} className="w-full py-[11px] rounded-full items-center" style={{ backgroundColor: 'rgba(74,222,128,0.25)' }}>
@@ -884,7 +884,7 @@ export default function Dashboard() {
         >
           <Text style={{ fontSize: 30 }} className="mb-3">⚠️</Text>
           <Text className="text-white font-semibold text-base mb-2 text-center">You've gone over budget</Text>
-          <Text className="text-white/45 text-base text-center mb-6" style={{ lineHeight: 22 }}>
+          <Text className="text-white/48 text-base text-center mb-6" style={{ lineHeight: 22 }}>
             You're now {formatCurrency(budgetCrossedOverAmount)} over your {formatCurrency(budget.amount)} budget for {MONTH_NAMES[currMonth]}.
           </Text>
           <Pressable onPress={closeBudgetCrossed} className="w-full py-[11px] rounded-full items-center" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>

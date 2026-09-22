@@ -7,6 +7,7 @@ import { POPUP_RADIUS, SMOOTH } from './Glass';
 import { DialogBackdrop } from './DialogBackdrop';
 import { openStoreListing } from '../utils/links';
 import { SETTLE_EASING } from '../utils/motion';
+import { darkText } from '../utils/colors';
 
 const OPEN_DURATION = 520;
 const CLOSE_DURATION = 900;
@@ -73,7 +74,7 @@ export function UpdateSheet({ open, onDismiss }) {
             </Pressable>
           </View>
 
-          <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', marginBottom: 18 }}>
+          <Text style={{ fontSize: 13, color: darkText.tertiary, marginBottom: 18 }}>
             A new version of Okana is ready.
           </Text>
 

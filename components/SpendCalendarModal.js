@@ -27,6 +27,7 @@ import ErrorBoundary from './ErrorBoundary';
 import { useTourStep } from '../hooks/useTourStep';
 import { SETTLE_EASING } from '../utils/motion';
 import { OfflineBanner } from './OfflineBanner';
+import { textColor } from '../utils/colors';
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // Monday-first
 
@@ -371,7 +372,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                     style={{ gap: 5, alignSelf: 'center' }}
                   >
                     <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#a855f7' }} />
-                    <Text className="text-xs font-medium" style={{ color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)' }}>
+                    <Text className="text-xs font-medium" style={{ color: textColor(light).tertiary }}>
                       Monthly Summary ›
                     </Text>
                   </Pressable>
@@ -413,7 +414,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                   <View className="flex-row mb-1.5">
                     {DAYS.map((d, i) => (
                       <View key={i} style={{ flex: 1 }}>
-                        <Text className="text-center text-[11px] font-medium" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.25)' }}>
+                        <Text className="text-center text-[11px] font-medium" style={{ color: textColor(light).disabled }}>
                           {d}
                         </Text>
                       </View>
@@ -458,11 +459,11 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                   <View className="flex-row items-center justify-center mt-3" style={{ gap: 12 }}>
                     <View className="flex-row items-center" style={{ gap: 4 }}>
                       <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(34,197,94,0.5)' }} />
-                      <Text style={{ fontSize: 10, color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>No spend</Text>
+                      <Text style={{ fontSize: 10, color: textColor(light).disabled }}>No spend</Text>
                     </View>
                     <View className="flex-row items-center" style={{ gap: 4 }}>
                       <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(255,75,75,0.5)' }} />
-                      <Text style={{ fontSize: 10, color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>Spent</Text>
+                      <Text style={{ fontSize: 10, color: textColor(light).disabled }}>Spent</Text>
                     </View>
                   </View>
                 </View>
@@ -484,7 +485,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                     </Text>
                   </View>
                   {dayTxs.length === 0 ? (
-                    <Text className="text-base" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>
+                    <Text className="text-base" style={{ color: textColor(light).tertiary }}>
                       You saved today - Nothing spent 🌿
                     </Text>
                   ) : (

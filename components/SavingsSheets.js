@@ -14,6 +14,7 @@ import { ROUNDED_FONT } from './savingsShared';
 import AmountRuler, { RulerFigure, MIN_TARGET } from './AmountRuler';
 import { formatCurrency, formatDayLabel, today } from '../utils/format';
 import { CalendarIcon } from './icons';
+import { textColor } from '../utils/colors';
 
 // Same as AddModal's description pill, so the two sheets read as one family.
 const PILL_H = 40;
@@ -98,7 +99,7 @@ function FieldRow({ label, active, onPress, shake, light, children }) {
           outline,
         ]}
       >
-        <Text style={{ width: 56, fontSize: 13, color: light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)' }}>{label}</Text>
+        <Text style={{ width: 56, fontSize: 13, color: textColor(light).tertiary }}>{label}</Text>
         <Animated.View style={[{ flex: 1, justifyContent: 'center' }, shake.style]}>{children}</Animated.View>
       </Animated.View>
     </Pressable>
@@ -165,7 +166,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
     onClose();
   }
 
-  const muted = light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)';
+  const muted = textColor(light).tertiary;
   const surface = light ? '#FAFAF8' : '#161616';
 
   return (
@@ -359,7 +360,7 @@ export function MoneySheet({ open, onClose, onClosed, goalName, entry, initialTy
     onClose();
   }
 
-  const muted = light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)';
+  const muted = textColor(light).tertiary;
   // Full sheet width, like AddModal's toggle: the sheet's own 20px side
   // padding and the switch's 2px track padding come off, split across two.
   const toggleButtonWidth = Math.floor((windowWidth - 40 - 4) / 2);
