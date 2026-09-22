@@ -14,6 +14,14 @@ const RED_TONE   = { active: 'rgba(255,75,75,0.92)',  dim: 'rgba(255,75,75,0.56)
 
 const BAR_HEIGHT = 110;
 const CHART_W    = 264;
+// Fixed edge inset for the bar row, independent of how many bars there are.
+// Centering each bar within an equal GROUP_W slot (the old approach) left a
+// margin that grew with the slot size whenever there were few bars — e.g.
+// only 4-6 for an "All Time" yearly view — since BAR_W is capped well below
+// a wide slot. A small fixed inset plus evenly-spaced bar edges keeps that
+// margin the same regardless of bar count, so the chart lines up with the
+// cards around it instead of framing itself in whitespace on wide slots.
+const CHART_EDGE_PAD = 6;
 // A flat per-bar step (capped, not spread proportionally across a fixed
 // total budget) — spreading a fixed budget across the bar count shrinks the
 // gap between consecutive bars as there are more of them (e.g. 120ms over
@@ -100,7 +108,7 @@ function Bar({ x, width, rx, targetHeight, delay, fill, maskColor }) {
     // A corner can never be deeper than half the bar itself, or the two top
     // arcs overlap and the shape turns inside out while it's still short —
     // very visible during the grow-in, when every bar passes through that.
-    const r = Math.min(rx, h / 2);
+    const r = Math.min(rx, width / 2, h / 2);
     const right = x + width;
     return {
       d: `M${x} ${BAR_HEIGHT}`
@@ -205,7 +213,9 @@ function NoSpendDot({ cx, cy, r, fill, delay }) {
 function BarChart({ values, labels, activeIndex, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, showAverage = false, topPad = 0 }) {
   const n       = values.length;
   const GROUP_W = CHART_W / n;
-  const BAR_W   = Math.min(16, Math.max(6, GROUP_W - 10));
+  const BAR_W   = Math.min(19, Math.max(6, GROUP_W - 8));
+  const usableW = CHART_W - 2 * CHART_EDGE_PAD;
+  const barStep = n > 1 ? (usableW - BAR_W) / (n - 1) : 0;
   const maxVal  = Math.max(...values, 1);
   const svgH    = BAR_HEIGHT + 22;
   const noSpendDotColor = light ? 'rgba(34,197,94,0.7)' : 'rgba(74,222,128,0.75)';
@@ -323,7 +333,7 @@ function BarChart({ values, labels, activeIndex, disabledAfterIndex, disabledBef
 
   return (
     <Svg viewBox={`0 ${-topPad} ${CHART_W} ${svgH + topPad}`} style={{ width: '100%', aspectRatio: CHART_W / (svgH + topPad) }}>
-      <Line x1={0} y1={BAR_HEIGHT} x2={CHART_W} y2={BAR_HEIGHT} stroke={gridColor} strokeWidth="0.8" strokeDasharray="2 3" />
+      <Line x1={0} y1={BAR_HEIGHT} x2={CHART_W} y2={BAR_HEIGHT} stroke={gridColor} strokeWidth="0.8" strokeDasharray="3.5 3" />
 
       {/* Just the line here, drawn before the bars below (not after) so it
           renders behind them — see avgLineColor's comment above and Bar's
@@ -340,7 +350,7 @@ function BarChart({ values, labels, activeIndex, disabledAfterIndex, disabledBef
       )}
 
       {values.map((v, i) => {
-        const x          = i * GROUP_W + (GROUP_W - BAR_W) / 2;
+        const x = CHART_EDGE_PAD + i * barStep;
         // Rounded to a whole pixel — a bar whose value sits at or near
         // maxVal (the tallest bar in the set) computes height through
         // Math.sqrt(v / maxVal), which floating-point division can round
@@ -371,7 +381,7 @@ function BarChart({ values, labels, activeIndex, disabledAfterIndex, disabledBef
               <Bar
                 x={x}
                 width={BAR_W}
-                rx={BAR_W / 3}
+                rx={BAR_W / 2.6}
                 targetHeight={h}
                 delay={Math.min(i * BAR_STAGGER_STEP_MS, BAR_STAGGER_CAP_MS)}
                 fill={isActive ? baseTone.active : baseTone.dim}

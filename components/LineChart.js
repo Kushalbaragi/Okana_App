@@ -10,10 +10,10 @@ const PAD_TOP = 12;
 const LABEL_H = 16;
 
 const REVEAL_DURATION = 700;
-// SummaryCard's horizontal chrome around the chart (mx-4 + p-5, both sides)
-// — only used to guess the chart's width before it has been measured, see
-// below. onLayout still has the final say.
-const CARD_CHROME_W = 72;
+// SummaryCard's horizontal chrome around the chart (mx-4, both sides) — only
+// used to guess the chart's width before it has been measured, see below.
+// onLayout still has the final say.
+const CARD_CHROME_W = 32;
 // The last width onLayout reported, kept across mounts. The chart remounts
 // every time the Overview tab is re-entered, and the width doesn't change
 // between those, so every mount after the first starts from the exact value.

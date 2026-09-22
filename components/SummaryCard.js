@@ -397,7 +397,7 @@ function SummaryCard({
   const chartAnimStyle = useAnimatedStyle(() => ({ opacity: chartOpacity.value }));
 
   return (
-    <View className="mx-4 mb-3 p-5">
+    <View className="mx-4 mb-3 pt-5 pb-5">
       <Animated.View style={chartAnimStyle}>
         <Text className="text-base text-center mb-2" style={{ color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.40)' }}>{periodLabel}</Text>
 
