@@ -334,7 +334,9 @@ function BarChart({ values, labels, activeIndex, disabledAfterIndex, disabledBef
     <Svg viewBox={`0 ${-topPad} ${CHART_W} ${svgH + topPad}`} style={{ width: '100%', aspectRatio: CHART_W / (svgH + topPad) }}>
       {/* Metallic bar fill for expense — a bright highlight near the top
           easing down into a darker shade at the base, the same top-lit,
-          glossy-pill look as the app icon's bars. Income gets a much
+          glossy-pill look as the app icon's bars (tried a muted purple
+          here too — read as decorative rather than "expense", with no
+          link back to the icon, so silver stayed). Income gets a much
           quieter treatment: just its own green at the top easing straight
           into a darker green at the bottom, no held plateau and no
           lightened highlight stop — a smooth two-stop fade rather than the

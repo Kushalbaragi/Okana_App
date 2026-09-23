@@ -154,6 +154,22 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
   const closingViaDragRef = useRef(false);
   const markClosingViaDrag = useCallback(() => { closingViaDragRef.current = true; }, []);
 
+  // Tapping the date field while the description input still has the
+  // native keyboard up used to open the calendar overlay right on top of
+  // it, both animating at once. First tap now just dismisses the keyboard;
+  // the calendar only opens once it's no longer focused — the same date
+  // field, a second tap.
+  const descriptionInputRef = useRef(null);
+  // A targeted blur on the specific input, not the global Keyboard.dismiss()
+  // — that was tried first for the drag-close case below and caused the
+  // whole app to quit on some devices (Android's dismiss path can synthesize
+  // a back-press, and with nothing else on the native back stack that exits
+  // the app instead of just closing the keyboard). Blurring the ref directly
+  // never touches that path.
+  const blurDescriptionInput = useCallback(() => {
+    if (descriptionInputRef.current?.isFocused()) descriptionInputRef.current.blur();
+  }, []);
+
   useEffect(() => {
     if (open) {
       setVisible(true);
@@ -275,6 +291,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
         // React state back down as the `open` prop — that round-trip takes
         // a frame or two with nothing animating, a visible freeze mid-close.
         runOnJS(markClosingViaDrag)();
+        runOnJS(blurDescriptionInput)();
         translateY.value = withTiming(
           windowHeight,
           { duration: CLOSE_DURATION, easing: DRAG_CLOSE_EASING },
@@ -465,6 +482,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
                 visibly shakes is still the placeholder. */}
             <Animated.View style={descriptionShake.style}>
               <TextInput
+                ref={descriptionInputRef}
                 value={description}
                 onChangeText={setDescription}
                 // The native placeholder, NOT a <Text> drawn on top. An
@@ -520,7 +538,13 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
               this and the keypad below, not something these react to. */}
           <View className="flex-row items-center justify-between" style={{ paddingHorizontal: 32, paddingBottom: 20 }}>
             <Pressable
-              onPress={() => setCalOpen(true)}
+              onPress={() => {
+                if (descriptionInputRef.current?.isFocused()) {
+                  descriptionInputRef.current.blur();
+                  return;
+                }
+                setCalOpen(true);
+              }}
               className="flex-row items-center"
             >
               <CalendarIcon color={light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'} />

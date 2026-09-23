@@ -402,9 +402,25 @@ function SummaryCard({
       <Animated.View style={chartAnimStyle}>
         <Text className="text-base text-center mb-2" style={{ color: textColor(light).tertiary }}>{periodLabel}</Text>
 
-        <View className="items-center justify-center mb-7">
+        <View className={isOverview ? 'items-center justify-center mb-3' : 'items-center justify-center mb-7'}>
           <AnimatedAmount value={Math.abs(displayAmount)} color={isOverview ? (netPositive ? '#4ade80' : 'rgba(255,75,75,0.92)') : (light ? '#111111' : '#ffffff')} />
         </View>
+
+        {/* Overview plots both series in one chart (green income, silver
+            expense) with no per-line label of its own — this is the only
+            thing telling a first-time viewer which color means which. */}
+        {isOverview && (
+          <View className="flex-row items-center justify-center mb-4" style={{ gap: 16 }}>
+            <View className="flex-row items-center" style={{ gap: 6 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: '#4ade80' }} />
+              <Text className="text-xs" style={{ color: textColor(light).tertiary }}>Income</Text>
+            </View>
+            <View className="flex-row items-center" style={{ gap: 6 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: '#d8d8db' }} />
+              <Text className="text-xs" style={{ color: textColor(light).tertiary }}>Expense</Text>
+            </View>
+          </View>
+        )}
 
         <View className="mt-4">
           {isOverview ? (

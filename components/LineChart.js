@@ -174,8 +174,8 @@ function LineChart({ incomeData, expenseData, labels, light = false, activeIndex
                 <Stop offset="100%" stopColor="#4ade80" stopOpacity="0" />
               </LinearGradient>
               <LinearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%"   stopColor="#FF4B4B" stopOpacity="0.13" />
-                <Stop offset="100%" stopColor="#FF4B4B" stopOpacity="0" />
+                <Stop offset="0%"   stopColor="#d8d8db" stopOpacity="0.16" />
+                <Stop offset="100%" stopColor="#d8d8db" stopOpacity="0" />
               </LinearGradient>
             </Defs>
 
@@ -183,7 +183,7 @@ function LineChart({ incomeData, expenseData, labels, light = false, activeIndex
               <Path d={incomeArea}  fill="url(#ig)" />
               <Path d={expenseArea} fill="url(#eg)" />
 
-              <Path d={expenseLine} stroke="rgba(255,75,75,0.56)" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              <Path d={expenseLine} stroke="rgba(216,216,219,0.75)" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
               <Path d={incomeLine}  stroke="rgba(74,222,128,0.75)"  strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
               {/* A vertical guide pinpointing the tapped period — only once
@@ -199,7 +199,7 @@ function LineChart({ incomeData, expenseData, labels, light = false, activeIndex
               {/* Follows the active selection, defaulting to the last point
                   (the original always-on-end marker) when nothing's picked. */}
               <Circle cx={incomePts[markerIndex].x}  cy={incomePts[markerIndex].y}  r={isSelected ? 3 : 2.5} fill="#4ade80" />
-              <Circle cx={expensePts[markerIndex].x} cy={expensePts[markerIndex].y} r={isSelected ? 3 : 2.5} fill="rgba(255,75,75,0.92)" />
+              <Circle cx={expensePts[markerIndex].x} cy={expensePts[markerIndex].y} r={isSelected ? 3 : 2.5} fill="#d8d8db" />
             </G>
 
             <Line x1={0} y1={bottom} x2={CHART_W} y2={bottom} stroke={light ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.18)'} strokeWidth="1" strokeDasharray="2 3" />

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, useWindowDimensions } from 'react-native';
+import Svg, { Defs, LinearGradient, Stop, Circle } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
@@ -30,7 +31,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import { TourHint } from '../../components/TourHint';
 import { useTourStep } from '../../hooks/useTourStep';
 import { PlusIcon } from '../../components/icons';
-import { PILL_ACTIVE_COLOR, POPUP_RADIUS, SMOOTH } from '../../components/Glass';
+import { POPUP_RADIUS, SMOOTH } from '../../components/Glass';
 import { currentMonthYear, today, formatCurrency } from '../../utils/format';
 import { getMonthlyRecapSlides, hasAnyRecapData, prevMonthYear, MONTH_NAMES } from '../../utils/monthlyRecap';
 import { SETTLE_EASING } from '../../utils/motion';
@@ -777,8 +778,22 @@ export default function Dashboard() {
         // applies no safe-area inset — so it can't go much lower without
         // crowding the ~34pt home-indicator area.
         className="absolute bottom-12 self-center w-[68px] h-[68px] rounded-full items-center justify-center"
-        style={[{ backgroundColor: PILL_ACTIVE_COLOR, left: '50%', marginLeft: -34, zIndex: 50, elevation: 50 }, fabAnimStyle]}
+        style={[{ left: '50%', marginLeft: -34, zIndex: 50, elevation: 50 }, fabAnimStyle]}
       >
+        {/* Same metallic top-lit gradient as the expense bars/icon, in
+            place of the flat PILL_ACTIVE_COLOR grey — a top-down fill
+            (rather than radial) reads as a lit dome rather than a flat
+            disc once the icon sits on top of it. */}
+        <Svg width={68} height={68} style={{ position: 'absolute' }}>
+          <Defs>
+            <LinearGradient id="fabSilver" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0%" stopColor="#ffffff" />
+              <Stop offset="45%" stopColor="#e3e3e5" />
+              <Stop offset="100%" stopColor="#9a9a9e" />
+            </LinearGradient>
+          </Defs>
+          <Circle cx={34} cy={34} r={34} fill="url(#fabSilver)" />
+        </Svg>
         <Pressable
           onPress={openAdd}
           onPressIn={handleFabPressIn}
@@ -787,7 +802,7 @@ export default function Dashboard() {
           accessibilityRole="button"
           accessibilityLabel="Add transaction"
         >
-          <PlusIcon size={30} color="#ffffff" />
+          <PlusIcon size={30} color="#1a1a1a" />
         </Pressable>
       </Animated.View>
 

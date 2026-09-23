@@ -514,7 +514,7 @@ function CalendarGrid({ firstDay, days }) {
           <Text className="text-white/35" style={{ fontSize: 10 }}>No spend</Text>
         </View>
         <View className="flex-row items-center" style={{ gap: 4 }}>
-          <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(255,75,75,0.5)' }} />
+          <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.5)' }} />
           <Text className="text-white/35" style={{ fontSize: 10 }}>Spent</Text>
         </View>
       </View>
