@@ -1,17 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Platform } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring, withDelay, Easing, LinearTransition } from 'react-native-reanimated';
 import { SETTLE_EASING } from '../utils/motion';
+import { TABULAR } from '../utils/type';
 
 // Same ease-out-expo "settle" feel used for reveals throughout the app
 // (welcome flow, account.js, onboarding).
-
-// iOS-only rounded system-font design — 'SF Pro Rounded' is NOT a resolvable
-// PostScript name (UIFont(name:) returns nil for it), which silently fell
-// back to plain SF Pro. 'ui-rounded' is RN's actual identifier for this
-// design variant. No Android equivalent (Apple's font license doesn't
-// permit redistributing SF Pro for use off Apple platforms).
-const ROUNDED_FONT = Platform.OS === 'ios' ? 'ui-rounded' : undefined;
 
 // Shared by every element in an amount row (₹ symbol included) — the row
 // is center-justified, so adding a digit grows its total width and shifts
@@ -121,7 +114,7 @@ export function AmountDigit({ char, animateIn, color = '#ffffff', fontSize = 48,
       exiting={instantExit ? undefined : digitExiting}
       style={[
         {
-          fontSize, lineHeight, fontWeight, color, letterSpacing, fontFamily: ROUNDED_FONT,
+          fontSize, lineHeight, fontWeight, color, letterSpacing, ...TABULAR,
           textShadowColor: color, textShadowOffset: { width: 0, height: 0 },
         },
         style,
@@ -152,7 +145,7 @@ function ZeroPlaceholder({ fontSize, lineHeight, fontWeight, color, delayed }) {
   const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
 
   return (
-    <Animated.Text style={[{ fontSize, lineHeight, fontWeight, color, fontFamily: ROUNDED_FONT }, style]}>
+    <Animated.Text style={[{ fontSize, lineHeight, fontWeight, color, ...TABULAR }, style]}>
       0
     </Animated.Text>
   );
@@ -228,7 +221,7 @@ export function AmountRow({ amount, prevAmountLength, skipDigitAnim, digitFontSi
     <Animated.View layout={layoutReady ? AMOUNT_LAYOUT_TRANSITION : undefined} style={scaleStyle} className="flex-row items-center justify-center">
       <Animated.Text
         layout={layoutReady ? AMOUNT_LAYOUT_TRANSITION : undefined}
-        style={{ fontSize: symbolFontSize, lineHeight, fontWeight: '400', marginRight: 4, color: symbolColor, opacity: 0.7, fontFamily: ROUNDED_FONT }}
+        style={{ fontSize: symbolFontSize, lineHeight, fontWeight: '400', marginRight: 4, color: symbolColor, opacity: 0.7, ...TABULAR }}
       >
         ₹
       </Animated.Text>

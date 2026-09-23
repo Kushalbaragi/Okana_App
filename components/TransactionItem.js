@@ -2,23 +2,11 @@ import { memo, useCallback, useEffect, useRef } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
-import { formatCurrencyFull, dateBoxParts } from '../utils/format';
+import { formatCurrencyFull, formatDayLabel } from '../utils/format';
 import { SwipeDeleteAction, useSwipeDelete } from './SwipeDeleteAction';
 import { CARD_COLOR } from './Glass';
-import { textColor } from '../utils/colors';
-
-function DateBox({ dateStr, light }) {
-  const { day, month } = dateBoxParts(dateStr);
-  return (
-    <View
-      className="items-center justify-center w-8 h-8 rounded shrink-0 mr-2.5"
-      style={{ backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)' }}
-    >
-      <Text className="text-[11px] font-semibold leading-none" style={{ color: light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)' }}>{day}</Text>
-      <Text className="text-[8px] font-medium leading-none mt-0.5 tracking-tight" style={{ color: textColor(light).disabled }}>{month}</Text>
-    </View>
-  );
-}
+import { textColor, INCOME_TEXT } from '../utils/colors';
+import { BODY, CAPTION, TABULAR } from '../utils/type';
 
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard — see the matching comment in Header.js.
@@ -75,10 +63,16 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
       style={{ backgroundColor: cardColor }}
     >
       <Animated.View className="flex-row items-center justify-between" style={contentStyle}>
-        <View className="flex-row items-center flex-1 pr-3">
-          <DateBox dateStr={tx.date} light={light} />
-          <Text numberOfLines={1} className="text-base flex-shrink" style={{ color: light ? '#111111' : '#ffffff' }}>
+        {/* The date sits under the description as plain words rather than in
+            a boxed day/month chip beside it — the chip was a second framed
+            element on every row, and the row has to carry the date either
+            way. */}
+        <View className="flex-1 pr-3">
+          <Text numberOfLines={1} style={[BODY, { color: textColor(light).primary }]}>
             {tx.description || (isIncome ? 'Income' : 'Expense')}
+          </Text>
+          <Text style={[CAPTION, { color: textColor(light).tertiary, marginTop: 3 }]}>
+            {formatDayLabel(tx.date).toLowerCase()}
           </Text>
         </View>
 
@@ -88,10 +82,7 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
           {tx._pending && (
             <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: light ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }} />
           )}
-          <Text
-            className="text-base font-medium"
-            style={{ color: isIncome ? 'rgba(74,222,128,0.8)' : textColor(light).tertiary }}
-          >
+          <Text style={[BODY, TABULAR, { color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>
             {isIncome ? '+' : '-'}{formatCurrencyFull(tx.amount)}
           </Text>
         </View>

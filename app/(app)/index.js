@@ -736,16 +736,15 @@ export default function Dashboard() {
 
       <Header
         onMenuOpen={openMenu}
-        chartTab={chartTab}
-        onChartTabChange={handleChartTabChange}
         onCalendarOpen={openCalendar}
         light={LIGHT_HOME}
-        tabToggleRef={tabToggleRef}
       />
 
       <SummaryCard
         transactions={displayTransactions}
         chartTab={chartTab}
+        onChartTabChange={handleChartTabChange}
+        tabToggleRef={tabToggleRef}
         timeRange={timeRange}
         onTimeRangeChange={handleTimeRangeChange}
         selectedMonth={selectedMonth}

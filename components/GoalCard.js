@@ -5,8 +5,9 @@ import Animated, { FadeOut, LinearTransition } from 'react-native-reanimated';
 import { GlassPressable } from './Glass';
 import { CheckIcon, ChevronRight } from './icons';
 import { SwipeDeleteAction, useSwipeDelete } from './SwipeDeleteAction';
-import { Card, ProgressBar, ROUNDED_FONT, POSITIVE, dim, money } from './savingsShared';
+import { Card, ProgressBar, POSITIVE, dim, money } from './savingsShared';
 import { textColor } from '../utils/colors';
+import { TABULAR } from '../utils/type';
 
 // When a goal is deleted it fades out and the ones below slide up into its
 // place, so the removal is something you see happen.
@@ -64,7 +65,7 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
           </View>
         </View>
         <View className="flex-row items-baseline" style={{ gap: 8, marginTop: 8, marginBottom: done ? 0 : 12 }}>
-          <Text style={{ fontSize: 24, fontWeight: '600', letterSpacing: -0.5, color: figure, fontFamily: ROUNDED_FONT }}>{money(goal.saved)}</Text>
+          <Text style={{ fontSize: 24, fontWeight: '400', letterSpacing: -0.5, color: figure, ...TABULAR }}>{money(goal.saved)}</Text>
           <Text className="text-[13px]" numberOfLines={1} style={{ flexShrink: 1, color: textColor(light).tertiary }}>of {money(goal.target)}</Text>
         </View>
         {!done && <ProgressBar percent={goal.percent} height={5} light={light} />}

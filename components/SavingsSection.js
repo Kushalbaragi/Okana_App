@@ -11,8 +11,9 @@ import { InlineConfirm } from './InlineConfirm';
 import { GOAL_SUGGESTIONS, GoalSheet, MoneySheet } from './SavingsSheets';
 import GoalCard from './GoalCard';
 import { SwipeDeleteAction, useSwipeDelete, useSwipeGroup } from './SwipeDeleteAction';
-import { Card, ProgressBar, ROUNDED_FONT, POSITIVE, cardFill, dim, money } from './savingsShared';
+import { Card, ProgressBar, POSITIVE, cardFill, dim, money } from './savingsShared';
 import { textColor } from '../utils/colors';
+import { TABULAR } from '../utils/type';
 import { CheckIcon, ChevronRight, EditIcon, PlusIcon } from './icons';
 import { currentMonthYear, dateBoxParts } from '../utils/format';
 import { hapticAdded } from '../utils/haptics';
@@ -601,7 +602,7 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
               <View className="items-center" style={{ paddingBottom: 22 }}>
                 <Text className="text-sm" style={{ color: textColor(light).tertiary }}>Total Savings</Text>
                 <Text
-                  style={{ fontSize: 44, lineHeight: 52, fontWeight: '600', letterSpacing: -1, color: light ? '#111111' : '#ffffff', fontFamily: ROUNDED_FONT }}
+                  style={{ fontSize: 44, lineHeight: 52, fontWeight: '300', letterSpacing: -1, color: light ? '#111111' : '#ffffff', ...TABULAR }}
                 >
                   {money(totalSaved)}
                 </Text>

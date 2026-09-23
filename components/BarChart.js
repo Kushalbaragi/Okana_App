@@ -1,13 +1,19 @@
 import { memo, useEffect, useRef, Fragment } from 'react';
-import Svg, { Line, Rect, Circle, Path, Text as SvgText, Defs, LinearGradient, Stop } from 'react-native-svg';
+import Svg, { Line, Rect, Circle, Path, Text as SvgText } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedProps, withDelay, withTiming, Easing } from 'react-native-reanimated';
 import { formatCurrency } from '../utils/format';
-import { textColor } from '../utils/colors';
+import { textColor, EXPENSE, EXPENSE_DIM, INCOME, INCOME_DIM } from '../utils/colors';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 const AnimatedLine = Animated.createAnimatedComponent(Line);
 const AnimatedSvgText = Animated.createAnimatedComponent(SvgText);
+
+// The two bar colours; isIncome picks which one a chart uses. See the data
+// colour block in utils/colors.js for what they mean and why these two are
+// the only colours in the app.
+const GREEN_TONE = { active: INCOME, dim: INCOME_DIM };
+const RED_TONE   = { active: EXPENSE, dim: EXPENSE_DIM };
 
 const BAR_HEIGHT = 110;
 const CHART_W    = 264;
@@ -207,7 +213,7 @@ function NoSpendDot({ cx, cy, r, fill, delay }) {
 // bar, and its label is centred on the line, so with no room above them both are
 // half cut off. Callers that show the average pass it, and pass it for every
 // range so the chart doesn't change height as the line comes and goes.
-function BarChart({ values, labels, activeIndex, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, showAverage = false, topPad = 0 }) {
+function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, showAverage = false, topPad = 0 }) {
   const n       = values.length;
   const GROUP_W = CHART_W / n;
   const BAR_W   = Math.min(19, Math.max(6, GROUP_W - 8));
@@ -224,9 +230,15 @@ function BarChart({ values, labels, activeIndex, disabledAfterIndex, disabledBef
   // this is NOT the danger red used on destructive UI (248,113,113), nor
   // the delete button's own systemRed; both of those are button states
   // rather than data, and are deliberately left alone.
-  const barFill = isIncome
-    ? { active: 'url(#barGreenActive)', dim: 'url(#barGreenDim)' }
-    : { active: 'url(#barSilverActive)', dim: 'url(#barSilverDim)' };
+  const baseTone = isIncome ? GREEN_TONE : RED_TONE;
+  // With `accentIndex` set, exactly one bar carries the series colour and
+  // every other one goes flat neutral — one accent doing the work, so the
+  // eye lands on the period being read instead of scanning thirty coloured
+  // bars. Left null by the recap's charts, which colour every bar (one of
+  // them has no active bar at all and would otherwise render entirely grey).
+  const dimFill = accentIndex == null
+    ? baseTone.dim
+    : (light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)');
   const gridColor       = light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)';
   const labelActiveColor = light ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.85)';
   const labelDimColor    = textColor(light).disabled;
@@ -332,37 +344,6 @@ function BarChart({ values, labels, activeIndex, disabledAfterIndex, disabledBef
 
   return (
     <Svg viewBox={`0 ${-topPad} ${CHART_W} ${svgH + topPad}`} style={{ width: '100%', aspectRatio: CHART_W / (svgH + topPad) }}>
-      {/* Metallic bar fill for expense — a bright highlight near the top
-          easing down into a darker shade at the base, the same top-lit,
-          glossy-pill look as the app icon's bars (tried a muted purple
-          here too — read as decorative rather than "expense", with no
-          link back to the icon, so silver stayed). Income gets a much
-          quieter treatment: just its own green at the top easing straight
-          into a darker green at the bottom, no held plateau and no
-          lightened highlight stop — a smooth two-stop fade rather than the
-          expense bars' sharper highlight/shade contrast. */}
-      <Defs>
-        <LinearGradient id="barGreenActive" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0%" stopColor="rgba(74,222,128,0.95)" stopOpacity="1" />
-          <Stop offset="100%" stopColor="rgba(48,175,100,0.95)" stopOpacity="1" />
-        </LinearGradient>
-        <LinearGradient id="barGreenDim" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0%" stopColor="rgba(74,222,128,0.62)" stopOpacity="1" />
-          <Stop offset="100%" stopColor="rgba(48,175,100,0.62)" stopOpacity="1" />
-        </LinearGradient>
-        <LinearGradient id="barSilverActive" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0%" stopColor="#ffffff" stopOpacity="0.98" />
-          <Stop offset="30%" stopColor="#f0f0f1" stopOpacity="0.96" />
-          <Stop offset="85%" stopColor="#f0f0f1" stopOpacity="0.96" />
-          <Stop offset="100%" stopColor="#a8a8ac" stopOpacity="0.96" />
-        </LinearGradient>
-        <LinearGradient id="barSilverDim" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0%" stopColor="#ffffff" stopOpacity="0.62" />
-          <Stop offset="30%" stopColor="#f0f0f1" stopOpacity="0.58" />
-          <Stop offset="85%" stopColor="#f0f0f1" stopOpacity="0.58" />
-          <Stop offset="100%" stopColor="#a8a8ac" stopOpacity="0.58" />
-        </LinearGradient>
-      </Defs>
       <Line x1={0} y1={BAR_HEIGHT} x2={CHART_W} y2={BAR_HEIGHT} stroke={gridColor} strokeWidth="0.8" strokeDasharray="3.5 3" />
 
       {/* Just the line here, drawn before the bars below (not after) so it
@@ -393,7 +374,7 @@ function BarChart({ values, labels, activeIndex, disabledAfterIndex, disabledBef
         // noticeable on whichever bar happens to be tallest, since that's
         // the one most likely sitting right at this knife's-edge value.
         const h          = Math.round(useSqrtScale ? Math.sqrt(v / maxVal) * BAR_HEIGHT : (v / maxVal) * BAR_HEIGHT);
-        const isActive   = i === activeIndex;
+        const isActive   = i === activeIndex || i === accentIndex;
         const isDisabled = disabledAfterIndex != null && i > disabledAfterIndex;
         const isBeforeStart = disabledBeforeIndex != null && i < disabledBeforeIndex;
         const hasData    = h > 0;
@@ -414,7 +395,7 @@ function BarChart({ values, labels, activeIndex, disabledAfterIndex, disabledBef
                 rx={BAR_W / 2.6}
                 targetHeight={h}
                 delay={Math.min(i * BAR_STAGGER_STEP_MS, BAR_STAGGER_CAP_MS)}
-                fill={isActive ? barFill.active : barFill.dim}
+                fill={isActive ? baseTone.active : dimFill}
                 maskColor={bgColor}
               />
             ) : (

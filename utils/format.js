@@ -101,9 +101,9 @@ const SPEND_SHADES = {
   // Pushed further apart than the first pass — MIN dimmer, MAX brighter
   // and with a much stronger background fill — so low and high spend days
   // read as clearly different at a glance instead of blending together.
-  spendBgTint: [255, 255, 255],
-  spendMin: { bgAlpha: 0.03, color: [95, 95, 100] },    // dim grey
-  spendMax: { bgAlpha: 0.55, color: [255, 255, 255] },  // #ffffff, bold fill
+  spendBgTint: [239, 68, 68],
+  spendMin: { bgAlpha: 0.12, color: [252, 165, 165] },  // #fca5a5, faint red
+  spendMax: { bgAlpha: 0.55, color: [254, 226, 226] },  // #fee2e2, bold fill
 }
 
 // Same shape as SPEND_SHADES, tuned for a light background — the dark set's
@@ -115,9 +115,9 @@ const SPEND_SHADES_LIGHT = {
   neutral: { bg: 'rgba(0,0,0,0.04)', color: lightText.disabled },
   future:  { bg: 'rgba(0,0,0,0.02)', color: 'rgba(0,0,0,0.18)' },
   green:   { bg: 'rgba(34,197,94,0.16)', color: '#15803d' },
-  spendBgTint: [0, 0, 0],
-  spendMin: { bgAlpha: 0.03, color: [190, 190, 195] },  // pale grey
-  spendMax: { bgAlpha: 0.42, color: [5, 5, 5] },        // near-black, bold fill
+  spendBgTint: [239, 68, 68],
+  spendMin: { bgAlpha: 0.10, color: [185, 28, 28] },   // #b91c1c
+  spendMax: { bgAlpha: 0.45, color: [127, 29, 29] },   // #7f1d1d, bold fill
 }
 
 export function getDailyExpenseTotals(transactions) {

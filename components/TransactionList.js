@@ -1,5 +1,5 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, ScrollView, Pressable, InteractionManager, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, Text, ScrollView, Pressable, InteractionManager, useWindowDimensions } from 'react-native';
 import Animated, {
   Easing,
   useSharedValue,
@@ -13,10 +13,10 @@ import Animated, {
 import { parseISO } from 'date-fns';
 import TransactionItem from './TransactionItem';
 import { formatCurrency } from '../utils/format';
-import { textColor } from '../utils/colors';
+import { textColor, INCOME_TEXT } from '../utils/colors';
+import { CAPTION } from '../utils/type';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
-import { ChevronRight, BackIcon, StraightArrowIcon } from './icons';
-import { SMOOTH } from './Glass';
+import { ChevronRight, BackIcon } from './icons';
 import { SETTLE_EASING } from '../utils/motion';
 
 // Same spring shape as AmountField's AMOUNT_LAYOUT_TRANSITION (proven
@@ -55,32 +55,10 @@ const REVEAL_ANIMATE_MAX = 6;
 // How long the tour's demo swipe holds the delete button in view before closing.
 const DEMO_SWIPE_HOLD_MS = 1300;
 
-// Lines the divider up with the description text rather than the card edge:
-// the row's own horizontal padding (16) + the date box (32) + its right
-// margin (10). Keep in step with TransactionItem's px-4 / w-8 / mr-2.5.
-const DIVIDER_INSET = 58;
-// Right-hand gap, so the divider stops short of the card edge the way it
-// does on the left instead of running flush to it. Matches the rows' own
-// horizontal padding (px-4), which lines the divider's end up with the
-// right edge of the amount text.
-const DIVIDER_INSET_END = 16;
-// The card's fill: CARD_COLOR (#161616) at 95% over the black page, written
-// as a solid hex rather than an rgba — the rows, their wrappers and the
-// drill rows all paint this same color, so a real alpha would stack on each
-// layer, and each swipeable row has to stay opaque or the delete button
-// underneath it shows through mid-swipe.
-// Apple's own dark-mode grouped-list card fill (secondarySystemGroupedBackground)
-// — matches the card look in iOS Settings, which is what this card is meant
-// to read as now. Home-screen only: TransactionList is the sole consumer of
-// this constant, so this doesn't touch any other screen's cards (those still
-// use Glass's own CARD_COLOR).
-const CARD_FILL_DARK = '#1C1C1E';
-// Rounder than Apple's own flat 10pt grouped-table radius — a straight
-// match looked like a boxy default card against this app's much rounder
-// pill tabs/selectors elsewhere on the same screen. Still short of Glass's
-// shared CARD_RADIUS (28, tuned for this app's other, pill-like cards), so
-// it reads as a distinct card rather than another pill.
-const CARD_RADIUS_APPLE = 20;
+// How many transactions the home shows before the rest are behind "all N
+// transactions". Three is about what fits under the chart without the page
+// turning into a list to be read — the whole month is one tap away.
+const PREVIEW_ROWS = 3;
 
 // How long a step deeper (or back out) takes to slide across. The outgoing
 // and incoming content are on screen together for this whole window — one
@@ -108,15 +86,19 @@ const CARD_HEIGHT_TIMING = { duration: CARD_HEIGHT_MS, easing: CARD_HEIGHT_EASIN
 // measured before, so a resize can start the moment the content swaps
 // instead of waiting to be told the real height (see cardHeight below).
 // `metrics` holds a per-row height for each kind of row list, and a whole-
-// layer height for the empty state. Rows are uniform within a kind, and
-// every row but the last carries a hairline divider, hence the trailing
-// subtraction. null = not measured yet, caller falls back to waiting for
-// the real measurement.
+// layer height for the empty state. Rows are uniform within a kind. null =
+// not measured yet, caller falls back to waiting for the real measurement.
 function predictCardHeight(metrics, kind, count) {
   if (kind === 'empty') return metrics.empty ?? null;
+  // Transactions no longer predict: the preview carries an "all N" row that
+  // the others don't, so the rows-are-uniform assumption below doesn't hold
+  // for them. They fall back to waiting for onLayout, which is what every
+  // kind did before predicting existed — and at three rows there's nothing
+  // like the pause a whole month's worth used to cost.
+  if (kind === 'tx') return null;
   const rowH = metrics[kind];
   if (rowH == null || count <= 0) return null;
-  return count * rowH - StyleSheet.hairlineWidth;
+  return count * rowH;
 }
 
 // Slides up + fades in on mount. Only ever plays for the list's very first
@@ -144,39 +126,12 @@ function RevealRow({ index, children }) {
 // That's what lets the container stay mounted (and keep its shape) while
 // the rows inside it slide or fade out from under it.
 
-// Same footprint as TransactionItem's own DateBox (so a drill row's leading
-// marker reads as part of the same family as the date chip on the
-// transactions one level down, and lands at the same x — which is why a
-// row can share their divider inset exactly), but showing how that period
-// moved against the one right before it instead of its plain position
-// number: a number just repeats the label text right next to it, while the
-// trend is real information the row doesn't otherwise carry.
-//
-// `up` is the actual direction (true = grew, false = shrank, null = no
-// earlier period to compare against, e.g. the oldest row, or a flat
-// no-change) — the arrow always points the real way. `goodWhenUp` is what
-// flips the COLOR to match: more spent is bad (red), more earned or saved
-// is good (green), so the same upward arrow is red on Expense and green on
-// Income/Overview.
-function TrendMark({ up, goodWhenUp, light }) {
-  const good = up == null ? null : (goodWhenUp ? up : !up);
-  const rgb = good == null ? null : (good ? '74,222,128' : '248,113,113');
-  return (
-    <View
-      className="items-center justify-center w-8 h-8 rounded shrink-0 mr-2.5"
-      style={{ backgroundColor: rgb ? `rgba(${rgb},0.14)` : (light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)') }}
-    >
-      {up != null && <StraightArrowIcon up={up} size={14} color={`rgba(${rgb},0.9)`} />}
-    </View>
-  );
-}
-
 // One step in the hierarchy — a year in All Time, or a month inside a year.
 // Deliberately the same shape as a transaction row (same type scale,
 // padding, card corners, divider treatment) so drilling in doesn't feel
 // like moving between two differently-designed lists. The chevron is the
 // only thing marking it as a step rather than a leaf.
-function DrillRow({ label, total, leading, dividerInset, isLast, cardColor, dividerColor, light, amountColor, onPress }) {
+function DrillRow({ label, total, cardColor, light, amountColor, onPress }) {
   return (
     <View style={{ backgroundColor: cardColor }}>
       <Pressable
@@ -186,7 +141,6 @@ function DrillRow({ label, total, leading, dividerInset, isLast, cardColor, divi
         accessibilityLabel={label}
       >
         <View className="flex-row items-center flex-1 pr-3">
-          {leading}
           <Text className="text-base" style={{ color: light ? '#111111' : '#ffffff' }}>{label}</Text>
         </View>
 
@@ -195,9 +149,6 @@ function DrillRow({ label, total, leading, dividerInset, isLast, cardColor, divi
           <ChevronRight color={light ? 'rgba(0,0,0,0.25)' : undefined} />
         </View>
       </Pressable>
-      {!isLast && (
-        <View style={{ height: StyleSheet.hairlineWidth, marginLeft: dividerInset, marginRight: DIVIDER_INSET_END, backgroundColor: dividerColor }} />
-      )}
     </View>
   );
 }
@@ -208,16 +159,10 @@ function DrillRow({ label, total, leading, dividerInset, isLast, cardColor, divi
 // the label.
 function ListHeader({ backLabel, currentLabel, onBack, light }) {
   const labelColor = textColor(light).disabled;
-  if (!onBack) {
-    return (
-      // px-4 to align with each row's own date badge/description, which sit
-      // one more px-4 (16) in from the card's edge than this label's plain
-      // list-level inset would otherwise leave it at.
-      <Text className="text-sm font-medium uppercase tracking-wide mt-2 mb-3 px-4" style={{ color: labelColor }}>
-        Transactions
-      </Text>
-    );
-  }
+  // Nothing at the root any more: the list is the only thing below the
+  // chart, so a "TRANSACTIONS" label above it was naming something already
+  // obvious. The Back control below still earns its place.
+  if (!onBack) return null;
   return (
     <View className="flex-row items-center justify-between mt-4 mb-3">
       <Pressable
@@ -271,8 +216,12 @@ function TransactionList({
   // The raised surface the rows sit on. This used to be the same colour as
   // the page behind it, which meant the per-row corner radii had nothing to
   // show against and the list read as loose text rather than a card.
-  const cardColor = light ? '#FFFFFF' : CARD_FILL_DARK;
-  const dividerColor = light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)';
+  // The page's own background, not a raised fill: the rows sit directly on
+  // the screen now rather than inside a card. They still have to paint an
+  // opaque colour of their own — a swiped-open row would otherwise show its
+  // own delete button through itself — so this is the page colour rather
+  // than `transparent`.
+  const cardColor = light ? '#FAFAF8' : '#000000';
   const isOverview = chartTab === 'overview';
   const isIncome   = activeTab === 'income';
 
@@ -516,9 +465,13 @@ function TransactionList({
   // normally.
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
   const [settled, setSettled] = useState(false);
+  // Asking for the whole list applies to the list that was asked about —
+  // a different month, tab or drill level starts back at the preview.
+  const [showAll, setShowAll] = useState(false);
   if (filterKey !== prevFilterKey) {
     setPrevFilterKey(filterKey);
     setSettled(false);
+    setShowAll(false);
   }
   useEffect(() => {
     if (settled) return undefined;
@@ -530,7 +483,6 @@ function TransactionList({
   // keeps getting stable props and can actually bail out of re-rendering
   // rows that haven't changed.
   const renderTransaction = useCallback(({ item, index }) => {
-    const isLast = index === items.length - 1;
     const card = (
       <Animated.View
         key={item.id}
@@ -550,75 +502,41 @@ function TransactionList({
           cardColor={cardColor}
           swipeable={settled}
         />
-        {/* Sibling of the swipeable, not a child of it, so it stays put while
-            a row is dragged open — the divider belongs to the card, not to
-            the row's sliding content. Inset to start where the label does
-            rather than running the full width. */}
-        {!isLast && (
-          <View style={{ height: StyleSheet.hairlineWidth, marginLeft: DIVIDER_INSET, marginRight: DIVIDER_INSET_END, backgroundColor: dividerColor }} />
-        )}
       </Animated.View>
     );
     // Only the first paint's top rows animate — once `revealing` flips,
     // every later render, for any reason, just shows the card directly.
     const shouldAnimate = revealing && index < REVEAL_ANIMATE_MAX;
     return shouldAnimate ? <RevealRow key={item.id} index={index}>{card}</RevealRow> : card;
-  }, [items.length, settled, revealing, justAddedId, cardColor, dividerColor, isOverview, isIncome, onEdit, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light]);
+  }, [settled, revealing, justAddedId, cardColor, isOverview, isIncome, onEdit, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light]);
 
   const drillAmountColor = isIncome && !isOverview
-    ? 'rgba(74,222,128,0.8)'
+    ? INCOME_TEXT
     : textColor(light).tertiary;
 
-  // More income/net is good news, more expense is bad — the flag TrendMark
-  // uses to decide whether "grew" gets the green or the red.
-  const trendGoodWhenUp = isIncome || isOverview;
+  const renderYear = useCallback(({ item }) => (
+    <DrillRow
+      key={item.year}
+      label={String(item.year)}
+      total={Math.abs(item.total)}
+      cardColor={cardColor}
+      light={light}
+      amountColor={drillAmountColor}
+      onPress={() => openYear(item.year)}
+    />
+  ), [cardColor, light, drillAmountColor, openYear]);
 
-  const renderYear = useCallback(({ item, index }) => {
-    // Rows are newest-first, so the period right before this one — what its
-    // trend is measured against — is the NEXT entry in the array.
-    const prev = yearRows[index + 1];
-    const trend = prev ? (item.total === prev.total ? null : item.total > prev.total) : null;
-    return (
-      <DrillRow
-        key={item.year}
-        label={String(item.year)}
-        total={Math.abs(item.total)}
-        leading={<TrendMark up={trend} goodWhenUp={trendGoodWhenUp} light={light} />}
-        // Now that a year row carries a leading marker too, its divider lines
-        // up the same way the month rows' does.
-        dividerInset={DIVIDER_INSET}
-        isLast={index === yearRows.length - 1}
-        cardColor={cardColor}
-        dividerColor={dividerColor}
-        light={light}
-        amountColor={drillAmountColor}
-        onPress={() => openYear(item.year)}
-      />
-    );
-  }, [yearRows, trendGoodWhenUp, cardColor, dividerColor, light, drillAmountColor, openYear]);
-
-  const renderMonth = useCallback(({ item, index }) => {
-    const prev = monthRows[index + 1];
-    const trend = prev ? (item.total === prev.total ? null : item.total > prev.total) : null;
-    return (
-      <DrillRow
-        key={item.month}
-        label={MONTH_NAMES[item.month]}
-        total={Math.abs(item.total)}
-        leading={<TrendMark up={trend} goodWhenUp={trendGoodWhenUp} light={light} />}
-        // Matches the transaction rows' inset exactly — TrendMark is the same
-        // width and margin as their DateBox, so the dividers line up straight
-        // through a drill-in.
-        dividerInset={DIVIDER_INSET}
-        isLast={index === monthRows.length - 1}
-        cardColor={cardColor}
-        dividerColor={dividerColor}
-        light={light}
-        amountColor={drillAmountColor}
-        onPress={() => openMonth(item.month)}
-      />
-    );
-  }, [monthRows, trendGoodWhenUp, cardColor, dividerColor, light, drillAmountColor, openMonth]);
+  const renderMonth = useCallback(({ item }) => (
+    <DrillRow
+      key={item.month}
+      label={MONTH_NAMES[item.month]}
+      total={Math.abs(item.total)}
+      cardColor={cardColor}
+      light={light}
+      amountColor={drillAmountColor}
+      onPress={() => openMonth(item.month)}
+    />
+  ), [cardColor, light, drillAmountColor, openMonth]);
 
   // Back goes up exactly one level, and says where it lands rather than just
   // "Back" — at the transactions level that's the year you came from, one
@@ -760,8 +678,11 @@ function TransactionList({
     if (key !== contentKeyRef.current) return;
     const h = e.nativeEvent.layout.height;
     if (h === 0) return;
+    // 'tx' is skipped: its layer can carry an extra "all N" row, so a
+    // per-row figure taken from it would be wrong — and predictCardHeight
+    // doesn't ask for one anyway.
     if (kind === 'empty') metricsRef.current.empty = h;
-    else if (count > 0) metricsRef.current[kind] = (h + StyleSheet.hairlineWidth) / count;
+    else if (kind !== 'tx' && count > 0) metricsRef.current[kind] = h / count;
     if (!measuredRef.current) {
       measuredRef.current = true;
       targetHeightRef.current = h;
@@ -804,7 +725,28 @@ function TransactionList({
       </View>
     );
   } else {
-    rows = items.map((item, index) => renderTransaction({ item, index }));
+    // Only the first few, unless asked for the rest. The whole month used
+    // to unroll under the chart, which made the home a list to be read
+    // rather than a figure to be glanced at.
+    const capped = !showAll && items.length > PREVIEW_ROWS;
+    const shown = capped ? items.slice(0, PREVIEW_ROWS) : items;
+    rows = (
+      <>
+        {shown.map((item, index) => renderTransaction({ item, index }))}
+        {capped && (
+          <Pressable
+            onPress={() => setShowAll(true)}
+            style={{ backgroundColor: cardColor, paddingVertical: 14, alignItems: 'center' }}
+            accessibilityRole="button"
+            accessibilityLabel={`Show all ${items.length} transactions`}
+          >
+            <Text style={[CAPTION, { color: textColor(light).tertiary }]}>
+              all {items.length} transactions
+            </Text>
+          </Pressable>
+        )}
+      </>
+    );
   }
 
   // The header sits OUTSIDE the card, not inside it. Only the card's
@@ -839,7 +781,7 @@ function TransactionList({
         <Animated.View
           ref={cardRef}
           style={[
-            { backgroundColor: cardColor, borderRadius: CARD_RADIUS_APPLE, ...SMOOTH, overflow: 'hidden' },
+            { backgroundColor: cardColor, overflow: 'hidden' },
             cardHeightStyle,
           ]}
         >

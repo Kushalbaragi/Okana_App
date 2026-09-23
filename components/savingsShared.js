@@ -1,15 +1,11 @@
 import { useEffect } from 'react';
-import { Platform, View } from 'react-native';
+import { View } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { formatCurrency, formatCurrencyFull } from '../utils/format';
 import { CARD_RADIUS, SMOOTH } from './Glass';
 import { SETTLE_EASING } from '../utils/motion';
 
 // Small pieces shared by the savings list and its goal cards.
-
-// 'ui-rounded' for the numerals, as everywhere else the amounts are shown —
-// see AmountField.js.
-export const ROUNDED_FONT = Platform.OS === 'ios' ? 'ui-rounded' : undefined;
 
 const CARD_COLOR = '#151515';
 const FILL_COLOR = '#4ade80';

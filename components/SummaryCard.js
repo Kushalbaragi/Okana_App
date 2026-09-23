@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Platform } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
 import BarChart from './BarChart';
@@ -15,7 +15,8 @@ import {
   firstBarWithData,
   currentMonthYear,
 } from '../utils/format';
-import { textColor } from '../utils/colors';
+import { textColor, EXPENSE, INCOME } from '../utils/colors';
+import { CAPTION, TABULAR } from '../utils/type';
 
 const LIFETIME_YEARLY_THRESHOLD = 2; // years of history before "All Time" switches from monthly to yearly bars
 import { MONTH_NAMES } from '../utils/monthlyRecap';
@@ -27,11 +28,6 @@ const fmt = new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR',
   minimumFractionDigits: 0, maximumFractionDigits: 0,
 });
-
-// 'ui-rounded', not 'SF Pro Rounded' (that name doesn't resolve — see
-// AmountField.js's own ROUNDED_FONT comment) — used for the headline amount
-// to match the rounded numeral style elsewhere in the app.
-const ROUNDED_FONT = Platform.OS === 'ios' ? 'ui-rounded' : undefined;
 
 // Animates the number as ONE object: the old value fades out and drifts up
 // while the new one fades in from just below.
@@ -94,9 +90,12 @@ const HEADLINE_TEXT_STYLE = {
   textAlign: 'center',
   fontSize: 44,
   lineHeight: HEADLINE_HEIGHT,
-  fontWeight: '600',
+  // Light, not semibold. At this size weight reads as shouting — the size
+  // is already doing the work, and a hairline figure is what separates a
+  // headline number from a price tag.
+  fontWeight: '300',
   letterSpacing: -1.75,
-  fontFamily: ROUNDED_FONT,
+  ...TABULAR,
 };
 
 function AnimatedAmount({ value, color }) {
@@ -142,27 +141,22 @@ const RANGE_OPTIONS = [
   { id: '5y',    label: 'All' },
 ];
 
+// Plain words, no pills. A segmented control announces itself as chrome
+// before it says anything about the data; three words with only the live
+// one brightened carry the same choice at a fraction of the weight.
 function RangeSelector({ value, onChange, light }) {
   return (
-    <View className="flex-row items-center justify-center mt-6" style={{ gap: 8 }}>
+    <View className="flex-row items-center justify-center mt-6" style={{ gap: 22 }}>
       {RANGE_OPTIONS.map(opt => (
         value === opt.id ? (
-          // "glass", not "pillActive", even though this is the selected
-          // state of a segmented control. pillActive (#3a3a3a) is tuned for
-          // Header's chart tabs, which sit INSIDE a #161616 container and so
-          // need to be lighter than it to read as raised. These pills sit
-          // directly on the page's pure black, where that same grey is a far
-          // bigger jump and reads as glaring. The standard raised-surface
-          // colour is the right lift against black, and matches every other
-          // card on the screen.
           <GlassPressable
             key={opt.id}
-            variant="glass"
+            variant="field"
             radius={9999}
             onPress={() => onChange(opt.id)}
-            className="px-3 py-1"
+            className="px-1 py-1"
           >
-            <Text className="text-white text-base font-medium">{opt.label}</Text>
+            <Text className="text-base" style={{ color: light ? '#111111' : '#ffffff' }}>{opt.label}</Text>
           </GlassPressable>
         ) : (
           // variant="field" — transparent background (same look as before),
@@ -174,12 +168,46 @@ function RangeSelector({ value, onChange, light }) {
             variant="field"
             radius={9999}
             onPress={() => onChange(opt.id)}
-            className="px-3 py-1"
+            className="px-1 py-1"
           >
-            <Text className="text-base font-medium" style={{ color: textColor(light).disabled }}>{opt.label}</Text>
+            <Text className="text-base" style={{ color: textColor(light).disabled }}>{opt.label}</Text>
           </GlassPressable>
         )
       ))}
+    </View>
+  );
+}
+
+// What the headline figure is OF, as one line of prose under it —
+// "expenses · september". The first word is the Expense/Income/Overview
+// switch that used to be a 264px segmented pill in the Header: tapping it
+// cycles to the next one. A caption that has to be there anyway (the
+// period label was already printed above the amount) doing the job of a
+// control means the control costs nothing.
+const TAB_CYCLE = ['expense', 'income', 'overview'];
+const TAB_WORDS = { expense: 'expenses', income: 'income', overview: 'overview' };
+
+function TypeSwitch({ value, onChange, periodLabel, light, toggleRef }) {
+  const muted = textColor(light).tertiary;
+  return (
+    <View ref={toggleRef} className="flex-row items-center justify-center">
+      <Pressable
+        onPress={() => onChange(TAB_CYCLE[(TAB_CYCLE.indexOf(value) + 1) % TAB_CYCLE.length])}
+        hitSlop={12}
+        accessibilityRole="button"
+        accessibilityLabel={`Showing ${TAB_WORDS[value]}. Tap to switch.`}
+      >
+        <Text
+          style={[CAPTION, {
+            color: textColor(light).secondary,
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderBottomColor: textColor(light).disabled,
+          }]}
+        >
+          {TAB_WORDS[value]}
+        </Text>
+      </Pressable>
+      <Text style={[CAPTION, { color: muted }]}> · {periodLabel.toLowerCase()}</Text>
     </View>
   );
 }
@@ -189,6 +217,8 @@ function RangeSelector({ value, onChange, light }) {
 function SummaryCard({
   transactions,
   chartTab,
+  onChartTabChange,
+  tabToggleRef,
   timeRange,
   onTimeRangeChange,
   selectedMonth,
@@ -413,19 +443,29 @@ function SummaryCard({
   return (
     <View className="mx-4 mb-1 pt-5 pb-5">
       <Animated.View style={chartAnimStyle}>
-        <Text className="text-base text-center mb-2" style={{ color: textColor(light).tertiary }}>{periodLabel}</Text>
-
         <View className={isOverview ? 'items-center justify-center mb-3' : 'items-center justify-center mb-7'}>
-          <AnimatedAmount value={Math.abs(displayAmount)} color={isOverview ? (netPositive ? '#4ade80' : 'rgba(255,75,75,0.92)') : (light ? '#111111' : '#ffffff')} />
+          <AnimatedAmount value={Math.abs(displayAmount)} color={isOverview ? (netPositive ? INCOME : EXPENSE) : (light ? '#111111' : '#ffffff')} />
+
+          {/* Below the figure, not above it: the amount is what the screen is
+              for, so it reads first and the caption explains it, rather than
+              a label being announced before there's anything to label. */}
+          <TypeSwitch
+            value={chartTab}
+            onChange={onChartTabChange}
+            periodLabel={periodLabel}
+            light={light}
+            toggleRef={tabToggleRef}
+          />
+
           {/* Fixed-height slot, always rendered — the caption only appears for
               Month/Expense with a budget set, and everything below (the chart)
               would otherwise jump up or down by a line's height every time it
               shows or hides, e.g. switching between the Month and Year tabs. */}
-          <View style={{ height: 20, marginTop: -4 }}>
+          <View style={{ height: 20, marginTop: 6 }}>
             {!!budgetDiff && (
               <Text
                 className="text-sm"
-                style={{ color: budgetDiff.over ? 'rgba(255,75,75,0.92)' : '#4ade80' }}
+                style={{ color: budgetDiff.over ? EXPENSE : INCOME }}
               >
                 {fmt.format(budgetDiff.amount)} {budgetDiff.over ? 'over' : 'under'} budget
               </Text>
@@ -433,17 +473,17 @@ function SummaryCard({
           </View>
         </View>
 
-        {/* Overview plots both series in one chart (green income, silver
+        {/* Overview plots both series in one chart (green income, red
             expense) with no per-line label of its own — this is the only
             thing telling a first-time viewer which color means which. */}
         {isOverview && (
           <View className="flex-row items-center justify-center mb-4" style={{ gap: 16 }}>
             <View className="flex-row items-center" style={{ gap: 6 }}>
-              <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: '#4ade80' }} />
+              <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: INCOME }} />
               <Text className="text-xs" style={{ color: textColor(light).tertiary }}>Income</Text>
             </View>
             <View className="flex-row items-center" style={{ gap: 6 }}>
-              <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: '#d8d8db' }} />
+              <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: EXPENSE }} />
               <Text className="text-xs" style={{ color: textColor(light).tertiary }}>Expense</Text>
             </View>
           </View>
@@ -475,6 +515,12 @@ function SummaryCard({
               values={barValues}
               labels={chartData.labels}
               activeIndex={chartActiveIndex}
+              // Nothing tapped yet still gets one coloured bar: the most
+              // recent real period (today, this month, this year — the same
+              // index the disabled-after cutoff is measured from), so the
+              // chart opens pointing at where you actually are rather than
+              // as a field of flat grey.
+              accentIndex={chartActiveIndex >= 0 ? chartActiveIndex : disabledAfterIndex}
               disabledAfterIndex={disabledAfterIndex}
               disabledBeforeIndex={disabledBeforeIndex}
               hideLabelAfterIndex={timeRange === '5y' && lifetimeGranularity === 'year' ? disabledAfterIndex : null}

@@ -10,7 +10,6 @@ import { useAmountEntry } from '../hooks/useAmountEntry';
 import { AmountRow } from './AmountField';
 import { GlassPressable, INPUT_TEXT_STYLE } from './Glass';
 import { useShake } from '../hooks/useShake';
-import { ROUNDED_FONT } from './savingsShared';
 import AmountRuler, { RulerFigure, MIN_TARGET } from './AmountRuler';
 import { formatCurrency, formatDayLabel, today } from '../utils/format';
 import { CalendarIcon } from './icons';
@@ -208,7 +207,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
       >
         <Text
           className="text-center"
-          style={{ fontSize: 21, fontWeight: '600', letterSpacing: -0.3, marginBottom: 18, color: light ? '#111111' : '#ffffff', fontFamily: ROUNDED_FONT }}
+          style={{ fontSize: 21, fontWeight: '500', letterSpacing: -0.3, marginBottom: 18, color: light ? '#111111' : '#ffffff' }}
         >
           {isEdit ? 'Edit goal' : 'New goal'}
         </Text>

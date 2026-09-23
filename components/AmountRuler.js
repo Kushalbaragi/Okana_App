@@ -3,8 +3,9 @@ import { View, Text, useWindowDimensions } from 'react-native';
 import Animated, { useSharedValue, useAnimatedScrollHandler, runOnJS } from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient, Stop, Path, Rect, Text as SvgText } from 'react-native-svg';
 import { hapticTick } from '../utils/haptics';
-import { ROUNDED_FONT, dim } from './savingsShared';
+import { dim } from './savingsShared';
 import { textColor } from '../utils/colors';
+import { TABULAR } from '../utils/type';
 
 // A ruler you drag sideways to set an amount: the ticks scroll under a fixed
 // centre line and the value is whichever one sits under it.
@@ -234,7 +235,7 @@ const figureFormat = new Intl.NumberFormat('en-IN');
 export function RulerFigure({ value, light = false }) {
   return (
     <Text
-      style={{ fontSize: 42, lineHeight: 50, fontWeight: '600', letterSpacing: -1, color: light ? '#111111' : '#ffffff', fontFamily: ROUNDED_FONT }}
+      style={{ fontSize: 42, lineHeight: 50, fontWeight: '300', letterSpacing: -1, color: light ? '#111111' : '#ffffff', ...TABULAR }}
     >
       <Text style={{ fontSize: 26, fontWeight: '400', color: textColor(light).disabled }}>₹ </Text>
       {figureFormat.format(value)}
