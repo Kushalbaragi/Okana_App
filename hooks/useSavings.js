@@ -15,6 +15,7 @@ function goalFromRow(row) {
     id:          row.id,
     name:        row.name,
     target:      parseFloat(row.target_amount),
+    location:    row.location || '',
     completedAt: row.completed_at,
     createdAt:   row.created_at,
   }
@@ -196,20 +197,21 @@ export function useSavings() {
     posthog?.capture('savings_goal_reached', { days_since_created: daysSince(goal.createdAt) })
   }, [posthog])
 
-  const addGoal = useCallback(async ({ name, target }) => {
+  const addGoal = useCallback(async ({ name, target, location }) => {
     // Client-generated so the optimistic row and the server row share an id.
     const id = Crypto.randomUUID()
     const goal = {
       id,
       name:        name.trim(),
       target:      parseFloat(target),
+      location:    (location || '').trim(),
       completedAt: null,
       createdAt:   new Date().toISOString(),
     }
     const result = await write({
       apply: () => setStore(s => ({ ...s, goals: [...s.goals, goal] })),
       request: () => supabase.from('savings_goals')
-        .insert({ id, user_id: user.id, name: goal.name, target_amount: goal.target })
+        .insert({ id, user_id: user.id, name: goal.name, target_amount: goal.target, location: goal.location })
         .select().single(),
       rollback: () => setStore(s => ({ ...s, goals: s.goals.filter(g => g.id !== id) })),
       onSuccess: row => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? goalFromRow(row) : g) })),
@@ -222,15 +224,15 @@ export function useSavings() {
     return result
   }, [write, user, posthog])
 
-  const editGoal = useCallback(async (id, { name, target }) => {
+  const editGoal = useCallback(async (id, { name, target, location }) => {
     const prev = storeRef.current.goals.find(g => g.id === id)
     if (!prev) return { success: false, error: FALLBACK_MESSAGE }
-    const next = { ...prev, name: name.trim(), target: parseFloat(target) }
+    const next = { ...prev, name: name.trim(), target: parseFloat(target), location: (location || '').trim() }
     const saved = netFor(storeRef.current.entries, id)
     const result = await write({
       apply: () => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? next : g) })),
       request: () => supabase.from('savings_goals')
-        .update({ name: next.name, target_amount: next.target })
+        .update({ name: next.name, target_amount: next.target, location: next.location })
         .eq('id', id).eq('user_id', user.id),
       rollback: () => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? prev : g) })),
     })

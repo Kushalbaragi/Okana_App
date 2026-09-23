@@ -23,6 +23,11 @@ const PILL_H = 40;
 // state. Tapping one just fills the name in; it can still be edited.
 export const GOAL_SUGGESTIONS = ['Emergency fund', 'Vacation', 'Bike', 'Home', 'New phone', 'Wedding'];
 
+// Ideas for where a goal's money sits, offered the same way as the name
+// suggestions above. Not an exhaustive list or an enum — the field is free
+// text, these are just a fast path for the common cases.
+const LOCATION_SUGGESTIONS = ['Bank', 'Liquid Fund', 'Chit Fund', 'Cash'];
+
 const MONEY_TYPES = [
   { id: 'add', label: 'Add' },
   { id: 'withdraw', label: 'Withdraw' },
@@ -118,21 +123,27 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
   const isEdit = !!goal;
   const [name, setName] = useState('');
   const [target, setTarget] = useState(DEFAULT_TARGET);
+  const [location, setLocation] = useState('');
   const [nameFocused, setNameFocused] = useState(false);
+  const [locationFocused, setLocationFocused] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   // Bumped each time the sheet opens, which is what tells the ruler to go back
   // to the target it is being given rather than wherever it was left.
   const [session, setSession] = useState(0);
   const nameRef = useRef(null);
+  const locationRef = useRef(null);
   const nameShake = useShake();
   const amountShake = useShake();
+  const locationShake = useShake();
 
   useEffect(() => {
     if (!open) return;
     setName(goal ? goal.name : initialName);
     setTarget(goal ? goal.target : DEFAULT_TARGET);
+    setLocation(goal ? goal.location : '');
     setNameFocused(false);
+    setLocationFocused(false);
     setError('');
     setSubmitting(false);
     setSession(n => n + 1);
@@ -155,7 +166,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
     Keyboard.dismiss();
     setSubmitting(true);
     setError('');
-    const result = await onSubmit({ name, target });
+    const result = await onSubmit({ name, target, location });
     if (result?.success === false) {
       setSubmitting(false);
       // Offline: the app's offline banner has said so, and the sheet stays open
@@ -177,7 +188,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
       onClose={handleClose}
       onClosed={onClosed}
       light={light}
-      heightRatio={0.6}
+      heightRatio={0.74}
       dismissible={!submitting}
       footer={(
         <ActionRow
@@ -236,6 +247,53 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
                   variant="field"
                   radius={9999}
                   onPress={() => { Keyboard.dismiss(); setName(suggestion); }}
+                  accessibilityRole="button"
+                  accessibilityLabel={suggestion}
+                  style={{ paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)' }}
+                >
+                  <Text className="text-sm" style={{ color: light ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.65)' }}>{suggestion}</Text>
+                </GlassPressable>
+              ))}
+            </ScrollView>
+          </Animated.View>
+        )}
+
+        <View style={{ marginTop: 28 }}>
+          <FieldRow label="Where" active={locationFocused} onPress={() => locationRef.current?.focus()} shake={locationShake} light={light}>
+            <TextInput
+              ref={locationRef}
+              value={location}
+              onChangeText={setLocation}
+              onFocus={() => setLocationFocused(true)}
+              onBlur={() => setLocationFocused(false)}
+              placeholder="Bank, liquid fund... (optional)"
+              placeholderTextColor={light ? '#b0b0b0' : '#4d4d4d'}
+              maxLength={40}
+              autoCapitalize="words"
+              returnKeyType="done"
+              onSubmitEditing={Keyboard.dismiss}
+              style={[INPUT_TEXT_STYLE, { fontSize: 16, color: light ? '#111111' : '#ffffff', height: 48, paddingVertical: 0 }]}
+            />
+          </FieldRow>
+        </View>
+
+        {/* Ideas for where the money sits, only while there isn't one — same
+            pattern as the name suggestions above. */}
+        {!location.trim() && (
+          <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)} style={{ marginBottom: 6 }}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              style={{ marginHorizontal: -20, marginTop: 8, flexGrow: 0 }}
+              contentContainerStyle={{ paddingHorizontal: 20, gap: 8 }}
+            >
+              {LOCATION_SUGGESTIONS.map(suggestion => (
+                <GlassPressable
+                  key={suggestion}
+                  variant="field"
+                  radius={9999}
+                  onPress={() => { Keyboard.dismiss(); setLocation(suggestion); }}
                   accessibilityRole="button"
                   accessibilityLabel={suggestion}
                   style={{ paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)' }}

@@ -195,6 +195,8 @@ function SummaryCard({
   year,
   selectedPeriod,
   selectedDay,
+  hasBudget = false,
+  budgetAmount = null,
   light = false,
 }) {
   const { month: currMonth, year: currYear } = currentMonthYear();
@@ -324,6 +326,17 @@ function SummaryCard({
   const isOverview  = chartTab === 'overview';
   const netPositive = displayAmount >= 0;
 
+  // How this month's spend compares to the budget, right under the headline.
+  // Only for the whole month's Expense total — a single drilled-into day
+  // (selectedDay) compared against a whole month's budget would read as a
+  // false alarm, and Income/Overview aren't what a budget tracks at all.
+  const budgetDiff = useMemo(() => {
+    if (timeRange !== 'month' || chartTab !== 'expense' || selectedDay != null) return null;
+    if (!hasBudget || !(budgetAmount > 0)) return null;
+    const diff = displayAmount - budgetAmount;
+    return { over: diff > 0, amount: Math.abs(diff) };
+  }, [timeRange, chartTab, selectedDay, hasBudget, budgetAmount, displayAmount]);
+
   const periodLabel = useMemo(() => {
     if (timeRange === 'month') {
       return selectedDay != null ? `${MONTH_NAMES[currMonth]} ${selectedDay}` : MONTH_NAMES[currMonth];
@@ -404,6 +417,20 @@ function SummaryCard({
 
         <View className={isOverview ? 'items-center justify-center mb-3' : 'items-center justify-center mb-7'}>
           <AnimatedAmount value={Math.abs(displayAmount)} color={isOverview ? (netPositive ? '#4ade80' : 'rgba(255,75,75,0.92)') : (light ? '#111111' : '#ffffff')} />
+          {/* Fixed-height slot, always rendered — the caption only appears for
+              Month/Expense with a budget set, and everything below (the chart)
+              would otherwise jump up or down by a line's height every time it
+              shows or hides, e.g. switching between the Month and Year tabs. */}
+          <View style={{ height: 20, marginTop: -4 }}>
+            {!!budgetDiff && (
+              <Text
+                className="text-sm"
+                style={{ color: budgetDiff.over ? 'rgba(255,75,75,0.92)' : '#4ade80' }}
+              >
+                {fmt.format(budgetDiff.amount)} {budgetDiff.over ? 'over' : 'under'} budget
+              </Text>
+            )}
+          </View>
         </View>
 
         {/* Overview plots both series in one chart (green income, silver
@@ -422,7 +449,7 @@ function SummaryCard({
           </View>
         )}
 
-        <View className="mt-4">
+        <View className="mt-0">
           {isOverview ? (
             // No `key={animKey}` — that forced a full remount on every
             // period switch, discarding the chart's measured width and

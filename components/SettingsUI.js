@@ -25,7 +25,7 @@ export function Divider({ light = false }) {
 export function SectionLabel({ children, light = false, action = null }) {
   const label = (
     <Text
-      className="text-[11px] font-medium uppercase tracking-widest px-1 pt-2 mb-2"
+      className="text-[11px] font-medium uppercase tracking-wider px-4 pt-2 mb-2"
       style={{ color: textColor(light).disabled }}>{children}</Text>
   );
   if (!action) return label;

@@ -15,7 +15,7 @@ import TransactionItem from './TransactionItem';
 import { formatCurrency } from '../utils/format';
 import { textColor } from '../utils/colors';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
-import { ChevronRight, BackIcon } from './icons';
+import { ChevronRight, BackIcon, StraightArrowIcon } from './icons';
 import { SMOOTH } from './Glass';
 import { SETTLE_EASING } from '../utils/motion';
 
@@ -59,9 +59,6 @@ const DEMO_SWIPE_HOLD_MS = 1300;
 // the row's own horizontal padding (16) + the date box (32) + its right
 // margin (10). Keep in step with TransactionItem's px-4 / w-8 / mr-2.5.
 const DIVIDER_INSET = 58;
-// Drill rows have no date box, so their divider starts at the row's own
-// padding instead — still aligned with where that row's label begins.
-const DRILL_DIVIDER_INSET = 16;
 // Right-hand gap, so the divider stops short of the card edge the way it
 // does on the left instead of running flush to it. Matches the rows' own
 // horizontal padding (px-4), which lines the divider's end up with the
@@ -147,19 +144,29 @@ function RevealRow({ index, children }) {
 // That's what lets the container stay mounted (and keep its shape) while
 // the rows inside it slide or fade out from under it.
 
-// Same size, radius and tint as TransactionItem's own DateBox, so a month's
-// leading marker reads as part of the same family as the date chip on the
-// transactions one level down — and lands at the same x, which is why a
-// month row can share their divider inset exactly.
-function MonthBox({ n, light }) {
+// Same footprint as TransactionItem's own DateBox (so a drill row's leading
+// marker reads as part of the same family as the date chip on the
+// transactions one level down, and lands at the same x — which is why a
+// row can share their divider inset exactly), but showing how that period
+// moved against the one right before it instead of its plain position
+// number: a number just repeats the label text right next to it, while the
+// trend is real information the row doesn't otherwise carry.
+//
+// `up` is the actual direction (true = grew, false = shrank, null = no
+// earlier period to compare against, e.g. the oldest row, or a flat
+// no-change) — the arrow always points the real way. `goodWhenUp` is what
+// flips the COLOR to match: more spent is bad (red), more earned or saved
+// is good (green), so the same upward arrow is red on Expense and green on
+// Income/Overview.
+function TrendMark({ up, goodWhenUp, light }) {
+  const good = up == null ? null : (goodWhenUp ? up : !up);
+  const rgb = good == null ? null : (good ? '74,222,128' : '248,113,113');
   return (
     <View
       className="items-center justify-center w-8 h-8 rounded shrink-0 mr-2.5"
-      style={{ backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)' }}
+      style={{ backgroundColor: rgb ? `rgba(${rgb},0.14)` : (light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)') }}
     >
-      <Text className="text-[13px] font-semibold" style={{ color: light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)' }}>
-        {n}
-      </Text>
+      {up != null && <StraightArrowIcon up={up} size={14} color={`rgba(${rgb},0.9)`} />}
     </View>
   );
 }
@@ -562,41 +569,56 @@ function TransactionList({
     ? 'rgba(74,222,128,0.8)'
     : textColor(light).tertiary;
 
-  const renderYear = useCallback(({ item, index }) => (
-    <DrillRow
-      key={item.year}
-      label={String(item.year)}
-      total={Math.abs(item.total)}
-      // No leading marker — a year row's label is already the number, so a
-      // chip beside it would just be the same information twice.
-      dividerInset={DRILL_DIVIDER_INSET}
-      isLast={index === yearRows.length - 1}
-      cardColor={cardColor}
-      dividerColor={dividerColor}
-      light={light}
-      amountColor={drillAmountColor}
-      onPress={() => openYear(item.year)}
-    />
-  ), [yearRows.length, cardColor, dividerColor, light, drillAmountColor, openYear]);
+  // More income/net is good news, more expense is bad — the flag TrendMark
+  // uses to decide whether "grew" gets the green or the red.
+  const trendGoodWhenUp = isIncome || isOverview;
 
-  const renderMonth = useCallback(({ item, index }) => (
-    <DrillRow
-      key={item.month}
-      label={MONTH_NAMES[item.month]}
-      total={Math.abs(item.total)}
-      leading={<MonthBox n={item.month + 1} light={light} />}
-      // Matches the transaction rows' inset exactly — MonthBox is the same
-      // width and margin as their DateBox, so the dividers line up straight
-      // through a drill-in.
-      dividerInset={DIVIDER_INSET}
-      isLast={index === monthRows.length - 1}
-      cardColor={cardColor}
-      dividerColor={dividerColor}
-      light={light}
-      amountColor={drillAmountColor}
-      onPress={() => openMonth(item.month)}
-    />
-  ), [monthRows.length, cardColor, dividerColor, light, drillAmountColor, openMonth]);
+  const renderYear = useCallback(({ item, index }) => {
+    // Rows are newest-first, so the period right before this one — what its
+    // trend is measured against — is the NEXT entry in the array.
+    const prev = yearRows[index + 1];
+    const trend = prev ? (item.total === prev.total ? null : item.total > prev.total) : null;
+    return (
+      <DrillRow
+        key={item.year}
+        label={String(item.year)}
+        total={Math.abs(item.total)}
+        leading={<TrendMark up={trend} goodWhenUp={trendGoodWhenUp} light={light} />}
+        // Now that a year row carries a leading marker too, its divider lines
+        // up the same way the month rows' does.
+        dividerInset={DIVIDER_INSET}
+        isLast={index === yearRows.length - 1}
+        cardColor={cardColor}
+        dividerColor={dividerColor}
+        light={light}
+        amountColor={drillAmountColor}
+        onPress={() => openYear(item.year)}
+      />
+    );
+  }, [yearRows, trendGoodWhenUp, cardColor, dividerColor, light, drillAmountColor, openYear]);
+
+  const renderMonth = useCallback(({ item, index }) => {
+    const prev = monthRows[index + 1];
+    const trend = prev ? (item.total === prev.total ? null : item.total > prev.total) : null;
+    return (
+      <DrillRow
+        key={item.month}
+        label={MONTH_NAMES[item.month]}
+        total={Math.abs(item.total)}
+        leading={<TrendMark up={trend} goodWhenUp={trendGoodWhenUp} light={light} />}
+        // Matches the transaction rows' inset exactly — TrendMark is the same
+        // width and margin as their DateBox, so the dividers line up straight
+        // through a drill-in.
+        dividerInset={DIVIDER_INSET}
+        isLast={index === monthRows.length - 1}
+        cardColor={cardColor}
+        dividerColor={dividerColor}
+        light={light}
+        amountColor={drillAmountColor}
+        onPress={() => openMonth(item.month)}
+      />
+    );
+  }, [monthRows, trendGoodWhenUp, cardColor, dividerColor, light, drillAmountColor, openMonth]);
 
   // Back goes up exactly one level, and says where it lands rather than just
   // "Back" — at the transactions level that's the year you came from, one

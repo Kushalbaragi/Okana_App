@@ -752,6 +752,8 @@ export default function Dashboard() {
         year={year}
         selectedPeriod={selectedPeriod}
         selectedDay={selectedDay}
+        hasBudget={budget.hasBudget}
+        budgetAmount={budget.amount}
         light={LIGHT_HOME}
       />
 

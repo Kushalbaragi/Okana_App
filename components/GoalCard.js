@@ -47,9 +47,14 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
         accessibilityLabel={done ? `${goal.name}, completed` : goal.name}
       >
         <View className="flex-row items-center justify-between" style={{ gap: 12 }}>
-          <View className="flex-row items-center" style={{ gap: 8, flexShrink: 1 }}>
-            {done && <CheckIcon size={14} color={POSITIVE} />}
-            <Text className="text-[15px]" numberOfLines={1} style={{ flexShrink: 1, color: done ? dim(light, 0.5) : textColor(light).tertiary }}>{goal.name}</Text>
+          <View style={{ flexShrink: 1 }}>
+            <View className="flex-row items-center" style={{ gap: 8 }}>
+              {done && <CheckIcon size={14} color={POSITIVE} />}
+              <Text className="text-[15px]" numberOfLines={1} style={{ flexShrink: 1, color: done ? dim(light, 0.5) : textColor(light).tertiary }}>{goal.name}</Text>
+            </View>
+            {!!goal.location && (
+              <Text className="text-xs" numberOfLines={1} style={{ marginTop: 2, color: dim(light, 0.4) }}>{goal.location}</Text>
+            )}
           </View>
           <View className="flex-row items-center" style={{ gap: 6 }}>
             <View style={{ backgroundColor: 'rgba(74,222,128,0.14)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 }}>

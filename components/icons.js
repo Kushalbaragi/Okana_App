@@ -53,6 +53,21 @@ export function TrendArrowIcon({ up, size = 28, color }) {
   );
 }
 
+// Straight up/down, unlike TrendArrowIcon's diagonal — for TransactionList's
+// TrendMark, which compares a period to the one right before it at a much
+// smaller size (14px in a 32px chip) than TrendArrowIcon's usual 28px.
+export function StraightArrowIcon({ up, size = 14, color }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      {up ? (
+        <Path d="M12 19V5M12 5L6 11M12 5L18 11" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      ) : (
+        <Path d="M12 5V19M12 19L6 13M12 19L18 13" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      )}
+    </Svg>
+  );
+}
+
 export function BackIcon({ size = 20, color = '#ffffff' }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 20 20" fill="none">

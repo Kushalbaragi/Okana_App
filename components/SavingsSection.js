@@ -123,8 +123,8 @@ export function SavingsSheetsHost({ savings, ui, light = false }) {
   const goal = goalId ? savings.allGoals.find(g => g.id === goalId) : null;
   const entry = sheetData?.entryId && goal ? goal.entries.find(e => e.id === sheetData.entryId) : null;
 
-  const submitGoal = useCallback(({ name, target }) => (
-    goalId ? savings.editGoal(goalId, { name, target }) : savings.addGoal({ name, target })
+  const submitGoal = useCallback(({ name, target, location }) => (
+    goalId ? savings.editGoal(goalId, { name, target, location }) : savings.addGoal({ name, target, location })
   ), [savings, goalId]);
 
   const submitMoney = useCallback(({ type, amount, note, date }) => (
@@ -414,20 +414,24 @@ function GoalDetail({ goal, savings, ui, light }) {
     {/* Everything down to the History label stays put; only the history below
         it scrolls, the way the transaction list does on the home screen. */}
     <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
-      {/* The name with the pencil right beside it, centred together. The name
-          shrinks (and truncates) before it can push the pencil out of the row.
-          Deleting a goal is done by swiping its card on the list. */}
-      <View className="flex-row items-center justify-center" style={{ minWidth: 0 }}>
-        <Text className="text-base" numberOfLines={1} style={{ flexShrink: 1, color: dim(light, 0.5) }}>{goal.name}</Text>
+      {/* The name is centred on the row's own width; the pencil is pinned to
+          the right edge instead of riding beside the text, so it doesn't
+          pull the name off centre. Deleting a goal is done by swiping its
+          card on the list. */}
+      <View style={{ minHeight: 32, justifyContent: 'center' }}>
+        <Text className="text-base text-center" numberOfLines={1} style={{ paddingHorizontal: 40, color: dim(light, 0.5) }}>{goal.name}</Text>
         <Pressable
           onPress={() => ui.openEditGoal(goal.id)}
-          className="w-8 h-8 items-center justify-center rounded-lg"
+          style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 32, alignItems: 'center', justifyContent: 'center' }}
           accessibilityRole="button"
           accessibilityLabel="Edit goal"
         >
           <EditIcon color={textColor(light).disabled} />
         </Pressable>
       </View>
+      {!!goal.location && (
+        <Text className="text-xs text-center" numberOfLines={1} style={{ marginTop: 2, color: textColor(light).tertiary }}>{goal.location}</Text>
+      )}
 
       {/* The big figure, a plain progress bar (the same one the goal cards
           use) and its two captions. */}
@@ -471,7 +475,7 @@ function GoalDetail({ goal, savings, ui, light }) {
           month when another goal's page takes over this one. */}
       {goal.entries.length > 0 && (
         <View style={{ marginTop: 12 }}>
-          <Text className="text-[11px] font-medium uppercase tracking-widest px-1 mb-2" style={{ color: textColor(light).disabled }}>Monthly savings</Text>
+          <Text className="text-[11px] font-medium uppercase tracking-wider px-5 mb-2" style={{ color: textColor(light).disabled }}>Monthly savings</Text>
           <Card light={light}>
             {/* The average sits at the top left; the slider below has no side
                 padding, so its bars slide right out to the card's edge. */}
@@ -488,7 +492,7 @@ function GoalDetail({ goal, savings, ui, light }) {
         </View>
       )}
 
-      <Text className="text-[11px] font-medium uppercase tracking-widest px-1 mb-2" style={{ color: textColor(light).disabled, marginTop: 28 }}>
+      <Text className="text-[11px] font-medium uppercase tracking-wider px-4 mb-2" style={{ color: textColor(light).disabled, marginTop: 28 }}>
         History
       </Text>
     </View>
