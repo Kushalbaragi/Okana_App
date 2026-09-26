@@ -19,8 +19,7 @@ import { reportError } from '../../utils/errors';
 import Header from '../../components/Header';
 import SummaryCard from '../../components/SummaryCard';
 import TransactionList from '../../components/TransactionList';
-import AddModal from '../../components/AddModal'; // v1 — kept, not used below right now
-import AddModalV2 from '../../components/AddModalV2'; // v2 — previewing this one; swap the JSX tag below back to <AddModal> to revert
+import AddModal from '../../components/AddModal';
 import SpendCalendarModal from '../../components/SpendCalendarModal';
 import MonthlyRecapModal from '../../components/MonthlyRecapModal';
 import BudgetSetupModal from '../../components/BudgetSetupModal';
@@ -530,6 +529,16 @@ export default function Dashboard() {
     }
   }, [currYear]);
 
+  // Income/Overview never show Month — a daily income figure is mostly
+  // zeros with one payday spike, so it doesn't tell you anything at that
+  // granularity (see SummaryCard's own skip in its swipe handler). Tapping
+  // straight into one of those two modes while already on Month has to
+  // bump the range up too, since there's no swipe involved to do it there.
+  const handleModeChange = useCallback((next) => {
+    setMode(next);
+    if (next !== 'expense' && timeRange === 'month') handleTimeRangeChange('year');
+  }, [timeRange, handleTimeRangeChange]);
+
   const openAdd = useCallback(() => {
     if (trialInfo.status === 'expired' || trialInfo.status === 'not_started') { setProRequired(true); return; }
     setAddModalClosed(false);
@@ -729,7 +738,7 @@ export default function Dashboard() {
         onMenuOpen={openMenu}
         onCalendarOpen={openCalendar}
         mode={mode}
-        onSelectMode={setMode}
+        onSelectMode={handleModeChange}
         light={LIGHT_HOME}
       />
 
@@ -746,7 +755,9 @@ export default function Dashboard() {
       />
 
       {/* No period props any more — the list is one running ledger,
-          independent of whatever the chart above is showing. */}
+          independent of whatever the chart above is showing. `mode` is the
+          one thing it still borrows from the chart: which figure each
+          month's header shows (see TransactionList's own comment). */}
       <TransactionList
         ref={transactionListRef}
         transactions={displayTransactions}
@@ -755,6 +766,7 @@ export default function Dashboard() {
         onDelete={requestDelete}
         cardRef={txCardRef}
         light={LIGHT_HOME}
+        mode={mode}
       />
 
       <Animated.View
@@ -796,7 +808,7 @@ export default function Dashboard() {
         hideRing
         onNext={advanceHomeTour}
       />
-      <AddModalV2
+      <AddModal
         open={modalOpen}
         onClose={closeAddModal}
         onClosed={handleAddModalClosed}

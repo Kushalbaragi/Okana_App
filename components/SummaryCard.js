@@ -436,20 +436,45 @@ function SummaryCard({
   // activeOffsetX/failOffsetY mirror AddModal's own Pan gesture — a real
   // horizontal drag has to clear 15px before this claims the touch at all,
   // so a plain tap on a bar underneath is never contested.
-  const changeRangeBy = useCallback((delta) => {
+  //
+  // Split from the actual swap (changeRangeBy below) so the gesture handler
+  // can check reachability BEFORE dimming the chart — a blocked swipe (e.g.
+  // Income/Overview already on Year, swiping toward the Month it can't
+  // reach) has to do nothing at all, not dip-and-never-recover, which is
+  // what happened when changeRangeBy bailed out silently after the dip had
+  // already started.
+  const resolveNextRange = useCallback((delta) => {
     const idx = RANGE_OPTIONS.findIndex(o => o.id === timeRange);
-    const nextIdx = idx + delta;
-    if (nextIdx < 0 || nextIdx >= RANGE_OPTIONS.length) return;
-    onTimeRangeChange(RANGE_OPTIONS[nextIdx].id);
-  }, [timeRange, onTimeRangeChange]);
+    let nextIdx = idx + delta;
+    // Income/Overview skip straight over Month — a day-by-day income figure
+    // is mostly zeros with one payday spike, not a real trend, so those two
+    // modes only ever land on Year/All; Month stays Expense-only.
+    if (RANGE_OPTIONS[nextIdx]?.id === 'month' && mode !== 'expense') nextIdx += delta;
+    if (nextIdx < 0 || nextIdx >= RANGE_OPTIONS.length) return null;
+    return RANGE_OPTIONS[nextIdx].id;
+  }, [timeRange, mode]);
+
+  const changeRangeBy = useCallback((delta) => {
+    const next = resolveNextRange(delta);
+    if (next) onTimeRangeChange(next);
+  }, [resolveNextRange, onTimeRangeChange]);
 
   // Which edge chevrons show, in lockstep with what a swipe can actually
   // do: Month is the first stop (only a "forward" arrow, on the right —
   // swiping left is what moves forward), Year sits in the middle (both
   // directions live), All is the last stop (only "back", on the left).
+  // Income/Overview never reach Month (see changeRangeBy above), so on
+  // Year, in those two modes, there's nowhere left to swipe back to.
   const rangeIndex = RANGE_OPTIONS.findIndex(o => o.id === timeRange);
-  const showLeftChevron = rangeIndex > 0;
+  const showLeftChevron = rangeIndex > 0 && !(mode !== 'expense' && rangeIndex === 1);
   const showRightChevron = rangeIndex < RANGE_OPTIONS.length - 1;
+
+  // The page-indicator dots below mirror only the stops a swipe can
+  // actually reach — Income/Overview never touch Month (see
+  // resolveNextRange above), so they get two dots (Year/All), not three
+  // with an unreachable one baked in.
+  const visibleRangeOptions = mode === 'expense' ? RANGE_OPTIONS : RANGE_OPTIONS.filter(o => o.id !== 'month');
+  const dotIndex = visibleRangeOptions.findIndex(o => o.id === timeRange);
 
   const chartSwipe = useMemo(() => Gesture.Pan()
     .activeOffsetX([-15, 15])
@@ -458,12 +483,24 @@ function SummaryCard({
       const pastThreshold = Math.abs(e.translationX) > 50 || Math.abs(e.velocityX) > 500;
       if (!pastThreshold) return;
       const delta = e.translationX < 0 ? 1 : -1;
+      // Same reachability check as resolveNextRange above, inlined rather
+      // than called — this handler runs as a worklet on the UI thread, and
+      // calling back into a plain JS closure from there needs runOnJS,
+      // which can't hand back a return value to decide whether to dim.
+      // Checking first (instead of letting changeRangeBy silently bail
+      // after the dip had already started) is what actually matters here:
+      // a blocked swipe used to dim the chart and then never recover,
+      // since nothing changed to trigger the recovery effect.
+      const idx = RANGE_OPTIONS.findIndex(o => o.id === timeRange);
+      let nextIdx = idx + delta;
+      if (RANGE_OPTIONS[nextIdx] && RANGE_OPTIONS[nextIdx].id === 'month' && mode !== 'expense') nextIdx += delta;
+      if (nextIdx < 0 || nextIdx >= RANGE_OPTIONS.length) return;
       // Dims first, and only calls into JS (which is what actually swaps
       // the data) once that dim has finished — see the comment above.
       chartOpacity.value = withTiming(DIP_OPACITY, { duration: DIP_OUT_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
         if (finished) runOnJS(changeRangeBy)(delta);
       });
-    }), [changeRangeBy, chartOpacity]);
+    }), [changeRangeBy, chartOpacity, timeRange, mode]);
 
   return (
     // mx-5 (20), not mx-4 (16) — matches the Header's own px-5 and the
@@ -506,14 +543,23 @@ function SummaryCard({
                 // disabledAfterIndex (a future day/month that hasn't
                 // happened yet still plots as a real 0), unlike BarChart —
                 // it never needed that for its one existing caller
-                // (MonthlyRecapModal, always a completed past period), so a
-                // month still in progress can read as "dropped to zero"
-                // near the end rather than "hasn't happened yet."
+                // (MonthlyRecapModal, always a completed past period) — now
+                // that Overview reaches Year/All too, disabledAfterIndex is
+                // passed through same as BarChart gets it: the x-axis still
+                // spans the full 12 months (or padded year slots), but the
+                // lines themselves stop at the last real point instead of
+                // dropping to zero and running flat through the future.
                 <LineChart
                   incomeData={chartData.income}
                   expenseData={chartData.expense}
                   labels={chartData.labels}
                   activeIndex={chartActiveIndex}
+                  disabledAfterIndex={disabledAfterIndex}
+                  // Year's labels are single letters (J/F/M/…), not "MMM
+                  // YY" like All-time's — all 12 fit without crowding, so
+                  // it gets every month's initial instead of the default
+                  // 6-label cap meant for wider strings.
+                  maxLabels={timeRange === 'year' ? 12 : 6}
                   revealKey={animKey}
                   instant={chartInstant}
                   light={light}
@@ -584,14 +630,14 @@ function SummaryCard({
             with everything else now that a range swipe is instant (see
             chartInstant above), rather than adding its own separate motion. */}
         <View pointerEvents="none" style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 10 }}>
-          {RANGE_OPTIONS.map((opt, i) => (
+          {visibleRangeOptions.map((opt, i) => (
             <View
               key={opt.id}
               style={{
-                width: i === rangeIndex ? 6 : 5,
-                height: i === rangeIndex ? 6 : 5,
+                width: i === dotIndex ? 6 : 5,
+                height: i === dotIndex ? 6 : 5,
                 borderRadius: 3,
-                backgroundColor: i === rangeIndex ? textColor(light).primary : textColor(light).disabled,
+                backgroundColor: i === dotIndex ? textColor(light).primary : textColor(light).disabled,
               }}
             />
           ))}

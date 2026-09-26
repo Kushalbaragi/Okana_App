@@ -132,7 +132,7 @@ export function AmountDigit({ char, animateIn, color = '#ffffff', fontSize = 48,
 // still fading out of, reading as an overlap instead of one clean
 // replacing the other. On first mount with nothing ever typed, there's no
 // digit to wait on, so it just shows immediately.
-function ZeroPlaceholder({ fontSize, lineHeight, fontWeight, color, delayed }) {
+function ZeroPlaceholder({ fontSize, lineHeight, fontWeight, color, letterSpacing, delayed }) {
   const opacity = useSharedValue(delayed ? 0 : 1);
 
   useEffect(() => {
@@ -145,7 +145,7 @@ function ZeroPlaceholder({ fontSize, lineHeight, fontWeight, color, delayed }) {
   const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
 
   return (
-    <Animated.Text style={[{ fontSize, lineHeight, fontWeight, color, ...TABULAR }, style]}>
+    <Animated.Text style={[{ fontSize, lineHeight, fontWeight, color, letterSpacing, ...TABULAR }, style]}>
       0
     </Animated.Text>
   );
@@ -180,7 +180,13 @@ const SCALE_START_DIGITS = 4;
 const SCALE_END_DIGITS = 8; // matches nextAmountValue's entry cap
 const MIN_SCALE = 0.65;
 
-export function AmountRow({ amount, prevAmountLength, skipDigitAnim, digitFontSize = 48, lineHeight = 56, light = false, zeroColor, weight = '600' }) {
+// `autoShrink` (default true) is the "past 4 digits, shrink toward
+// MIN_SCALE" behavior described below — left on for every existing
+// caller. A caller with genuine spare room around the field (Add
+// Transaction's own sheet, once its digits stopped needing to share space
+// with anything crowding them) can opt out entirely and keep the amount
+// at a single constant size regardless of how many digits are typed.
+export function AmountRow({ amount, prevAmountLength, skipDigitAnim, digitFontSize = 48, lineHeight = 56, light = false, zeroColor, weight = '600', letterSpacing, autoShrink = true }) {
   // The row's `layout` transition (AMOUNT_LAYOUT_TRANSITION) is meant for
   // keystroke-driven re-centering, not the very first layout pass — a
   // modal that slides/resizes into place (Add Transaction's own sheet
@@ -201,7 +207,7 @@ export function AmountRow({ amount, prevAmountLength, skipDigitAnim, digitFontSi
 
   const rawDigitCount = amount ? amount.replace('.', '').length : 0;
   const span = SCALE_END_DIGITS - SCALE_START_DIGITS;
-  const targetScale = rawDigitCount <= SCALE_START_DIGITS
+  const targetScale = !autoShrink || rawDigitCount <= SCALE_START_DIGITS
     ? 1
     : Math.max(MIN_SCALE, 1 - (Math.min(rawDigitCount, SCALE_END_DIGITS) - SCALE_START_DIGITS) * ((1 - MIN_SCALE) / span));
 
@@ -235,6 +241,7 @@ export function AmountRow({ amount, prevAmountLength, skipDigitAnim, digitFontSi
             lineHeight={lineHeight}
             color={digitColor}
             fontWeight={fontWeight}
+            letterSpacing={letterSpacing}
             layoutReady={layoutReady}
           />
         ))
@@ -243,6 +250,7 @@ export function AmountRow({ amount, prevAmountLength, skipDigitAnim, digitFontSi
           fontSize={digitFontSize}
           lineHeight={lineHeight}
           fontWeight={fontWeight}
+          letterSpacing={letterSpacing}
           color={emptyColor}
           delayed={prevAmountLength > 0 && !skipDigitAnim}
         />

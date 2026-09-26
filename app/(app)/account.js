@@ -9,7 +9,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
-import Svg, { Circle, Rect, Path } from 'react-native-svg';
+import Svg, { Circle } from 'react-native-svg';
+import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, useAnimatedProps, withDelay, withSequence, withTiming, Easing } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -19,7 +20,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
 import { isConnectivityError, reportError } from '../../utils/errors';
 import { clearAllUserData, clearDataCaches } from '../../utils/localData';
-import { openLink, openStoreListing } from '../../utils/links';
+import { openLink } from '../../utils/links';
 import { useSubscription } from '../../hooks/useSubscription';
 import { useTransactions } from '../../hooks/useTransactions';
 import { openManageSubscription } from '../../hooks/usePurchases';
@@ -56,33 +57,11 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 // showing 1.0.0 while the actual shipped version was 1.0.2).
 const APP_VERSION = Constants.expoConfig?.version ?? '—';
 
-function InstagramIcon() {
-  const c = LIGHT_SETTINGS ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
-  return (
-    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
-      <Rect x="2" y="2" width="20" height="20" rx="6" stroke={c} strokeWidth="1.5" />
-      <Circle cx="12" cy="12" r="4" stroke={c} strokeWidth="1.5" />
-      <Circle cx="17.5" cy="6.5" r="1" fill={c} />
-    </Svg>
-  );
-}
-
-function YouTubeIcon() {
-  const c = LIGHT_SETTINGS ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
-  return (
-    <Svg width={16} height={14} viewBox="0 0 24 17" fill="none">
-      <Rect x="0.5" y="0.5" width="23" height="16" rx="4" stroke={c} strokeWidth="1.3" />
-      <Path d="M10 5.5l6 3-6 3v-6z" fill={c} />
-    </Svg>
-  );
-}
-
 // Thin bindings over the shared components in SettingsUI.js — every call
 // site below (`<Card>`, `<Row label=... />`, etc.) stays exactly as it was,
 // just backed by the shared implementation instead of a local copy that can
 // drift from Subscription's own.
 function Divider(props) { return <SettingsUI.Divider light={LIGHT_SETTINGS} {...props} />; }
-function SectionLabel(props) { return <SettingsUI.SectionLabel light={LIGHT_SETTINGS} {...props} />; }
 function Card(props) { return <SettingsUI.Card light={LIGHT_SETTINGS} {...props} />; }
 function Row(props) { return <SettingsUI.Row light={LIGHT_SETTINGS} {...props} />; }
 
@@ -439,6 +418,11 @@ export default function AccountPage() {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(profile?.name || '');
   const [savingName, setSavingName] = useState(false);
+  // A tap on Save blurs the TextInput (see its onBlur below) before Save's
+  // own onPress actually fires — a ref, not state, because the deferred
+  // onBlur check below needs the CURRENT value the instant it runs, not
+  // whatever `savingName` was captured as when that closure was created.
+  const nameSaveInFlightRef = useRef(false);
   const [avatarPhase, setAvatarPhase] = useState('idle'); // 'idle' | 'uploading' | 'success'
 
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -519,6 +503,7 @@ export default function AccountPage() {
     if (savingName) return;
     if (!nameInput.trim() || nameInput.trim() === profile?.name) { setEditingName(false); return; }
     if (!isOnline) { notifyOffline(); return; }
+    nameSaveInFlightRef.current = true;
     setSavingName(true);
     setActionError('');
     try {
@@ -530,6 +515,7 @@ export default function AccountPage() {
       else { reportError(err); setActionError(err.message || 'Failed to update name. Please try again.'); }
     } finally {
       setSavingName(false);
+      nameSaveInFlightRef.current = false;
     }
   }
 
@@ -1031,11 +1017,16 @@ export default function AccountPage() {
           screen is actually focused — see the same pattern in
           app/(app)/index.js for why this doesn't leak into other screens. */}
       {LIGHT_SETTINGS && isFocused && <StatusBar style="dark" />}
-      <ScrollView showsVerticalScrollIndicator={false}>
+      {/* keyboardShouldPersistTaps="handled" — without it, the first tap on
+          Save (or anything else) while the name field is focused just
+          dismisses the keyboard instead of registering as a press; a
+          ScrollView's default ("never") swallows that first tap entirely,
+          so Save always needed a second tap once the keyboard was up. */}
+      <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {/* px-5 (20), not px-4 (16) — the app's screen gutter everywhere
             else (Home's Header, the Savings detail page). Row content
-            inside the Cards below stays at its own 16 (see Row/SectionLabel
-            in SettingsUI) — that's a bordered card's internal padding, a
+            inside the Card below stays at its own 16 (see Row in
+            SettingsUI) — that's a bordered card's internal padding, a
             separate thing from the screen edge. */}
         <View className="flex-row items-center gap-2 px-5 pt-14 pb-4">
           <Pressable
@@ -1054,7 +1045,7 @@ export default function AccountPage() {
           <Text className="text-base font-semibold" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>Settings</Text>
         </View>
 
-        <View className="items-center py-6">
+        <View className="items-center pt-6 pb-8">
           <View style={{ position: 'relative' }}>
             <AvatarPhoto ref={avatarRef} uri={profile?.avatar} phase={avatarPhase} onPress={pickAndUploadAvatar} />
             {/* Drawn as a plain sibling of the avatar itself, not measured
@@ -1075,135 +1066,146 @@ export default function AccountPage() {
               />
             )}
           </View>
+
+          {/* Name/email used to be two editable-looking rows inside the
+              card below; centred under the avatar instead, they read as
+              part of the profile itself rather than another settings row —
+              the icon-led card underneath is then purely actions/links,
+              nothing to read or fill in. */}
+          <View className="items-center mt-4" style={{ gap: 5 }}>
+            {editingName ? (
+              <View className="flex-row items-center" style={{ gap: 8 }}>
+                <TextInput
+                  autoFocus
+                  value={nameInput}
+                  onChangeText={setNameInput}
+                  onSubmitEditing={saveName}
+                  // Tapping outside (or the Save button — see the ref's
+                  // own comment) blurs this first. Deferred a tick so a
+                  // same-gesture Save press still gets to fire; if nothing
+                  // caught that flag by then, this was a genuine "tapped
+                  // away" and the typed name is discarded — closing without
+                  // saving is exactly that, since nameInput never persists
+                  // anywhere until saveName actually runs.
+                  onBlur={() => {
+                    setTimeout(() => {
+                      if (!nameSaveInFlightRef.current) setEditingName(false);
+                    }, 0);
+                  }}
+                  maxLength={60}
+                  className="text-base text-center px-3 py-2"
+                  style={{
+                    color: LIGHT_SETTINGS ? '#111111' : '#ffffff',
+                    minWidth: 120,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.14)',
+                  }}
+                />
+                <Pressable onPress={saveName} disabled={savingName}>
+                  <Text className="text-base" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.60)' : 'rgba(255,255,255,0.60)' }}>Save</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                onPress={() => { setNameInput(profile?.name || ''); setEditingName(true); }}
+                className="flex-row items-center"
+                accessibilityRole="button"
+                accessibilityLabel="Edit name"
+              >
+                {/* Balances the icon's own width + gap on the opposite side,
+                    so the name text lands under the avatar's centre — without
+                    it, the trailing icon pulls the whole row (and so the
+                    name) visibly right of centre. Purely a layout spacer,
+                    invisible either way. */}
+                <View style={{ width: 25 }} />
+                <Text style={{ fontSize: 17, color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>{profile?.name || '—'}</Text>
+                <View style={{ marginLeft: 12 }}>
+                  <EditIcon size={13} color={LIGHT_SETTINGS ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)'} />
+                </View>
+              </Pressable>
+            )}
+            <Text className="text-xs" style={{ color: textColor(LIGHT_SETTINGS).tertiary }}>{profile?.email || '—'}</Text>
+          </View>
         </View>
 
-        <View className="px-5" style={{ gap: 12 }}>
-          <View>
-            <Card>
-              <View className="px-4 py-4">
-                <Text className="text-xs font-medium mb-1" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>Name</Text>
-                {editingName ? (
-                  <View className="flex-row items-center" style={{ gap: 8 }}>
-                    <TextInput
-                      autoFocus
-                      value={nameInput}
-                      onChangeText={setNameInput}
-                      onSubmitEditing={saveName}
-                      maxLength={60}
-                      className="flex-1 text-base"
-                      style={{
-                        color: LIGHT_SETTINGS ? '#111111' : '#ffffff',
-                        borderBottomWidth: 1,
-                        borderBottomColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)',
-                        paddingBottom: 4,
-                      }}
-                    />
-                    <Pressable onPress={saveName} disabled={savingName}>
-                      <Text className="text-base" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.60)' : 'rgba(255,255,255,0.60)' }}>Save</Text>
-                    </Pressable>
-                  </View>
-                ) : (
-                  <View className="flex-row items-center justify-between">
-                    <Text className="text-base" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>{profile?.name || '—'}</Text>
-                    <Pressable
-                      onPress={() => { setNameInput(profile?.name || ''); setEditingName(true); }}
-                      className="w-7 h-7 items-center justify-center rounded-lg"
-                      accessibilityRole="button"
-                      accessibilityLabel="Edit name"
-                    >
-                      <EditIcon color={LIGHT_SETTINGS ? 'rgba(0,0,0,0.4)' : undefined} />
-                    </Pressable>
-                  </View>
-                )}
-              </View>
+        <View className="px-5">
+          {/* One continuous, icon-led Card — no SectionLabel group headers
+              (Subscription / Data & Legal / Support / Account used to each
+              get their own labelled Card): every row lives in one list,
+              divided only by the plain hairlines Row/Divider already draw,
+              with a small leading glyph replacing the group label as what
+              tells rows apart at a glance. */}
+          <Card>
+            <Row
+              icon={<Feather name="award" size={18} color={textColor(LIGHT_SETTINGS).tertiary} />}
+              label="Current Plan"
+              onPress={() => router.push('/(app)/subscription')}
+              right={
+                <View className="flex-row items-center" style={{ gap: 8 }}>
+                  <Pill label={planLabel} tone={planTone} />
+                  <ChevronRight color={LIGHT_SETTINGS ? 'rgba(0,0,0,0.25)' : undefined} />
+                </View>
+              }
+            />
+            <Divider />
+            <Row
+              icon={<Feather name="download" size={18} color={textColor(LIGHT_SETTINGS).tertiary} />}
+              label="Backup Data"
+              onPress={exportData}
+              right={exporting && <Text className="text-xs" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>Exporting…</Text>}
+            />
+            <Divider />
+            <Row
+              icon={<Feather name="upload" size={18} color={textColor(LIGHT_SETTINGS).tertiary} />}
+              label="Import Data"
+              onPress={() => setImportOptionsOpen(true)}
+            />
+            <Divider />
+            <Row
+              icon={<Feather name="shield" size={18} color={textColor(LIGHT_SETTINGS).tertiary} />}
+              label="Legal"
+              onPress={() => setModal('legal')}
+            />
 
-              <Divider />
+            <Divider />
 
-              <View className="px-4 py-4">
-                <Text className="text-xs font-medium mb-1" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>Email</Text>
-                <Text className="text-base" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.60)' : 'rgba(255,255,255,0.60)' }}>{profile?.email || '—'}</Text>
-              </View>
-            </Card>
-            {!!actionError && (
-              <Text className="text-red-400 text-sm mt-2 px-1">{actionError}</Text>
-            )}
-          </View>
+            <Row
+              icon={<Feather name="life-buoy" size={18} color={textColor(LIGHT_SETTINGS).tertiary} />}
+              label="Support"
+              onPress={() => setModal('feedback')}
+            />
 
-          <View>
-            <SectionLabel>Subscription</SectionLabel>
-            <Card>
-              <Row
-                label="Current Plan"
-                onPress={() => router.push('/(app)/subscription')}
-                right={
-                  <View className="flex-row items-center" style={{ gap: 8 }}>
-                    <Pill label={planLabel} tone={planTone} />
-                    <ChevronRight color={LIGHT_SETTINGS ? 'rgba(0,0,0,0.25)' : undefined} />
-                  </View>
-                }
-              />
-            </Card>
-          </View>
+            <Divider />
 
-          <View>
-            <SectionLabel>Data & Legal</SectionLabel>
-            <Card>
-              <Row
-                label="Export Data"
-                onPress={exportData}
-                right={exporting
-                  ? <Text className="text-xs" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>Exporting…</Text>
-                  : <Text className="text-xs" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>XLSX</Text>}
-              />
-              <Divider />
-              <Row
-                label="Import Data"
-                onPress={() => setImportOptionsOpen(true)}
-                right={<Text className="text-xs" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>XLSX</Text>}
-              />
-              <Divider />
-              <Row label="Privacy Policy" onPress={() => openLink('https://kushalbaragiokana.notion.site/Privacy-Policy-3c58f887c3c9806180c1ed51844d872e?source=copy_link')} />
-              <Divider />
-              <Row label="Terms & Conditions" onPress={() => openLink('https://kushalbaragiokana.notion.site/Terms-and-Condition-3c58f887c3c9806d86eae7473775949c?source=copy_link')} />
-              <Divider />
-              <Row label="Refunds & Cancellations" onPress={() => openLink('https://kushalbaragiokana.notion.site/Refund-Cancellation-Policy-3c58f887c3c980c48cb6ded1520897ed?source=copy_link')} />
-            </Card>
-            {!!exportError && (
-              <Text className="text-red-400 text-sm mt-2 px-1">{exportError}</Text>
-            )}
-          </View>
+            <Row
+              icon={<Feather name="log-out" size={18} color={textColor(LIGHT_SETTINGS).tertiary} />}
+              label="Log Out"
+              onPress={() => setShowLogoutConfirm(true)}
+            />
+            <Divider />
+            <Row
+              icon={<Feather name="trash-2" size={18} color="#f87171" />}
+              label="Erase Data"
+              labelColor="#f87171"
+              onPress={() => (isOnline ? setShowEraseConfirm(true) : notifyOffline())}
+            />
+            <Divider />
+            <Row
+              icon={<Feather name="user-x" size={18} color="#f87171" />}
+              label="Delete Account"
+              labelColor="#f87171"
+              onPress={() => (isOnline ? setShowDeleteConfirm(true) : notifyOffline())}
+            />
+          </Card>
+          {!!actionError && (
+            <Text className="text-red-400 text-sm mt-2 px-1">{actionError}</Text>
+          )}
+          {!!exportError && (
+            <Text className="text-red-400 text-sm mt-2 px-1">{exportError}</Text>
+          )}
 
-          <View>
-            <SectionLabel>Support</SectionLabel>
-            <Card>
-              <Row label="Developer" onPress={() => { posthog?.capture('developer_profile_seen'); setModal('developer'); }} />
-              <Divider />
-              <Row label="Support" onPress={() => setModal('feedback')} />
-              <Divider />
-              <Row label="Rate Us" onPress={() => { posthog?.capture('rated_us'); openStoreListing({ review: true }); }} />
-            </Card>
-          </View>
-
-          <View>
-            <SectionLabel>Account</SectionLabel>
-            <Card>
-              <Row label="Log Out" onPress={() => setShowLogoutConfirm(true)} />
-              <Divider />
-              <Row
-                label="Erase Data"
-                labelColor="#f87171"
-                onPress={() => (isOnline ? setShowEraseConfirm(true) : notifyOffline())}
-              />
-              <Divider />
-              <Row
-                label="Delete Account"
-                labelColor="#f87171"
-                onPress={() => (isOnline ? setShowDeleteConfirm(true) : notifyOffline())}
-              />
-            </Card>
-          </View>
-
-          <Text className="text-xs text-center mt-2 mb-8" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>v{APP_VERSION}</Text>
+          <Text className="text-xs text-center mt-4 mb-8" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>v{APP_VERSION}</Text>
         </View>
       </ScrollView>
 
@@ -1293,47 +1295,17 @@ export default function AccountPage() {
         )}
       </InfoModal>
 
-      <InfoModal open={modal === 'developer'} title="Developer" onClose={() => setModal(null)}>
-        <View style={{ paddingVertical: 4 }}>
-          <Image
-            source={require('../../assets/developer-photo.jpg')}
-            style={{ width: 84, height: 84, borderRadius: 16, marginBottom: 16 }}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-            transition={150}
-          />
-          <Text className="font-semibold text-lg mb-3" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>Hi, I'm Kushal</Text>
-          <Text className="text-base mb-3" style={{ lineHeight: 22, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.50)' : 'rgba(255,255,255,0.50)' }}>
-            I'm a software developer and creator from Karnataka. I build digital products, work mainly on the frontend, and enjoy turning simple ideas into useful things.
-          </Text>
-          <Text className="text-base mb-3" style={{ lineHeight: 22, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.50)' : 'rgba(255,255,255,0.50)' }}>
-            I also make YouTube videos about personal finance, technology, productivity, and minimal living. I like learning by building, sharing what I learn, and documenting the journey along the way.
-          </Text>
-          <Text className="text-base mb-5" style={{ lineHeight: 22, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.50)' : 'rgba(255,255,255,0.50)' }}>
-            I'm interested in technology, money, and creating a simpler life — and I'm always working on something new.
-          </Text>
-
-          <View className="flex-row" style={{ gap: 12 }}>
-            <Pressable
-              onPress={() => openLink('https://instagram.com/kushalbaragi')}
-              className="flex-row items-center px-4 py-2 rounded-full"
-              style={{ gap: 8, borderWidth: 1, borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }}
-            >
-              <InstagramIcon />
-              <Text style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 12 }}>Instagram</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => openLink('https://www.youtube.com/@kushalbaragi')}
-              className="flex-row items-center px-4 py-2 rounded-full"
-              style={{ gap: 8, borderWidth: 1, borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }}
-            >
-              <YouTubeIcon />
-              <Text style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 12 }}>YouTube</Text>
-            </Pressable>
-          </View>
-
-          <Text className="mt-5" style={{ fontSize: 12, color: textColor(LIGHT_SETTINGS).disabled }}>Okana v{APP_VERSION} · Made with ♥ in India</Text>
-        </View>
+      {/* Replaces the three separate Privacy/Terms/Refunds rows that used
+          to sit in the main Card — one "Legal" row opens this instead,
+          since none of the three are things a user visits day-to-day. */}
+      <InfoModal open={modal === 'legal'} title="Legal" onClose={() => setModal(null)}>
+        <Card>
+          <Row label="Privacy Policy" onPress={() => openLink('https://kushalbaragiokana.notion.site/Privacy-Policy-3c58f887c3c9806180c1ed51844d872e?source=copy_link')} />
+          <Divider />
+          <Row label="Terms & Conditions" onPress={() => openLink('https://kushalbaragiokana.notion.site/Terms-and-Condition-3c58f887c3c9806d86eae7473775949c?source=copy_link')} />
+          <Divider />
+          <Row label="Refunds & Cancellations" onPress={() => openLink('https://kushalbaragiokana.notion.site/Refund-Cancellation-Policy-3c58f887c3c980c48cb6ded1520897ed?source=copy_link')} />
+        </Card>
       </InfoModal>
 
       <ConfirmModal
