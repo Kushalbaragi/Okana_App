@@ -47,7 +47,7 @@ const AVG_FADE_MS  = 300;
 const AVG_MOVE_MS  = 360;
 const AVG_EASING   = Easing.out(Easing.cubic);
 
-function Bar({ x, width, rx, targetHeight, delay, fill, maskColor }) {
+function Bar({ x, width, rx, targetHeight, delay, fill, maskColor, instant = false }) {
   // Animates the actual pixel height directly (not a 0-1 progress scaled by
   // targetHeight). Always grows from 0 — every period switch mounts a
   // genuinely fresh Bar instance (see the key in the render loop below),
@@ -63,7 +63,15 @@ function Bar({ x, width, rx, targetHeight, delay, fill, maskColor }) {
   // (some up, some down) it read as the bars "dancing" rather than a clean
   // reveal. A uniform grow-from-0 is calmer to watch even though more
   // pixels are moving.
-  const animatedHeight = useSharedValue(0);
+  //
+  // `instant` skips that grow-in entirely — used for a Month/Year/All swipe
+  // (see BarChart's own comment), where the bars are still a genuinely
+  // fresh instance (a different range has different x positions/bar count,
+  // so reusing the old instances would jump sideways instead) but shouldn't
+  // replay the reveal every single time someone pages through ranges. It
+  // only affects this bar's own entrance — a later value update on the same
+  // instance (a live transaction, a data refresh) always tweens normally.
+  const animatedHeight = useSharedValue(instant ? targetHeight : 0);
   // Only the reveal — a genuinely fresh instance, i.e. a real period switch
   // (see the animKey in the render loop's key below) — waits out the
   // stagger, on a fast exp curve. Everything after that on the same
@@ -76,7 +84,7 @@ function Bar({ x, width, rx, targetHeight, delay, fill, maskColor }) {
   // resuming. Imperceptible on the early near-zero-delay bars; a visible
   // hitch on everything past roughly index 8, and only when the two waves
   // actually differ, which is what made it look intermittent.
-  const hasRevealedRef = useRef(false);
+  const hasRevealedRef = useRef(instant);
 
   useEffect(() => {
     if (!hasRevealedRef.current) {
@@ -187,10 +195,12 @@ function AverageLineLabel({ progress, lineY, label, color }) {
 
 // Fades in on the same stagger schedule as the Bar it stands in for, and
 // the same "no special-casing" reasoning as Bar above — see its comment.
-function NoSpendDot({ cx, cy, r, fill, delay }) {
-  const opacity = useSharedValue(0);
+// `instant` mirrors Bar's own: skips the fade-in for a range swipe.
+function NoSpendDot({ cx, cy, r, fill, delay, instant = false }) {
+  const opacity = useSharedValue(instant ? 1 : 0);
 
   useEffect(() => {
+    if (instant) return;
     opacity.value = withDelay(delay, withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -213,32 +223,30 @@ function NoSpendDot({ cx, cy, r, fill, delay }) {
 // bar, and its label is centred on the line, so with no room above them both are
 // half cut off. Callers that show the average pass it, and pass it for every
 // range so the chart doesn't change height as the line comes and goes.
-function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, showAverage = false, topPad = 0 }) {
+// `values` can be signed now — the home chart plots net (income minus
+// expense) per period rather than one type at a time, so a bar's own sign
+// decides its colour: green for a period that came out ahead, red for one
+// that didn't. `isIncome` still matters for a caller passing only
+// non-negative magnitudes (the recap's charts, which are always one type) —
+// there every value's sign is trivially >= 0, so this reduces to exactly
+// the old single-hue behaviour.
+function toneFor(v, isIncome) {
+  return v < 0 ? RED_TONE : (isIncome ? GREEN_TONE : RED_TONE);
+}
+
+function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, showAverage = false, topPad = 0, instant = false }) {
   const n       = values.length;
   const GROUP_W = CHART_W / n;
   const BAR_W   = Math.min(19, Math.max(6, GROUP_W - 8));
   const usableW = CHART_W - 2 * CHART_EDGE_PAD;
   const barStep = n > 1 ? (usableW - BAR_W) / (n - 1) : 0;
-  const maxVal  = Math.max(...values, 1);
+  // Height is driven by magnitude regardless of sign — a period that
+  // overspent by 400 and one that saved 400 are the same height, coloured
+  // oppositely.
+  const maxVal  = Math.max(...values.map(Math.abs), 1);
   const svgH    = BAR_HEIGHT + 22;
   const noSpendDotColor = light ? 'rgba(34,197,94,0.7)' : 'rgba(74,222,128,0.75)';
 
-  // Kept in step with LineChart's own income/expense colours, so Overview
-  // and the bar tabs read as the same two series. The expense red is
-  // #ef4444 lifted about 10% (each channel x1.1, red clamped at 255) — at
-  // these alphas the original sat a touch dark against pure black. Note
-  // this is NOT the danger red used on destructive UI (248,113,113), nor
-  // the delete button's own systemRed; both of those are button states
-  // rather than data, and are deliberately left alone.
-  const baseTone = isIncome ? GREEN_TONE : RED_TONE;
-  // With `accentIndex` set, exactly one bar carries the series colour and
-  // every other one goes flat neutral — one accent doing the work, so the
-  // eye lands on the period being read instead of scanning thirty coloured
-  // bars. Left null by the recap's charts, which colour every bar (one of
-  // them has no active bar at all and would otherwise render entirely grey).
-  const dimFill = accentIndex == null
-    ? baseTone.dim
-    : (light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)');
   const gridColor       = light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)';
   const labelActiveColor = light ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.85)';
   const labelDimColor    = textColor(light).disabled;
@@ -373,7 +381,9 @@ function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAft
         // imperceptible height difference) animation over and over — most
         // noticeable on whichever bar happens to be tallest, since that's
         // the one most likely sitting right at this knife's-edge value.
-        const h          = Math.round(useSqrtScale ? Math.sqrt(v / maxVal) * BAR_HEIGHT : (v / maxVal) * BAR_HEIGHT);
+        const mag        = Math.abs(v);
+        const h          = Math.round(useSqrtScale ? Math.sqrt(mag / maxVal) * BAR_HEIGHT : (mag / maxVal) * BAR_HEIGHT);
+        const tone       = toneFor(v, isIncome);
         const isActive   = i === activeIndex || i === accentIndex;
         const isDisabled = disabledAfterIndex != null && i > disabledAfterIndex;
         const isBeforeStart = disabledBeforeIndex != null && i < disabledBeforeIndex;
@@ -395,8 +405,9 @@ function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAft
                 rx={BAR_W / 2.6}
                 targetHeight={h}
                 delay={Math.min(i * BAR_STAGGER_STEP_MS, BAR_STAGGER_CAP_MS)}
-                fill={isActive ? baseTone.active : dimFill}
+                fill={isActive ? tone.active : tone.dim}
                 maskColor={bgColor}
+                instant={instant}
               />
             ) : (
               <Rect x={x} y={BAR_HEIGHT - 2} width={BAR_W} height={2} rx={1} fill="transparent" />
@@ -432,6 +443,7 @@ function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAft
                 r={1.8}
                 fill={noSpendDotColor}
                 delay={Math.min(i * BAR_STAGGER_STEP_MS, BAR_STAGGER_CAP_MS)}
+                instant={instant}
               />
             )}
           </Fragment>

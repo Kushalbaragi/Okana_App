@@ -18,6 +18,7 @@ import { CheckIcon, ChevronRight, EditIcon, PlusIcon } from './icons';
 import { currentMonthYear, dateBoxParts } from '../utils/format';
 import { hapticAdded } from '../utils/haptics';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
+import { GUTTER } from '../utils/spacing';
 
 // List and detail swap by crossfade — the same fade the home screen uses for a
 // tab switch, and cheap because it's opacity only.
@@ -414,7 +415,7 @@ function GoalDetail({ goal, savings, ui, light }) {
     <View style={{ flex: 1 }}>
     {/* Everything down to the History label stays put; only the history below
         it scrolls, the way the transaction list does on the home screen. */}
-    <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
+    <View style={{ paddingHorizontal: GUTTER, paddingTop: 8 }}>
       {/* The name is centred on the row's own width; the pencil is pinned to
           the right edge instead of riding beside the text, so it doesn't
           pull the name off centre. Deleting a goal is done by swiping its
@@ -503,7 +504,7 @@ function GoalDetail({ goal, savings, ui, light }) {
       style={{ flex: 1 }}
       onScrollBeginDrag={swipes.closeOpen}
       // Clears the round button that floats over the bottom of the page.
-      contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 120 }}
+      contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: insets.bottom + 120 }}
     >
       {goal.entries.length === 0 ? (
         <Text className="text-base px-1" style={{ color: textColor(light).tertiary }}>Nothing added yet.</Text>
@@ -593,7 +594,10 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
         <ScrollView
           showsVerticalScrollIndicator={false}
           onScrollBeginDrag={swipes.closeOpen}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 130 }}
+          // GUTTER (20), not 16 — matches the goal detail page's own
+          // paddingHorizontal below, and the app's screen edge everywhere
+          // else. Was the one screen still at 16.
+          contentContainerStyle={{ paddingHorizontal: GUTTER, paddingTop: 8, paddingBottom: insets.bottom + 130 }}
         >
           {isEmpty ? (
             <EmptyState onNew={ui.openNewGoal} light={light} />

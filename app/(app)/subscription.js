@@ -274,7 +274,10 @@ export default function SubscriptionPage() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="rgba(255,255,255,0.6)" />
         }
       >
-        <View className="flex-row items-center gap-2 px-4 pt-14 pb-4">
+        {/* px-5 (20), matching the app's screen gutter (Home, Settings, the
+            Savings detail page) — Row content inside the Cards below stays
+            at its own 16, a bordered card's internal padding. */}
+        <View className="flex-row items-center gap-2 px-5 pt-14 pb-4">
           <Pressable
             // Same canGoBack() guard as account.js's back button, and for
             // the same reason — a reload/deep-link landing directly here
@@ -301,7 +304,7 @@ export default function SubscriptionPage() {
             <ActivityIndicator color="rgba(255,255,255,0.4)" />
           </View>
         ) : (
-        <View className="px-4 pb-16" style={{ gap: 12 }}>
+        <View className="px-5 pb-16" style={{ gap: 12 }}>
           <View>
             <SectionLabel
               action={

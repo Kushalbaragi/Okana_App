@@ -3,7 +3,6 @@ import { View, Text, useWindowDimensions } from 'react-native';
 import Animated, { useSharedValue, useAnimatedScrollHandler, runOnJS } from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient, Stop, Path, Rect, Text as SvgText } from 'react-native-svg';
 import { hapticTick } from '../utils/haptics';
-import { dim } from './savingsShared';
 import { textColor } from '../utils/colors';
 import { TABULAR } from '../utils/type';
 

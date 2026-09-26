@@ -12,6 +12,20 @@ export function formatCurrency(amount) {
   }).format(amount)
 }
 
+// No thousands separators — the transaction ledger's own rows use this
+// (see TransactionItem) so a fixed-width amount column doesn't have to
+// account for commas shifting where the digits themselves start; the
+// month header above them keeps the grouped formatCurrency.
+export function formatCurrencyPlain(amount) {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+    useGrouping: false,
+  }).format(amount)
+}
+
 export function formatCurrencyFull(amount) {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',

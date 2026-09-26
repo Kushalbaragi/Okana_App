@@ -38,6 +38,7 @@ import { TourHint, TOUR_HINT_BORDER_WIDTH, TOUR_HINT_BORDER_COLOR } from '../../
 import { useTourStep } from '../../hooks/useTourStep';
 import { CARD_RADIUS, POPUP_RADIUS, SMOOTH } from '../../components/Glass';
 import { SETTLE_EASING } from '../../utils/motion';
+import { GUTTER } from '../../utils/spacing';
 
 // One-flag experiment: a light theme for just this screen. Flip back to
 // false to fully revert. Mirrors the same LIGHT_HOME flag in app/(app)/index.js.
@@ -371,8 +372,8 @@ function BottomBanner({ visible, children }) {
       style={[
         {
           position: 'absolute',
-          left: 16,
-          right: 16,
+          left: GUTTER,
+          right: GUTTER,
           bottom: insets.bottom + 20,
           alignItems: 'center',
           paddingVertical: 12,
@@ -1031,7 +1032,12 @@ export default function AccountPage() {
           app/(app)/index.js for why this doesn't leak into other screens. */}
       {LIGHT_SETTINGS && isFocused && <StatusBar style="dark" />}
       <ScrollView showsVerticalScrollIndicator={false}>
-        <View className="flex-row items-center gap-2 px-4 pt-14 pb-4">
+        {/* px-5 (20), not px-4 (16) — the app's screen gutter everywhere
+            else (Home's Header, the Savings detail page). Row content
+            inside the Cards below stays at its own 16 (see Row/SectionLabel
+            in SettingsUI) — that's a bordered card's internal padding, a
+            separate thing from the screen edge. */}
+        <View className="flex-row items-center gap-2 px-5 pt-14 pb-4">
           <Pressable
             // canGoBack() guards against a genuinely empty stack — reached
             // this screen with nothing behind it (a reload mid-navigation
@@ -1071,7 +1077,7 @@ export default function AccountPage() {
           </View>
         </View>
 
-        <View className="px-4" style={{ gap: 12 }}>
+        <View className="px-5" style={{ gap: 12 }}>
           <View>
             <Card>
               <View className="px-4 py-4">

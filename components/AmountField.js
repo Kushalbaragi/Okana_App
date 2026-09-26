@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring, withDelay, Easing, LinearTransition } from 'react-native-reanimated';
-import { SETTLE_EASING } from '../utils/motion';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring, withDelay, Easing } from 'react-native-reanimated';
+import { SETTLE_EASING, SPRING_QUICK, layoutTransition } from '../utils/motion';
 import { TABULAR } from '../utils/type';
 
 // Same ease-out-expo "settle" feel used for reveals throughout the app
@@ -21,8 +21,8 @@ import { TABULAR } from '../utils/type';
 // which is what actually reads as one continuous slide rather than a
 // series of small shifts. Same physics already proven smooth elsewhere in
 // this app for an identical "sliding pill" motion — Header's chart-tab
-// toggle.
-export const AMOUNT_LAYOUT_TRANSITION = LinearTransition.springify().damping(18).stiffness(220).mass(0.5);
+// toggle. SPRING_QUICK — the same preset SegmentedSwitch's pill uses.
+export const AMOUNT_LAYOUT_TRANSITION = layoutTransition(SPRING_QUICK);
 
 const ENTER_DURATION = 400;
 const EXIT_DURATION = 320;
@@ -213,7 +213,7 @@ export function AmountRow({ amount, prevAmountLength, skipDigitAnim, digitFontSi
   // already moving at instead.
   const scale = useSharedValue(targetScale);
   useEffect(() => {
-    scale.value = withSpring(targetScale, { damping: 18, stiffness: 220, mass: 0.5 });
+    scale.value = withSpring(targetScale, SPRING_QUICK);
   }, [targetScale, scale]);
   const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 

@@ -24,8 +24,11 @@ export const TABULAR = { fontVariant: ['tabular-nums'] };
 // Light weight on the display step is deliberate: at that size weight reads
 // as shouting, and the size alone is already doing the work.
 
-// Row labels, descriptions, buttons — most text in the app.
-export const BODY = { fontSize: 15, fontWeight: '400' };
+// Row labels, descriptions, buttons — most text in the app. Apple's own
+// Dynamic Type "Body" is 17/22, which read too large once actually on
+// screen; plain 15 read too small right after that. 16 is the middle
+// landed on between the two, picked on screen rather than off a metric.
+export const BODY = { fontSize: 16, lineHeight: 21, fontWeight: '400' };
 
 // Anything explaining something else: dates under a description, the
 // period under an amount, a hint. Always paired with a muted colour.

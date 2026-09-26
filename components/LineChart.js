@@ -37,7 +37,7 @@ function areaPath(pts, bottom) {
   return `${line} L${pts[pts.length - 1].x.toFixed(1)},${bottom} L${pts[0].x.toFixed(1)},${bottom} Z`;
 }
 
-function LineChart({ incomeData, expenseData, labels, light = false, activeIndex = -1, revealKey }) {
+function LineChart({ incomeData, expenseData, labels, light = false, activeIndex = -1, revealKey, instant = false }) {
   const progress = useSharedValue(0);
   // The reveal-width animation needs a real pixel target, not a percentage —
   // Reanimated interpolates numbers reliably. Measured via onLayout, but
@@ -81,12 +81,21 @@ function LineChart({ incomeData, expenseData, labels, light = false, activeIndex
   // A layout effect, not a regular one: the new range's curve is already in
   // this same commit, so a regular effect would let it paint fully drawn for
   // a frame before the reveal reset it to empty and grew it back.
+  //
+  // `instant` only applies here, not to the mount effect above — entering
+  // Overview (a real mode change, and a fresh mount) always gets the full
+  // sweep; a Month/Year/All swipe while already on Overview is what skips
+  // it, same reasoning as Bar's own `instant` in BarChart.js.
   const prevRevealKeyRef = useRef(revealKey);
   useLayoutEffect(() => {
     if (prevRevealKeyRef.current === revealKey) return;
     prevRevealKeyRef.current = revealKey;
+    if (instant) {
+      progress.value = 1;
+      return;
+    }
     playReveal();
-  }, [revealKey, playReveal]);
+  }, [revealKey, playReveal, instant, progress]);
 
   const isFocused = useIsFocused();
   const wasFocusedRef = useRef(isFocused);

@@ -2,23 +2,31 @@ import { memo, useCallback, useEffect, useRef } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
-import { formatCurrencyFull, formatDayLabel } from '../utils/format';
+import { formatCurrencyPlain } from '../utils/format';
 import { SwipeDeleteAction, useSwipeDelete } from './SwipeDeleteAction';
 import { CARD_COLOR } from './Glass';
 import { textColor, INCOME_TEXT } from '../utils/colors';
-import { BODY, CAPTION, TABULAR } from '../utils/type';
+import { BODY, TABULAR } from '../utils/type';
+import { LEDGER_PILL_INSET } from '../utils/spacing';
+
+// Wide enough for a 7-figure amount ("₹9999999", no thousands separators —
+// see formatCurrencyPlain) at BODY size — fixed rather than sized to
+// content, so the dash's own box always starts at the same x. Left-aligned
+// on purpose (not right-aligned) — every amount starts at the same left
+// edge, which is what was actually asked for; the tradeoff is the visible
+// gap before the dash varies with how many digits that row's amount has
+// (a short "₹375" leaves more room than "₹56900" does).
+const AMOUNT_COL_WIDTH = 82;
 
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard — see the matching comment in Header.js.
-// `swipeable` is how the list keeps a tab/period switch cheap. Mounting
+// `swipeable` is how the list keeps its first paint cheap. Mounting
 // ReanimatedSwipeable costs real gesture-handler + worklet setup per row,
-// and a switch remounts every row at once — that was the single biggest
-// chunk of the 264-411ms a switch used to spend in this list, and it
-// matters more now the list isn't virtualized (it renders a whole month's
-// rows, not just the visible ones — see the card's own comment in
-// TransactionList). So the list paints rows flat first and flips this to
-// true once the commit has settled (see `settled` in TransactionList),
-// moving the setup off the critical path instead of removing the feature.
+// and the list isn't virtualized — it renders the whole running history at
+// once, not just the visible rows (see TransactionList's own comment). So
+// the list paints rows flat first and flips this to true once the initial
+// commit has settled (see `settled` in TransactionList), moving the setup
+// off the critical path instead of removing the feature.
 function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, onSwipeOpen, onCardPress, light = false, swipeable = true, cardColor = CARD_COLOR }) {
   // Tapping the trash slides the row shut and asks `onDelete` (which opens a
   // confirmation) at once, rather than waiting for the slide to finish.
@@ -59,33 +67,37 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
   const row = (
     <Pressable
       onPress={handleCardPress}
-      className="py-4 px-4"
-      style={{ backgroundColor: cardColor }}
+      className="py-3"
+      // Matches MonthHeader's own paddingHorizontal (both read
+      // LEDGER_PILL_INSET), so a row's amount starts under the pill's text
+      // above it rather than further left at the raw list edge.
+      style={{ backgroundColor: cardColor, paddingLeft: LEDGER_PILL_INSET }}
     >
-      <Animated.View className="flex-row items-center justify-between" style={contentStyle}>
-        {/* The date sits under the description as plain words rather than in
-            a boxed day/month chip beside it — the chip was a second framed
-            element on every row, and the row has to carry the date either
-            way. */}
-        <View className="flex-1 pr-3">
-          <Text numberOfLines={1} style={[BODY, { color: textColor(light).primary }]}>
-            {tx.description || (isIncome ? 'Income' : 'Expense')}
-          </Text>
-          <Text style={[CAPTION, { color: textColor(light).tertiary, marginTop: 3 }]}>
-            {formatDayLabel(tx.date).toLowerCase()}
-          </Text>
-        </View>
-
-        <View className="flex-row items-center shrink-0" style={{ gap: 6 }}>
-          {/* Not yet synced to the server — sitting in the offline queue,
-              or an insert/update still in flight. */}
-          {tx._pending && (
-            <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: light ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }} />
-          )}
-          <Text style={[BODY, TABULAR, { color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>
-            {isIncome ? '+' : '-'}{formatCurrencyFull(tx.amount)}
-          </Text>
-        </View>
+      {/* Three columns — amount, dash, description — the date it happened
+          is said once by the month this row sits under (see MonthHeader in
+          TransactionList), not repeated on every row underneath it. The
+          amount column is a fixed width (not sized to its own digits), so
+          every row's dash and description line up in a straight column
+          regardless of how long that row's own amount is. */}
+      <Animated.View className="flex-row items-center" style={contentStyle}>
+        <Text
+          numberOfLines={1}
+          style={[BODY, TABULAR, { width: AMOUNT_COL_WIDTH, color: isIncome ? INCOME_TEXT : textColor(light).primary }]}
+        >
+          {formatCurrencyPlain(tx.amount)}
+        </Text>
+        <Text style={[BODY, { marginLeft: 4, color: textColor(light).disabled }]}>-</Text>
+        {/* Not yet synced to the server — sitting in the offline queue, or
+            an insert/update still in flight. */}
+        {tx._pending && (
+          <View style={{ width: 5, height: 5, borderRadius: 2.5, marginLeft: 8, backgroundColor: light ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }} />
+        )}
+        {/* Amount now carries the brightness, description the dim — the
+            number is what you're scanning the ledger for, the description
+            is what jogs your memory once you've spotted it. */}
+        <Text numberOfLines={1} style={[BODY, { flexShrink: 1, marginLeft: 8, color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>
+          {tx.description || (isIncome ? 'Income' : 'Expense')}
+        </Text>
       </Animated.View>
     </Pressable>
   );
