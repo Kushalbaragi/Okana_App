@@ -4,6 +4,7 @@ import { addMonths, subMonths, startOfMonth, getDaysInMonth, parseISO } from 'da
 import { GlassPressable } from './Glass';
 import { MONTH_NAMES as MONTHS } from '../utils/monthlyRecap';
 import { toDateStr as toStr } from '../utils/format';
+import { textColor } from '../utils/colors';
 
 const DAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 
@@ -70,14 +71,14 @@ function CalendarPicker({ value, onChange, onClose, light = false }) {
           className="w-8 h-8 items-center justify-center"
           style={light ? { backgroundColor: 'rgba(0,0,0,0.05)' } : null}
         >
-          <Text className="text-lg" style={{ color: isCurrentMonth ? dim(0.2) : dim(0.6) }}>›</Text>
+          <Text className="text-lg" style={{ color: isCurrentMonth ? textColor(light).disabled : dim(0.6) }}>›</Text>
         </GlassPressable>
       </View>
 
       <View className="flex-row mb-1">
         {DAYS.map(d => (
           <View key={d} className="flex-1 items-center py-1">
-            <Text className="text-xs font-medium" style={{ color: dim(0.3) }}>{d}</Text>
+            <Text className="text-xs font-medium" style={{ color: textColor(light).tertiary }}>{d}</Text>
           </View>
         ))}
       </View>
@@ -121,7 +122,7 @@ function CalendarPicker({ value, onChange, onClose, light = false }) {
                     <Text
                       className="text-base"
                       style={
-                        isFuture ? { color: dim(0.15) }
+                        isFuture ? { color: textColor(light).disabled }
                         : isToday ? { color: '#ff3b30', fontWeight: '500' }
                         : { color: dim(0.6) }
                       }

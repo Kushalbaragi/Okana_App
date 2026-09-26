@@ -5,14 +5,14 @@ import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-g
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, Easing } from 'react-native-reanimated';
 import { today, formatDayLabel } from '../utils/format';
 import CalendarPicker from './CalendarPicker';
-import { GlassPressable, PILL_ACTIVE_COLOR, INPUT_TEXT_STYLE, POPUP_RADIUS, SMOOTH } from './Glass';
+import { GlassPressable, INPUT_TEXT_STYLE, POPUP_RADIUS, SMOOTH } from './Glass';
 import { NumericKeypad } from './NumericKeypad';
 import { useAmountEntry } from '../hooks/useAmountEntry';
 import { AmountRow } from './AmountField';
 import { useShake } from '../hooks/useShake';
 import { hapticHeavy } from '../utils/haptics';
-import { SETTLE_EASING } from '../utils/motion';
 import { CalendarIcon } from './icons';
+import { textColor, INCOME_TEXT } from '../utils/colors';
 
 // Height of the description pill. Shared by the pill itself, the input
 // inside it and the placeholder overlay on top, so all three are centring
@@ -20,8 +20,12 @@ import { CalendarIcon } from './icons';
 const DESCRIPTION_PILL_H = 40;
 
 // The sheet covers most, not all, of the screen — a real bottom sheet with
-// a dimmed backdrop above it, rather than a full-screen takeover.
-const SHEET_HEIGHT_RATIO = 0.855;
+// a dimmed backdrop above it, rather than a full-screen takeover. Shorter
+// than v1's 0.855: amount and description now share one compact row
+// instead of a 72pt hero amount with its own separate description pill
+// 40px below it, so there's meaningfully less content to leave room for
+// above the keypad.
+const SHEET_HEIGHT_RATIO = 0.72;
 // Backdrop opacity while open — a soft dark tint, not pure black.
 const BACKDROP_MAX_OPACITY = 0.55;
 // Plain, fixed slide — same shape both ways as the calendar's own slide
@@ -48,23 +52,17 @@ const DISMISS_VELOCITY = 800;
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard (and the flows it opens) — see the matching comment in
 // Header.js. Callers outside the Dashboard keep passing nothing.
-function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = false }) {
+// v2 — same sheet, gestures, keyboard/calendar handling and submit flow as
+// v1 (AddModal.js, kept as-is and still what the app actually uses), only
+// the type selector and the amount/description layout differ. See the two
+// render-time comments below for what changed and why; everything else in
+// this file is an unmodified copy.
+function AddModalV2({ open, onClose, onClosed, onAdd, onEdit, editData, light = false }) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
 
   const isEdit = !!editData;
   const [type, setType] = useState('expense');
-  // Container width is measured (not a fixed constant like Header's tab
-  // toggle) since this modal is full device width and needs to work across
-  // screen sizes — the sliding pill's target position derives from it.
-  const [typeToggleWidth, setTypeToggleWidth] = useState(0);
-  const typePillX = useSharedValue(0);
-  const typePillStyle = useAnimatedStyle(() => ({ transform: [{ translateX: typePillX.value }] }));
-  useEffect(() => {
-    if (!typeToggleWidth) return;
-    const pillWidth = (typeToggleWidth - 6) / 2; // p-[3px] container padding on both sides
-    typePillX.value = withTiming((type === 'income' ? 1 : 0) * pillWidth, { duration: 260, easing: SETTLE_EASING });
-  }, [type, typeToggleWidth]);
   const { amount, prevAmountLength, skipDigitAnim, onKeyPress: handleKeypadPress, setProgrammatic: setAmountProgrammatically } = useAmountEntry();
   const [date, setDate] = useState(today());
   const [description, setDescription] = useState('');
@@ -411,106 +409,86 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
           bounces={false}
           overScrollMode="never"
         >
-          <View
-            className="flex-row rounded-full p-[3px] mb-8"
-            style={{ backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.15)' }}
-            onLayout={e => setTypeToggleWidth(e.nativeEvent.layout.width)}
-          >
-            {typeToggleWidth > 0 && (
-              <Animated.View
-                style={[
-                  { position: 'absolute', top: 3, bottom: 3, left: 3, width: (typeToggleWidth - 6) / 2, borderRadius: 999, backgroundColor: PILL_ACTIVE_COLOR },
-                  typePillStyle,
-                ]}
-              />
-            )}
-            {['expense', 'income'].map(t => (
-              <Pressable
-                key={t}
-                onPress={() => setType(t)}
-                className="flex-1 py-[6px] rounded-full items-center"
-              >
-                <Text
-                  className="text-base font-medium"
-                  style={{ color: type === t ? '#ffffff' : light ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.55)' }}>
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
-                </Text>
-              </Pressable>
-            ))}
+          {/* v2: plain words, no sliding pill. The active one is bold and
+              full-strength; whichever isn't picked just sits dim beside it.
+              Income gets the same green a real income row/amount uses
+              elsewhere in the app when it's the active one — Expense stays
+              neutral white/bold, matching how an expense amount already
+              reads everywhere else (no colour of its own, income is the
+              one that gets one). Tapping either just sets `type`, same
+              state this always used — only the control drawing it changed. */}
+          <View className="flex-row items-center justify-center" style={{ gap: 20, marginBottom: 28 }}>
+            {['expense', 'income'].map(t => {
+              const active = type === t;
+              const activeColor = t === 'income' ? INCOME_TEXT : (light ? '#111111' : '#ffffff');
+              return (
+                <Pressable key={t} onPress={() => setType(t)} hitSlop={8}>
+                  <Text
+                    className="text-lg"
+                    style={{
+                      fontWeight: active ? '600' : '400',
+                      color: active ? activeColor : textColor(light).disabled,
+                    }}
+                  >
+                    {t.charAt(0).toUpperCase() + t.slice(1)}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
 
-          <Animated.View className="items-center" style={[{ marginTop: 24, marginBottom: 24 }, amountShake.style]}>
-            <AmountRow
-              amount={amount}
-              prevAmountLength={prevAmountLength}
-              skipDigitAnim={skipDigitAnim}
-              light={light}
-              digitFontSize={72}
-              lineHeight={80}
-              zeroColor={light ? 'rgba(0,0,0,0.82)' : 'rgba(255,255,255,0.82)'}
-              weight="500"
-            />
-          </Animated.View>
-
-          {/* Description moved back in right after the amount — living in
-              the footer (a separate sibling further down) left an
-              unexplained gap between them; being a direct, tightly-margined
-              neighbor here guarantees there's no room for anything to
-              insert space between the two. */}
-          {/* The input fills the pill's full height and centres its own text
-              inside it, rather than the pill centring an auto-height input.
-              A TextInput's natural height isn't its text's height — it
-              reserves extra room for the editing caret — so centring that
-              box put the text off-centre. Height also has to be explicit
-              rather than padding-derived: with zero padding and no height
-              the box hugs the text and clips descenders. */}
-          <View
-            style={{
-              alignSelf: 'center', marginTop: 40, minWidth: 130, height: DESCRIPTION_PILL_H,
-              borderRadius: 9999, justifyContent: 'center',
-              backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.15)',
-              borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)',
-            }}
-          >
-            {/* The shake rides on this wrapper, not on the pill: the pill's
-                background and border belong to the View above, and the
-                input itself is transparent, so translating this moves only
-                the text and caret — the same "only the wording shakes, not
-                the box around it" this used to get from a separate
-                placeholder overlay. The shake only ever fires while the
-                field is empty (see the submit guard above), so what
-                visibly shakes is still the placeholder. */}
-            <Animated.View style={descriptionShake.style}>
-              <TextInput
-                ref={descriptionInputRef}
-                value={description}
-                onChangeText={setDescription}
-                // The native placeholder, NOT a <Text> drawn on top. An
-                // overlay is a different text renderer than the one drawing
-                // the input's own value, and the two don't agree on where
-                // the baseline sits inside a given box — which is why the
-                // text appeared to drop a couple of pixels the moment you
-                // typed. Matching their padding, height and centring can
-                // get close but never exact; one view drawing both states
-                // is the only arrangement where they can't disagree.
-                placeholder="Description"
-                placeholderTextColor={light ? '#b0b0b0' : '#4d4d4d'}
-                // The `transactions.description` column is plain text with no
-                // server-side length constraint — this is the only cap it
-                // gets, since it's a short label ("Netflix", "Electricity
-                // bill"), not free-form notes.
-                maxLength={140}
-                className="px-4 text-base text-center"
-                style={[
-                  INPUT_TEXT_STYLE,
-                  {
-                    color: light ? '#111111' : '#ffffff',
-                    height: DESCRIPTION_PILL_H,
-                    paddingVertical: 0,
-                  },
-                ]}
+          {/* v2: amount and description share one row instead of the amount
+              sitting alone (72pt, its own hero moment) with description
+              40px below it. AmountRow shrinks to content width on its own
+              (see its own comment — no flex:1), so it sits to the left at
+              a size that still reads at a glance, and the description pill
+              takes whatever's left rather than centring itself under a
+              fixed min-width. */}
+          <View className="flex-row items-center" style={{ marginBottom: 24, gap: 14 }}>
+            <Animated.View style={amountShake.style}>
+              <AmountRow
+                amount={amount}
+                prevAmountLength={prevAmountLength}
+                skipDigitAnim={skipDigitAnim}
+                light={light}
+                digitFontSize={34}
+                lineHeight={40}
+                zeroColor={light ? 'rgba(0,0,0,0.82)' : 'rgba(255,255,255,0.82)'}
+                weight="500"
               />
             </Animated.View>
+
+            {/* Flex:1 pill filling the rest of the row — same reasoning as
+                v1's pill on height/centring (see its own comment, unchanged
+                here), just no longer self-centred at a fixed min-width. */}
+            <View
+              style={{
+                flex: 1, height: DESCRIPTION_PILL_H,
+                borderRadius: 9999, justifyContent: 'center',
+                backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.15)',
+                borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)',
+              }}
+            >
+              <Animated.View style={descriptionShake.style}>
+                <TextInput
+                  ref={descriptionInputRef}
+                  value={description}
+                  onChangeText={setDescription}
+                  placeholder="Description"
+                  placeholderTextColor={light ? '#b0b0b0' : '#4d4d4d'}
+                  maxLength={140}
+                  className="px-4 text-base"
+                  style={[
+                    INPUT_TEXT_STYLE,
+                    {
+                      color: light ? '#111111' : '#ffffff',
+                      height: DESCRIPTION_PILL_H,
+                      paddingVertical: 0,
+                    },
+                  ]}
+                />
+              </Animated.View>
+            </View>
           </View>
         </ScrollView>
       </View>
@@ -624,4 +602,4 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
   );
 }
 
-export default memo(AddModal);
+export default memo(AddModalV2);

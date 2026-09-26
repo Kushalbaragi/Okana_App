@@ -3,6 +3,7 @@ import { View, Text, Pressable } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { formatCurrency } from '../utils/format';
 import { SETTLE_EASING } from '../utils/motion';
+import { textColor as textColorTone } from '../utils/colors';
 
 // Always green — the bar previously shifted to yellow/red as spend
 // approached or passed the budget, but that's no longer wanted; one
@@ -37,7 +38,7 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, 
   };
   const textColor = light ? '#111111' : '#ffffff';
   const dimColor = light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
-  const dimmerColor = light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)';
+  const dimmerColor = textColorTone(light).tertiary;
   const trackColor = light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)';
   // BudgetStatusBar fully unmounts when SpendCalendarModal closes (it
   // returns null rather than just hiding), so this component genuinely

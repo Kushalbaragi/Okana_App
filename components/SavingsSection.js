@@ -11,11 +11,14 @@ import { InlineConfirm } from './InlineConfirm';
 import { GOAL_SUGGESTIONS, GoalSheet, MoneySheet } from './SavingsSheets';
 import GoalCard from './GoalCard';
 import { SwipeDeleteAction, useSwipeDelete, useSwipeGroup } from './SwipeDeleteAction';
-import { Card, ProgressBar, ROUNDED_FONT, POSITIVE, cardFill, dim, money } from './savingsShared';
+import { Card, ProgressBar, POSITIVE, cardFill, dim, money } from './savingsShared';
+import { textColor } from '../utils/colors';
+import { TABULAR } from '../utils/type';
 import { CheckIcon, ChevronRight, EditIcon, PlusIcon } from './icons';
 import { currentMonthYear, dateBoxParts } from '../utils/format';
 import { hapticAdded } from '../utils/haptics';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
+import { GUTTER } from '../utils/spacing';
 
 // List and detail swap by crossfade — the same fade the home screen uses for a
 // tab switch, and cheap because it's opacity only.
@@ -122,8 +125,8 @@ export function SavingsSheetsHost({ savings, ui, light = false }) {
   const goal = goalId ? savings.allGoals.find(g => g.id === goalId) : null;
   const entry = sheetData?.entryId && goal ? goal.entries.find(e => e.id === sheetData.entryId) : null;
 
-  const submitGoal = useCallback(({ name, target }) => (
-    goalId ? savings.editGoal(goalId, { name, target }) : savings.addGoal({ name, target })
+  const submitGoal = useCallback(({ name, target, location }) => (
+    goalId ? savings.editGoal(goalId, { name, target, location }) : savings.addGoal({ name, target, location })
   ), [savings, goalId]);
 
   const submitMoney = useCallback(({ type, amount, note, date }) => (
@@ -307,7 +310,7 @@ function EmptyState({ onNew, light }) {
   return (
     <View className="items-center" style={{ paddingTop: 72, paddingHorizontal: 16 }}>
       <Text className="text-xl font-semibold text-center" style={{ color: light ? '#111111' : '#ffffff' }}>Start your first goal</Text>
-      <Text className="text-base text-center" style={{ color: dim(light, 0.4), marginTop: 8, marginBottom: 24, lineHeight: 22 }}>
+      <Text className="text-base text-center" style={{ color: textColor(light).tertiary, marginTop: 8, marginBottom: 24, lineHeight: 22 }}>
         Track what you're setting aside for a bike, a home, or a rainy day.
       </Text>
       <GlassPressable variant="active" radius={9999} onPress={() => onNew('')} style={{ paddingHorizontal: 32, paddingVertical: 12, alignItems: 'center' }}>
@@ -330,7 +333,7 @@ function DateChip({ dateStr, light }) {
   return (
     <View className="items-center justify-center w-8 h-8 rounded shrink-0" style={{ backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)' }}>
       <Text className="text-[11px] font-semibold leading-none" style={{ color: dim(light, 0.7) }}>{day}</Text>
-      <Text className="text-[8px] font-medium leading-none mt-0.5 tracking-tight" style={{ color: dim(light, 0.3) }}>{month}</Text>
+      <Text className="text-[8px] font-medium leading-none mt-0.5 tracking-tight" style={{ color: textColor(light).disabled }}>{month}</Text>
     </View>
   );
 }
@@ -412,21 +415,25 @@ function GoalDetail({ goal, savings, ui, light }) {
     <View style={{ flex: 1 }}>
     {/* Everything down to the History label stays put; only the history below
         it scrolls, the way the transaction list does on the home screen. */}
-    <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
-      {/* The name with the pencil right beside it, centred together. The name
-          shrinks (and truncates) before it can push the pencil out of the row.
-          Deleting a goal is done by swiping its card on the list. */}
-      <View className="flex-row items-center justify-center" style={{ minWidth: 0 }}>
-        <Text className="text-base" numberOfLines={1} style={{ flexShrink: 1, color: dim(light, 0.5) }}>{goal.name}</Text>
+    <View style={{ paddingHorizontal: GUTTER, paddingTop: 8 }}>
+      {/* The name is centred on the row's own width; the pencil is pinned to
+          the right edge instead of riding beside the text, so it doesn't
+          pull the name off centre. Deleting a goal is done by swiping its
+          card on the list. */}
+      <View style={{ minHeight: 32, justifyContent: 'center' }}>
+        <Text className="text-base text-center" numberOfLines={1} style={{ paddingHorizontal: 40, color: dim(light, 0.5) }}>{goal.name}</Text>
         <Pressable
           onPress={() => ui.openEditGoal(goal.id)}
-          className="w-8 h-8 items-center justify-center rounded-lg"
+          style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 32, alignItems: 'center', justifyContent: 'center' }}
           accessibilityRole="button"
           accessibilityLabel="Edit goal"
         >
-          <EditIcon color={dim(light, 0.4)} />
+          <EditIcon color={textColor(light).disabled} />
         </Pressable>
       </View>
+      {!!goal.location && (
+        <Text className="text-xs text-center" numberOfLines={1} style={{ marginTop: 2, color: textColor(light).tertiary }}>{goal.location}</Text>
+      )}
 
       {/* The big figure, a plain progress bar (the same one the goal cards
           use) and its two captions. */}
@@ -437,8 +444,8 @@ function GoalDetail({ goal, savings, ui, light }) {
         </View>
         <ProgressBar percent={goal.percent} height={8} light={light} />
         <View className="flex-row items-center justify-between mt-2.5">
-          <Text className="text-xs" style={{ color: dim(light, 0.4) }}>{goal.percent}%</Text>
-          <Text className="text-xs" style={{ color: dim(light, 0.4) }}>{money(goal.target)} target</Text>
+          <Text className="text-xs" style={{ color: textColor(light).disabled }}>{goal.percent}%</Text>
+          <Text className="text-xs" style={{ color: textColor(light).tertiary }}>{money(goal.target)} target</Text>
         </View>
       </View>
 
@@ -449,7 +456,7 @@ function GoalDetail({ goal, savings, ui, light }) {
             <Text className="text-base" style={{ color: POSITIVE }}>Completed</Text>
           </View>
           <Pressable onPress={() => savings.setGoalCompleted(goal.id, false)} hitSlop={8} accessibilityRole="button">
-            <Text className="text-base" style={{ color: dim(light, 0.4) }}>Reopen</Text>
+            <Text className="text-base" style={{ color: textColor(light).disabled }}>Reopen</Text>
           </Pressable>
         </View>
       ) : showReached ? (
@@ -470,7 +477,7 @@ function GoalDetail({ goal, savings, ui, light }) {
           month when another goal's page takes over this one. */}
       {goal.entries.length > 0 && (
         <View style={{ marginTop: 12 }}>
-          <Text className="text-[11px] font-medium uppercase tracking-widest px-1 mb-2" style={{ color: dim(light, 0.3) }}>Monthly savings</Text>
+          <Text className="text-[11px] font-medium uppercase tracking-wider px-5 mb-2" style={{ color: textColor(light).disabled }}>Monthly savings</Text>
           <Card light={light}>
             {/* The average sits at the top left; the slider below has no side
                 padding, so its bars slide right out to the card's edge. */}
@@ -487,7 +494,7 @@ function GoalDetail({ goal, savings, ui, light }) {
         </View>
       )}
 
-      <Text className="text-[11px] font-medium uppercase tracking-widest px-1 mb-2" style={{ color: dim(light, 0.3), marginTop: 28 }}>
+      <Text className="text-[11px] font-medium uppercase tracking-wider px-4 mb-2" style={{ color: textColor(light).disabled, marginTop: 28 }}>
         History
       </Text>
     </View>
@@ -497,10 +504,10 @@ function GoalDetail({ goal, savings, ui, light }) {
       style={{ flex: 1 }}
       onScrollBeginDrag={swipes.closeOpen}
       // Clears the round button that floats over the bottom of the page.
-      contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 120 }}
+      contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: insets.bottom + 120 }}
     >
       {goal.entries.length === 0 ? (
-        <Text className="text-base px-1" style={{ color: dim(light, 0.3) }}>Nothing added yet.</Text>
+        <Text className="text-base px-1" style={{ color: textColor(light).tertiary }}>Nothing added yet.</Text>
       ) : (
         <Card light={light}>
           {goal.entries.map((e, i) => (
@@ -587,16 +594,19 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
         <ScrollView
           showsVerticalScrollIndicator={false}
           onScrollBeginDrag={swipes.closeOpen}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 130 }}
+          // GUTTER (20), not 16 — matches the goal detail page's own
+          // paddingHorizontal below, and the app's screen edge everywhere
+          // else. Was the one screen still at 16.
+          contentContainerStyle={{ paddingHorizontal: GUTTER, paddingTop: 8, paddingBottom: insets.bottom + 130 }}
         >
           {isEmpty ? (
             <EmptyState onNew={ui.openNewGoal} light={light} />
           ) : (
             <>
               <View className="items-center" style={{ paddingBottom: 22 }}>
-                <Text className="text-sm" style={{ color: dim(light, 0.4) }}>Total Savings</Text>
+                <Text className="text-sm" style={{ color: textColor(light).tertiary }}>Total Savings</Text>
                 <Text
-                  style={{ fontSize: 44, lineHeight: 52, fontWeight: '600', letterSpacing: -1, color: light ? '#111111' : '#ffffff', fontFamily: ROUNDED_FONT }}
+                  style={{ fontSize: 44, lineHeight: 52, fontWeight: '300', letterSpacing: -1, color: light ? '#111111' : '#ffffff', ...TABULAR }}
                 >
                   {money(totalSaved)}
                 </Text>
@@ -613,9 +623,9 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
                     accessibilityRole="button"
                     accessibilityLabel="Completed goals"
                   >
-                    <Text className="text-sm" style={{ color: dim(light, 0.4) }}>Completed · {completedGoals.length}</Text>
+                    <Text className="text-sm" style={{ color: textColor(light).tertiary }}>Completed · {completedGoals.length}</Text>
                     <View style={{ transform: [{ rotate: showCompleted ? '90deg' : '0deg' }] }}>
-                      <ChevronRight color={dim(light, 0.3)} />
+                      <ChevronRight color={textColor(light).disabled} />
                     </View>
                   </Pressable>
                   {showCompleted && (

@@ -11,6 +11,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../hooks/useTransactions';
 import { useBudget } from '../../hooks/useBudget';
 import { useSavings } from '../../hooks/useSavings';
+import { useWidgetSync } from '../../hooks/useWidgetSync';
 import { useSubscription } from '../../hooks/useSubscription';
 import { getSubscriptionDisplayStatus } from '../../utils/trial';
 import { storageKeys } from '../../utils/storageKeys';
@@ -18,7 +19,8 @@ import { reportError } from '../../utils/errors';
 import Header from '../../components/Header';
 import SummaryCard from '../../components/SummaryCard';
 import TransactionList from '../../components/TransactionList';
-import AddModal from '../../components/AddModal';
+import AddModal from '../../components/AddModal'; // v1 — kept, not used below right now
+import AddModalV2 from '../../components/AddModalV2'; // v2 — previewing this one; swap the JSX tag below back to <AddModal> to revert
 import SpendCalendarModal from '../../components/SpendCalendarModal';
 import MonthlyRecapModal from '../../components/MonthlyRecapModal';
 import BudgetSetupModal from '../../components/BudgetSetupModal';
@@ -29,7 +31,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import { TourHint } from '../../components/TourHint';
 import { useTourStep } from '../../hooks/useTourStep';
 import { PlusIcon } from '../../components/icons';
-import { PILL_ACTIVE_COLOR, POPUP_RADIUS, SMOOTH } from '../../components/Glass';
+import { POPUP_RADIUS, SMOOTH, CTA_COLOR } from '../../components/Glass';
 import { currentMonthYear, today, formatCurrency } from '../../utils/format';
 import { getMonthlyRecapSlides, hasAnyRecapData, prevMonthYear, MONTH_NAMES } from '../../utils/monthlyRecap';
 import { SETTLE_EASING } from '../../utils/motion';
@@ -50,9 +52,6 @@ const PARALLAX_DIM = 0.4;
 // seconds while it stays up (the swipe itself holds for about a second).
 const SWIPE_DEMO_DELAY_MS = 700;
 const SWIPE_DEMO_EVERY_MS = 3600;
-// The hint for the Expense / Income / Overview toggle comes a good while after
-// the swipe one is dismissed, so the two never read as one run of pop-ups.
-const TABS_HINT_DELAY_MS = 3000;
 
 // How long after a delete is confirmed it goes ahead even if the dialog never
 // reports having closed (see flushDelete): longer than its close animation.
@@ -117,6 +116,7 @@ export default function Dashboard() {
   // Lives here (not inside the calendar page) so goals are already loaded the
   // first time it opens, same as the budget above.
   const savings = useSavings();
+  useWidgetSync({ transactions, budget, goals: savings.goals });
   const { subscription, loading: subLoading, refresh: refreshSubscription } = useSubscription(user);
   const trialInfo = useMemo(() => getSubscriptionDisplayStatus(subscription, today()), [subscription]);
   const posthog = usePostHog();
@@ -137,7 +137,7 @@ export default function Dashboard() {
     }
   }, [trialInfo.status, subscription, posthog]);
   const transactionListRef = useRef(null);
-  const { showUpdate, dismiss: dismissUpdate } = useAppUpdate();
+  const { showUpdate, latestVersion, dismiss: dismissUpdate } = useAppUpdate();
 
   // Scale-in-and-fade on mount — Dashboard only ever mounts once per app
   // session (it stays mounted underneath Settings/Subscription when
@@ -192,10 +192,16 @@ export default function Dashboard() {
 
   const { month: currMonth, year: currYear } = currentMonthYear();
 
-  const [chartTab, setChartTab] = useState('expense');
-  const [timeRange, setTimeRange] = useState('month');
+  // 'year' — the chart is locked to monthly candles (12 bars, one per
+  // month of the current year) while Month/Year/All is hidden (see
+  // SHOW_RANGE_SELECTOR in SummaryCard.js), not 'month''s daily bars.
+  const [timeRange, setTimeRange] = useState('year');
   const [year, setYear] = useState(currYear);
   const [selectedMonth, setSelectedMonth] = useState(currMonth);
+  // Header's Expense/Income/Overview dots — a direct tap to whichever one,
+  // not a cycle. Always starts on Expense, and nothing persists it, so a
+  // fresh load always opens the same way.
+  const [mode, setMode] = useState('expense');
   // { year, month } | null — month is null when the selection is a whole
   // year (5y-yearly mode) and 0-11 when it's a specific month (5y-monthly).
   const [selectedPeriod] = useState(null);
@@ -524,10 +530,6 @@ export default function Dashboard() {
     }
   }, [currYear]);
 
-  const handleChartTabChange = useCallback((next) => {
-    setChartTab(next);
-  }, []);
-
   const openAdd = useCallback(() => {
     if (trialInfo.status === 'expired' || trialInfo.status === 'not_started') { setProRequired(true); return; }
     setAddModalClosed(false);
@@ -636,24 +638,18 @@ export default function Dashboard() {
   const fabAnimStyle = useAnimatedStyle(() => ({ transform: [{ scale: fabScale.value }] }));
   const handleFabPressIn = useCallback(() => { fabScale.value = withTiming(0.92, { duration: 90 }); }, [fabScale]);
   const handleFabPressOut = useCallback(() => { fabScale.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.back(1.6)) }); }, [fabScale]);
-  const tabToggleRef = useRef(null);
   const addTxTour = useTourStep(user?.id, 'add_transaction');
   const swipeTour = useTourStep(user?.id, 'swipe_delete');
-  const tabsTour = useTourStep(user?.id, 'income_expense_tabs');
   // Editing is reached by tapping a row, which needs no teaching; the swipe is
   // only a shortcut to delete, so that is all this step shows.
-  const [homeTourActive, setHomeTourActive] = useState(null); // 'fab' | 'swipe' | 'tabs' | null
+  const [homeTourActive, setHomeTourActive] = useState(null); // 'fab' | 'swipe' | null
   const txCardRef = useRef(null);
 
-  // Whether the list on screen has a row the swipe demo can be shown on: the
-  // month view (not a picked day, not Overview) with a transaction of the type
-  // being listed in this month. The tour waits for it, or it would point at an
-  // empty card — say the first transaction was income while Expense is showing.
-  const hasRowToSwipe = useMemo(() => {
-    if (timeRange !== 'month' || selectedDay != null || chartTab === 'overview') return false;
-    const monthKey = `${currYear}-${String(currMonth + 1).padStart(2, '0')}`;
-    return transactions.some(t => t.type === chartTab && t.date.slice(0, 7) === monthKey);
-  }, [timeRange, selectedDay, chartTab, currYear, currMonth, transactions]);
+  // Whether the list has a row the swipe demo can be shown on — it's the
+  // full running ledger now regardless of the chart's own period, so this
+  // is just "is there anything at all yet". The tour waits for it, or it
+  // would point at an empty list.
+  const hasRowToSwipe = transactions.length > 0;
 
   useEffect(() => {
     if (!user || homeTourActive) return;
@@ -669,19 +665,17 @@ export default function Dashboard() {
     const next = !addTxTour.seen ? 'fab'
       : !hasRowToSwipe ? null
       : !swipeTour.seen ? 'swipe'
-      : !tabsTour.seen ? 'tabs'
       : null;
     if (!next) return;
-    const t = setTimeout(() => setHomeTourActive(next), next === 'tabs' ? TABS_HINT_DELAY_MS : 1200);
+    const t = setTimeout(() => setHomeTourActive(next), 1200);
     return () => clearTimeout(t);
-  }, [user, homeTourActive, dailyPopupsResolved, recapOpen, budgetSetupOpen, proRequired, budgetCrossedOpen, modalOpen, addTxTour.seen, swipeTour.seen, tabsTour.seen, hasRowToSwipe]);
+  }, [user, homeTourActive, dailyPopupsResolved, recapOpen, budgetSetupOpen, proRequired, budgetCrossedOpen, modalOpen, addTxTour.seen, swipeTour.seen, hasRowToSwipe]);
 
   const advanceHomeTour = useCallback(() => {
     if (homeTourActive === 'fab') addTxTour.markSeen();
     else if (homeTourActive === 'swipe') swipeTour.markSeen();
-    else if (homeTourActive === 'tabs') tabsTour.markSeen();
     setHomeTourActive(null);
-  }, [homeTourActive, addTxTour, swipeTour, tabsTour]);
+  }, [homeTourActive, addTxTour, swipeTour]);
 
   // While the swipe hint is up, show the swipe itself: the first row slides open
   // to its delete button and shuts again, after a beat for the hint to settle and
@@ -733,18 +727,17 @@ export default function Dashboard() {
 
       <Header
         onMenuOpen={openMenu}
-        chartTab={chartTab}
-        onChartTabChange={handleChartTabChange}
         onCalendarOpen={openCalendar}
+        mode={mode}
+        onSelectMode={setMode}
         light={LIGHT_HOME}
-        tabToggleRef={tabToggleRef}
       />
 
       <SummaryCard
         transactions={displayTransactions}
-        chartTab={chartTab}
         timeRange={timeRange}
         onTimeRangeChange={handleTimeRangeChange}
+        mode={mode}
         selectedMonth={selectedMonth}
         year={year}
         selectedPeriod={selectedPeriod}
@@ -752,17 +745,12 @@ export default function Dashboard() {
         light={LIGHT_HOME}
       />
 
+      {/* No period props any more — the list is one running ledger,
+          independent of whatever the chart above is showing. */}
       <TransactionList
         ref={transactionListRef}
         transactions={displayTransactions}
         justAddedId={justAddedId}
-        activeTab={chartTab}
-        chartTab={chartTab}
-        selectedMonth={timeRange === 'month' ? currMonth : selectedMonth}
-        year={timeRange === '5y' ? currYear : year}
-        timeRange={timeRange}
-        selectedPeriod={selectedPeriod}
-        selectedDay={selectedDay}
         onEdit={openEdit}
         onDelete={requestDelete}
         cardRef={txCardRef}
@@ -774,8 +762,14 @@ export default function Dashboard() {
         // bottom-12 (48px) is measured from the raw screen edge — this screen
         // applies no safe-area inset — so it can't go much lower without
         // crowding the ~34pt home-indicator area.
+        //
+        // Flat CTA_COLOR, not the metallic gradient this used to carry — the
+        // rest of the screen went flat (bars, chart, rows) in the redesign,
+        // and a lone glossy dome next to them read as the one leftover piece
+        // of the old look. Same fill every other primary CTA in the app uses
+        // (Add Goal, Save, New goal).
         className="absolute bottom-12 self-center w-[68px] h-[68px] rounded-full items-center justify-center"
-        style={[{ backgroundColor: PILL_ACTIVE_COLOR, left: '50%', marginLeft: -34, zIndex: 50, elevation: 50 }, fabAnimStyle]}
+        style={[{ left: '50%', marginLeft: -34, zIndex: 50, elevation: 50, backgroundColor: CTA_COLOR }, fabAnimStyle]}
       >
         <Pressable
           onPress={openAdd}
@@ -785,7 +779,7 @@ export default function Dashboard() {
           accessibilityRole="button"
           accessibilityLabel="Add transaction"
         >
-          <PlusIcon size={30} color="#ffffff" />
+          <PlusIcon size={30} color="#1a1a1a" />
         </Pressable>
       </Animated.View>
 
@@ -802,14 +796,7 @@ export default function Dashboard() {
         hideRing
         onNext={advanceHomeTour}
       />
-      <TourHint
-        visible={homeTourActive === 'tabs'}
-        targetRef={tabToggleRef}
-        description="Switch between Expense, Income, and Overview here."
-        onNext={advanceHomeTour}
-      />
-
-      <AddModal
+      <AddModalV2
         open={modalOpen}
         onClose={closeAddModal}
         onClosed={handleAddModalClosed}
@@ -866,7 +853,7 @@ export default function Dashboard() {
         >
           <Text style={{ fontSize: 30 }} className="mb-3">🔒</Text>
           <Text className="text-white font-semibold text-base mb-2 text-center">Subscription Required</Text>
-          <Text className="text-white/45 text-base text-center mb-6" style={{ lineHeight: 22 }}>
+          <Text className="text-white/48 text-base text-center mb-6" style={{ lineHeight: 22 }}>
             Your existing transactions are still here. Subscribe to Okana Plus to keep adding new ones.
           </Text>
           <Pressable onPress={subscribeFromProRequired} className="w-full py-[11px] rounded-full items-center" style={{ backgroundColor: 'rgba(74,222,128,0.25)' }}>
@@ -882,7 +869,7 @@ export default function Dashboard() {
         >
           <Text style={{ fontSize: 30 }} className="mb-3">⚠️</Text>
           <Text className="text-white font-semibold text-base mb-2 text-center">You've gone over budget</Text>
-          <Text className="text-white/45 text-base text-center mb-6" style={{ lineHeight: 22 }}>
+          <Text className="text-white/48 text-base text-center mb-6" style={{ lineHeight: 22 }}>
             You're now {formatCurrency(budgetCrossedOverAmount)} over your {formatCurrency(budget.amount)} budget for {MONTH_NAMES[currMonth]}.
           </Text>
           <Pressable onPress={closeBudgetCrossed} className="w-full py-[11px] rounded-full items-center" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
@@ -898,6 +885,7 @@ export default function Dashboard() {
           instant the version check itself resolves. */}
       <UpdateSheet
         open={showUpdate && dailyPopupsResolved && !recapOpen && !budgetSetupOpen && !proRequired && !budgetCrossedOpen && !modalOpen}
+        latestVersion={latestVersion}
         onDismiss={dismissUpdate}
       />
     </Animated.View>

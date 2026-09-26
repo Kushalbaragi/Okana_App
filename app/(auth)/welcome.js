@@ -13,6 +13,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useAudioPlayer } from 'expo-audio';
 import { useAuth } from '../../context/AuthContext';
+import { darkText } from '../../utils/colors';
 import { SuccessBadge } from '../../components/SuccessBadge';
 import { ChevronRight } from '../../components/icons';
 import { reportError } from '../../utils/errors';
@@ -183,7 +184,7 @@ function IntroQuotePage({ onFinish }) {
       <Animated.Text style={[{ color: '#ffffff', fontSize: 24, fontWeight: '700', textAlign: 'center', marginTop: 10 }, line2Style]}>
         Small amounts add up
       </Animated.Text>
-      <Animated.Text style={[{ color: 'rgba(255,255,255,0.45)', fontSize: 14, textAlign: 'center', marginTop: 8 }, line3Style]}>
+      <Animated.Text style={[{ color: darkText.tertiary, fontSize: 14, textAlign: 'center', marginTop: 8 }, line3Style]}>
         Track it, Analyse it
       </Animated.Text>
 

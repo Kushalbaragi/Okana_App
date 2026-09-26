@@ -1,6 +1,7 @@
 import { View, Text } from 'react-native';
 import { ChevronRight } from './icons';
 import { GlassPressable, CARD_RADIUS, SMOOTH } from './Glass';
+import { textColor } from '../utils/colors';
 
 // Shared list-building-block components for Account/Subscription — a grey
 // rounded Card containing Rows separated by hairline Dividers, each Row
@@ -24,8 +25,8 @@ export function Divider({ light = false }) {
 export function SectionLabel({ children, light = false, action = null }) {
   const label = (
     <Text
-      className="text-[11px] font-medium uppercase tracking-widest px-1 pt-2 mb-2"
-      style={{ color: light ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.30)' }}>{children}</Text>
+      className="text-[11px] font-medium uppercase tracking-wider px-4 pt-2 mb-2"
+      style={{ color: textColor(light).disabled }}>{children}</Text>
   );
   if (!action) return label;
   return (
@@ -61,7 +62,7 @@ export function Row({ label, value, onPress, right, labelColor, light = false, a
     <View className="flex-row items-center justify-between px-4 py-[14px]">
       <Text className="text-base" style={{ color: labelColor || (light ? '#111111' : '#ffffff') }}>{label}</Text>
       <View className="flex-row items-center" style={{ gap: 8 }}>
-        {!!value && <Text className="text-xs" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}>{value}</Text>}
+        {!!value && <Text className="text-xs" style={{ color: textColor(light).tertiary }}>{value}</Text>}
         {right || (onPress && !right && <ChevronRight color={light ? 'rgba(0,0,0,0.25)' : undefined} />)}
       </View>
     </View>

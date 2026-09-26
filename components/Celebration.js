@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AccessibilityInfo, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { reportError } from '../utils/errors';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { darkText } from '../utils/colors';
 
 // How long the message stays up. A tap anywhere ends it sooner.
 const TOTAL_MS = 9000;
@@ -114,7 +115,7 @@ export default function Celebration({ title, subtitle, note, onDone }) {
           <Animated.View style={[{ position: 'absolute', alignItems: 'center', paddingHorizontal: 32 }, textStyle]}>
             <Text style={{ fontSize: 24, fontWeight: '600', letterSpacing: -0.3, color: '#ffffff', textAlign: 'center' }}>{title}</Text>
             {!!subtitle && <Text numberOfLines={1} style={{ fontSize: 15, color: 'rgba(255,255,255,0.65)', marginTop: 6 }}>{subtitle}</Text>}
-            {!!note && <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 10, textAlign: 'center' }}>{note}</Text>}
+            {!!note && <Text style={{ fontSize: 12, color: darkText.tertiary, marginTop: 10, textAlign: 'center' }}>{note}</Text>}
           </Animated.View>
         </View>
       </View>

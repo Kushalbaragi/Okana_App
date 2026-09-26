@@ -3,6 +3,7 @@ import { View, useWindowDimensions } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import Svg, { Defs, LinearGradient, Stop, Path, Circle, Line, Text as SvgText, G } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
+import { textColor, EXPENSE, EXPENSE_DIM, EXPENSE_HEX, INCOME, INCOME_DIM, INCOME_HEX } from '../utils/colors';
 
 const CHART_W = 300;
 const CHART_H = 90;
@@ -10,10 +11,10 @@ const PAD_TOP = 12;
 const LABEL_H = 16;
 
 const REVEAL_DURATION = 700;
-// SummaryCard's horizontal chrome around the chart (mx-4 + p-5, both sides)
-// — only used to guess the chart's width before it has been measured, see
-// below. onLayout still has the final say.
-const CARD_CHROME_W = 72;
+// SummaryCard's horizontal chrome around the chart (mx-4, both sides) — only
+// used to guess the chart's width before it has been measured, see below.
+// onLayout still has the final say.
+const CARD_CHROME_W = 32;
 // The last width onLayout reported, kept across mounts. The chart remounts
 // every time the Overview tab is re-entered, and the width doesn't change
 // between those, so every mount after the first starts from the exact value.
@@ -36,7 +37,7 @@ function areaPath(pts, bottom) {
   return `${line} L${pts[pts.length - 1].x.toFixed(1)},${bottom} L${pts[0].x.toFixed(1)},${bottom} Z`;
 }
 
-function LineChart({ incomeData, expenseData, labels, light = false, activeIndex = -1, revealKey }) {
+function LineChart({ incomeData, expenseData, labels, light = false, activeIndex = -1, revealKey, instant = false }) {
   const progress = useSharedValue(0);
   // The reveal-width animation needs a real pixel target, not a percentage —
   // Reanimated interpolates numbers reliably. Measured via onLayout, but
@@ -80,12 +81,21 @@ function LineChart({ incomeData, expenseData, labels, light = false, activeIndex
   // A layout effect, not a regular one: the new range's curve is already in
   // this same commit, so a regular effect would let it paint fully drawn for
   // a frame before the reveal reset it to empty and grew it back.
+  //
+  // `instant` only applies here, not to the mount effect above — entering
+  // Overview (a real mode change, and a fresh mount) always gets the full
+  // sweep; a Month/Year/All swipe while already on Overview is what skips
+  // it, same reasoning as Bar's own `instant` in BarChart.js.
   const prevRevealKeyRef = useRef(revealKey);
   useLayoutEffect(() => {
     if (prevRevealKeyRef.current === revealKey) return;
     prevRevealKeyRef.current = revealKey;
+    if (instant) {
+      progress.value = 1;
+      return;
+    }
     playReveal();
-  }, [revealKey, playReveal]);
+  }, [revealKey, playReveal, instant, progress]);
 
   const isFocused = useIsFocused();
   const wasFocusedRef = useRef(isFocused);
@@ -169,12 +179,12 @@ function LineChart({ incomeData, expenseData, labels, light = false, activeIndex
           <Svg width={containerWidth} height={svgPixelHeight} viewBox={`0 0 ${CHART_W} ${svgH}`}>
             <Defs>
               <LinearGradient id="ig" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%"   stopColor="#4ade80" stopOpacity="0.16" />
-                <Stop offset="100%" stopColor="#4ade80" stopOpacity="0" />
+                <Stop offset="0%"   stopColor={INCOME_HEX} stopOpacity="0.16" />
+                <Stop offset="100%" stopColor={INCOME_HEX} stopOpacity="0" />
               </LinearGradient>
               <LinearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%"   stopColor="#FF4B4B" stopOpacity="0.13" />
-                <Stop offset="100%" stopColor="#FF4B4B" stopOpacity="0" />
+                <Stop offset="0%"   stopColor={EXPENSE_HEX} stopOpacity="0.13" />
+                <Stop offset="100%" stopColor={EXPENSE_HEX} stopOpacity="0" />
               </LinearGradient>
             </Defs>
 
@@ -182,8 +192,8 @@ function LineChart({ incomeData, expenseData, labels, light = false, activeIndex
               <Path d={incomeArea}  fill="url(#ig)" />
               <Path d={expenseArea} fill="url(#eg)" />
 
-              <Path d={expenseLine} stroke="rgba(255,75,75,0.56)" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-              <Path d={incomeLine}  stroke="rgba(74,222,128,0.75)"  strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              <Path d={expenseLine} stroke={EXPENSE_DIM} strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              <Path d={incomeLine}  stroke={INCOME_DIM}  strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
               {/* A vertical guide pinpointing the tapped period — only once
                   something's actually selected, not for the default
@@ -197,8 +207,8 @@ function LineChart({ incomeData, expenseData, labels, light = false, activeIndex
 
               {/* Follows the active selection, defaulting to the last point
                   (the original always-on-end marker) when nothing's picked. */}
-              <Circle cx={incomePts[markerIndex].x}  cy={incomePts[markerIndex].y}  r={isSelected ? 3 : 2.5} fill="#4ade80" />
-              <Circle cx={expensePts[markerIndex].x} cy={expensePts[markerIndex].y} r={isSelected ? 3 : 2.5} fill="rgba(255,75,75,0.92)" />
+              <Circle cx={incomePts[markerIndex].x}  cy={incomePts[markerIndex].y}  r={isSelected ? 3 : 2.5} fill={INCOME} />
+              <Circle cx={expensePts[markerIndex].x} cy={expensePts[markerIndex].y} r={isSelected ? 3 : 2.5} fill={EXPENSE} />
             </G>
 
             <Line x1={0} y1={bottom} x2={CHART_W} y2={bottom} stroke={light ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.18)'} strokeWidth="1" strokeDasharray="2 3" />
@@ -210,7 +220,7 @@ function LineChart({ incomeData, expenseData, labels, light = false, activeIndex
                 y={svgH - 2}
                 textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}
                 fontSize="8.5"
-                fill={light ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.22)'}
+                fill={textColor(light).disabled}
               >
                 {lbl}
               </SvgText>

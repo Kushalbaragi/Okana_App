@@ -4,6 +4,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS
 import { POPUP_RADIUS, SMOOTH } from './Glass';
 import { DialogBackdrop } from './DialogBackdrop';
 import { SETTLE_EASING } from '../utils/motion';
+import { textColor } from '../utils/colors';
 
 const OPEN_MS = 220;
 const CLOSE_MS = 160;
@@ -62,7 +63,7 @@ export function InlineConfirm({ open, title, message, confirmLabel = 'Delete', e
         ]}
       >
         <Text className="font-semibold text-base" style={{ color: text, marginBottom: 8 }}>{title}</Text>
-        <Text className="text-base" style={{ lineHeight: 22, color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', marginBottom: error ? 12 : 24 }}>{message}</Text>
+        <Text className="text-base" style={{ lineHeight: 22, color: textColor(light).tertiary, marginBottom: error ? 12 : 24 }}>{message}</Text>
         {!!error && <Text className="text-base" style={{ color: '#f87171', marginBottom: 20 }}>{error}</Text>}
         <Pressable
           onPress={onConfirm}

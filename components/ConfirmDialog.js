@@ -1,6 +1,7 @@
 import { View, Text, Pressable } from 'react-native';
 import { AnimatedModal } from './AnimatedModal';
 import { POPUP_RADIUS, SMOOTH } from './Glass';
+import { textColor } from '../utils/colors';
 
 // The app's confirm dialog: a card with a title, a message and one button, over
 // the blurred backdrop. Tapping outside it (or the back button) calls `onCancel`.
@@ -28,7 +29,7 @@ export default function ConfirmDialog({ open, title, message, confirmLabel, tone
         }}
       >
         <Text className="font-semibold text-base mb-2" style={{ color: light ? '#111111' : '#ffffff' }}>{title}</Text>
-        <Text className="text-base mb-6" style={{ lineHeight: 22, color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{message}</Text>
+        <Text className="text-base mb-6" style={{ lineHeight: 22, color: textColor(light).tertiary }}>{message}</Text>
         <Pressable onPress={onConfirm} className="w-full py-3 rounded-full items-center" style={{ backgroundColor: confirmBg }}>
           <Text className="text-base font-semibold" style={{ color: confirmColor }}>{confirmLabel}</Text>
         </Pressable>

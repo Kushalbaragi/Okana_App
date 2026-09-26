@@ -13,6 +13,7 @@ import Animated, {
 import { useAudioPlayer } from 'expo-audio';
 import { SuccessBadge } from './SuccessBadge';
 import { SETTLE_EASING } from '../utils/motion';
+import { darkText } from '../utils/colors';
 
 const SUCCESS_SOUND = require('../assets/sounds/success.wav');
 
@@ -122,7 +123,7 @@ export function PaymentProcessing({ succeeded, successMessage = 'Payment is succ
             <Text style={{ color: '#4ade80', fontSize: 16, fontWeight: '600', textAlign: 'center' }}>Processing Payment</Text>
           </FadeIn>
           <FadeIn delay={550} duration={450}>
-            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, fontWeight: '600', letterSpacing: 1, marginTop: 6, textAlign: 'center' }}>HOLD ON</Text>
+            <Text style={{ color: darkText.disabled, fontSize: 11, fontWeight: '600', letterSpacing: 1, marginTop: 6, textAlign: 'center' }}>HOLD ON</Text>
           </FadeIn>
         </Animated.View>
       )}

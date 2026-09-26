@@ -16,6 +16,7 @@ import { FLAGS } from '../utils/flags';
 import { hapticAdded } from '../utils/haptics';
 import { SETTLE_EASING } from '../utils/motion';
 import { OfflineBanner } from './OfflineBanner';
+import { darkText } from '../utils/colors';
 
 // Same drag-to-dismiss tuning as AddModal — one consistent feel for every
 // bottom-sheet page in the app.
@@ -49,7 +50,7 @@ function lastMonthMessage(lastMonthAmount, lastMonthSpent) {
     return {
       stat: `You spent ${formatCurrency(lastMonthSpent)}`,
       hint: 'No budget was set — pick one this month to stay in control.',
-      color: 'rgba(255,255,255,0.4)',
+      color: darkText.tertiary,
     };
   }
   const over = lastMonthSpent > lastMonthAmount;
@@ -306,7 +307,7 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
                       backgroundColor: 'rgba(0,0,0,0.18)', borderColor: 'rgba(255,255,255,0.07)',
                     }}
                   >
-                    <Text className="text-white/40 text-xs font-semibold uppercase tracking-wide mb-1.5">Last month</Text>
+                    <Text className="text-white/35 text-xs font-semibold uppercase tracking-wide mb-1.5">Last month</Text>
                     <Text className="text-white text-base font-medium mb-1">{recap.stat}</Text>
                     <Text className="text-sm" style={{ color: recap.color, lineHeight: 18 }}>{recap.hint}</Text>
                   </View>

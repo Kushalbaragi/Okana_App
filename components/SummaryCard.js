@@ -1,10 +1,12 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Platform } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { parseISO } from 'date-fns';
 import BarChart from './BarChart';
 import LineChart from './LineChart';
 import { GlassPressable } from './Glass';
+import { ChevronRight } from './icons';
 import {
   getMonthTotal,
   getMonthlyTotals,
@@ -15,22 +17,24 @@ import {
   firstBarWithData,
   currentMonthYear,
 } from '../utils/format';
+import { textColor } from '../utils/colors';
+import { CAPTION, TABULAR } from '../utils/type';
 
 const LIFETIME_YEARLY_THRESHOLD = 2; // years of history before "All Time" switches from monthly to yearly bars
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { SETTLE_EASING } from '../utils/motion';
 
+// Temporary — trying the chart with just Month, no Year/All Time picker.
+// Hidden, not deleted; see the render's own comment on RangeSelector.
+const SHOW_RANGE_SELECTOR = false;
+
 const MONTH_LABELS_SHORT = ['J','F','M','A','M','J','J','A','S','O','N','D'];
+
 
 const fmt = new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR',
   minimumFractionDigits: 0, maximumFractionDigits: 0,
 });
-
-// 'ui-rounded', not 'SF Pro Rounded' (that name doesn't resolve — see
-// AmountField.js's own ROUNDED_FONT comment) — used for the headline amount
-// to match the rounded numeral style elsewhere in the app.
-const ROUNDED_FONT = Platform.OS === 'ios' ? 'ui-rounded' : undefined;
 
 // Animates the number as ONE object: the old value fades out and drifts up
 // while the new one fades in from just below.
@@ -52,10 +56,6 @@ const ROUNDED_FONT = Platform.OS === 'ios' ? 'ui-rounded' : undefined;
 // jump and there's no width to animate.
 const HEADLINE_HEIGHT = 52;
 
-// Room above the bar chart (in its own units) so the average line and its label
-// aren't cut off when the average is as tall as the tallest bar. Always the same,
-// whatever the range, so the chart doesn't change height between them.
-const AVG_ROOM = 12;
 const HEADLINE_SWAP_RISE = 8;
 const HEADLINE_ENTER_DURATION = 220;
 // Shorter than the enter on purpose. Both copies are stacked, so a
@@ -93,9 +93,11 @@ const HEADLINE_TEXT_STYLE = {
   textAlign: 'center',
   fontSize: 44,
   lineHeight: HEADLINE_HEIGHT,
-  fontWeight: '600',
-  letterSpacing: -1,
-  fontFamily: ROUNDED_FONT,
+  // A touch heavier than the original hairline (300) — still not semibold,
+  // but the figure was reading as a little thin at this size.
+  fontWeight: '400',
+  letterSpacing: -1.75,
+  ...TABULAR,
 };
 
 function AnimatedAmount({ value, color }) {
@@ -141,27 +143,25 @@ const RANGE_OPTIONS = [
   { id: '5y',    label: 'All' },
 ];
 
+// Plain words, no pills. A segmented control announces itself as chrome
+// before it says anything about the data; three words with only the live
+// one brightened carry the same choice at a fraction of the weight.
 function RangeSelector({ value, onChange, light }) {
   return (
-    <View className="flex-row items-center justify-center mt-6" style={{ gap: 8 }}>
+    // No top margin of its own any more — it used to sit below the chart
+    // and needed the gap itself; now the amount block above it (mb-7)
+    // already provides that space.
+    <View className="flex-row items-center justify-center" style={{ gap: 22 }}>
       {RANGE_OPTIONS.map(opt => (
         value === opt.id ? (
-          // "glass", not "pillActive", even though this is the selected
-          // state of a segmented control. pillActive (#3a3a3a) is tuned for
-          // Header's chart tabs, which sit INSIDE a #161616 container and so
-          // need to be lighter than it to read as raised. These pills sit
-          // directly on the page's pure black, where that same grey is a far
-          // bigger jump and reads as glaring. The standard raised-surface
-          // colour is the right lift against black, and matches every other
-          // card on the screen.
           <GlassPressable
             key={opt.id}
-            variant="glass"
+            variant="field"
             radius={9999}
             onPress={() => onChange(opt.id)}
-            className="px-3 py-1"
+            className="px-1 py-1"
           >
-            <Text className="text-white text-base font-medium">{opt.label}</Text>
+            <Text className="text-base" style={{ color: light ? '#111111' : '#ffffff' }}>{opt.label}</Text>
           </GlassPressable>
         ) : (
           // variant="field" — transparent background (same look as before),
@@ -173,9 +173,9 @@ function RangeSelector({ value, onChange, light }) {
             variant="field"
             radius={9999}
             onPress={() => onChange(opt.id)}
-            className="px-3 py-1"
+            className="px-1 py-1"
           >
-            <Text className="text-base font-medium" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>{opt.label}</Text>
+            <Text className="text-base" style={{ color: textColor(light).disabled }}>{opt.label}</Text>
           </GlassPressable>
         )
       ))}
@@ -183,13 +183,23 @@ function RangeSelector({ value, onChange, light }) {
   );
 }
 
+// What the headline figure is OF, as one caption under it — just the period
+// ("september"). Which of expense/income/overview it's a period OF is
+// Header's ModeSwitch job, at the very top of the screen; this caption only
+// ever names the period itself.
+function PeriodCaption({ periodLabel, light }) {
+  return (
+    <Text style={[CAPTION, { color: textColor(light).tertiary }]}>{periodLabel.toLowerCase()}</Text>
+  );
+}
+
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard — see the matching comment in Header.js.
 function SummaryCard({
   transactions,
-  chartTab,
   timeRange,
   onTimeRangeChange,
+  mode,
   selectedMonth,
   year,
   selectedPeriod,
@@ -242,7 +252,17 @@ function SummaryCard({
     return periodsList.findIndex(p => p.year === selectedPeriod.year && p.month === selectedPeriod.month);
   }, [periodsList, selectedPeriod]);
 
-  const barValues = chartTab === 'income' ? chartData.income : chartData.expense;
+  // What the chart plots depends on ModeSwitch above: Expense/Income show
+  // that one series' own magnitude (always >= 0, so BarChart's per-bar sign
+  // check never fires and every bar comes out one flat colour); Overview is
+  // the net, income minus expense, which BarChart colours per bar by its
+  // own sign (see toneFor in BarChart.js) — a period that came out ahead
+  // reads green, one that didn't reads red, in the same chart.
+  const barValues = useMemo(() => {
+    if (mode === 'expense') return chartData.expense;
+    if (mode === 'income') return chartData.income;
+    return chartData.income.map((inc, i) => inc - (chartData.expense[i] ?? 0));
+  }, [chartData, mode]);
 
   const disabledAfterIndex = useMemo(() => {
     if (timeRange === 'month') return new Date().getDate() - 1;
@@ -282,13 +302,9 @@ function SummaryCard({
     return firstBarWithData({ timeRange, earliestDateStr, year, currYear, currMonth });
   }, [timeRange, earliestDateStr, year, currYear, currMonth, disabledAfterIndex]);
 
-  // Overview's income/expense split for whatever period is currently
-  // shown — same per-period drill-down as Expense/Income's displayAmount
-  // below. Kept separate (rather than only computing the net) so the
-  // breakdown line under the amount can show both halves, not just their
-  // difference.
+  // The income/expense split for whatever period is currently shown —
+  // displayAmount below is just their difference.
   const overviewBreakdown = useMemo(() => {
-    if (chartTab !== 'overview') return null;
     if (timeRange === 'month' && selectedDay != null) {
       return { income: chartData.income[selectedDay - 1] ?? 0, expense: chartData.expense[selectedDay - 1] ?? 0 };
     }
@@ -305,23 +321,20 @@ function SummaryCard({
       income: chartData.income.reduce((a, b) => a + b, 0),
       expense: chartData.expense.reduce((a, b) => a + b, 0),
     };
-  }, [chartTab, timeRange, chartData, transactions, selectedMonth, year, selectedPeriodIndex, selectedDay]);
+  }, [timeRange, chartData, transactions, selectedMonth, year, selectedPeriodIndex, selectedDay]);
 
-  const displayAmount = useMemo(() => {
-    const inc_ = chartTab === 'income';
-    if (chartTab === 'overview') return overviewBreakdown.income - overviewBreakdown.expense;
-    if (timeRange === 'year' && selectedMonth != null) return getMonthTotal(transactions, chartTab, selectedMonth, year);
-    if (timeRange === '5y' && selectedPeriodIndex >= 0) {
-      return inc_ ? chartData.income[selectedPeriodIndex] : chartData.expense[selectedPeriodIndex];
-    }
-    const arr = inc_ ? chartData.income : chartData.expense;
-    if (timeRange === 'month' && selectedDay != null) return arr[selectedDay - 1] ?? 0;
-    return arr.reduce((a, b) => a + b, 0);
-  }, [chartTab, chartData, timeRange, transactions, selectedMonth, year, selectedPeriodIndex, selectedDay, overviewBreakdown]);
+  const displayAmount = overviewBreakdown.income - overviewBreakdown.expense;
 
-  const isIncome    = chartTab === 'income';
-  const isOverview  = chartTab === 'overview';
-  const netPositive = displayAmount >= 0;
+  // The headline is just whichever of the three figures the header's
+  // slider is currently pointed at. Always white now, same for all three
+  // tabs — red/green stay on the slider label and the chart itself, which
+  // is where "this is expense vs income" is actually being said; the
+  // amount doesn't need to repeat it.
+  const headlineValue =
+    mode === 'expense' ? overviewBreakdown.expense :
+    mode === 'income' ? overviewBreakdown.income :
+    displayAmount;
+  const headlineColor = textColor(light).primary;
 
   const periodLabel = useMemo(() => {
     if (timeRange === 'month') {
@@ -341,39 +354,30 @@ function SummaryCard({
     return String(currYear);
   }, [timeRange, selectedMonth, currYear, currMonth, selectedPeriod, earliestYear, selectedDay, year]);
 
-  const lineChartData = useMemo(() => {
-    let income = chartData.income, expense = chartData.expense, labels = chartData.labels;
-    // Daily-within-month view (chartData here is always the current month —
-    // see the chartData useMemo above) — truncate to today's day so the
-    // line doesn't run flat out to day 31 for days that haven't happened
-    // yet, same idea as the other two truncations below.
-    if (timeRange === 'month') {
-      const end = new Date().getDate();
-      income = income.slice(0, end); expense = expense.slice(0, end); labels = labels.slice(0, end);
-    } else if (timeRange === 'year' && year >= currYear) {
-      const end = new Date().getMonth() + 1;
-      income = income.slice(0, end); expense = expense.slice(0, end); labels = labels.slice(0, end);
-    } else if (timeRange === '5y' && lifetimeGranularity === 'year') {
-      // getLifetimeYearly pads forward to MIN_YEAR_SLOTS with as-yet-empty
-      // future years (see its own comment, and BarChart's disabledAfterIndex
-      // handling of the same padding) — same truncation idea, cut the line
-      // off at the current year instead of trailing flat through them.
-      const idx = (chartData.years ?? []).indexOf(currYear);
-      if (idx !== -1) {
-        income = income.slice(0, idx + 1); expense = expense.slice(0, idx + 1); labels = labels.slice(0, idx + 1);
-      }
-    }
-    return { income, expense, labels };
-  }, [chartData, timeRange, year, currYear, lifetimeGranularity]);
 
-  // Includes chartTab — switching Expense<->Income should replay the full
-  // collapse-and-regrow reveal too, not just an actual timeRange/year
-  // change, so every switch reads as a clean redraw from left to right.
-  const animKey   = `${timeRange}-${year}-${chartTab}`;
+  const animKey   = `${timeRange}-${year}-${mode}`;
+
+  // Only a genuine mode switch (or the very first paint) gets the full
+  // grow-from-zero reveal — a Month/Year/All swipe is frequent and minor
+  // (same chart type, just paging), and replaying a staggered regrow on
+  // every single swipe added real perceived lag to that; it now just snaps
+  // in under the same opacity dip-and-recover that already softens the
+  // swap (see chartOpacity below), which reads as instant rather than
+  // laggy. A mode switch is the bigger context change (Overview can even
+  // swap chart types entirely, bars to a line) and keeps the full reveal.
+  //
+  // Writing to a ref during render like this — not in an effect — is what
+  // lets `chartInstant` reflect *this* render's change rather than
+  // lagging a render behind; see React's own "adjusting state as you
+  // render" pattern for why that's safe here (no setState involved).
+  const isFirstRenderRef = useRef(true);
+  const prevModeForRevealRef = useRef(mode);
+  const growFromZero = isFirstRenderRef.current || prevModeForRevealRef.current !== mode;
+  isFirstRenderRef.current = false;
+  prevModeForRevealRef.current = mode;
+  const chartInstant = !growFromZero;
   const labelStep = timeRange === 'month' ? 4 : (timeRange === '5y' && lifetimeGranularity === 'month' ? 6 : 1);
 
-  // Shared between BarChart (Expense/Income) and LineChart (Overview) — same
-  // drill-down selection, just a different chart shape to show it on.
   const chartActiveIndex =
     timeRange === 'month' && selectedDay != null ? selectedDay - 1 :
     timeRange === 'year' ? (selectedMonth ?? -1) :
@@ -381,83 +385,218 @@ function SummaryCard({
     -1;
 
   // Very small, deliberately — a dip-and-recover on the chart's own
-  // opacity when switching between the September/2026/All Time pills
-  // (timeRange only, not every chartTab/Expense-Income-Overview switch).
-  // Never drops fully to 0 — that read as a bigger transition than this
-  // is meant to be; a shallow dip is enough to soften the swap without
-  // becoming its own moment.
-  const prevTimeRangeRef = useRef(timeRange);
+  // opacity when switching between the September/2026/All Time pills, or
+  // between Expense/Income/Overview. Never drops fully to 0 — that read as
+  // a bigger transition than this is meant to be; a shallow dip is enough
+  // to soften the swap without becoming its own moment. animKey (above)
+  // separately regrows every bar from 0 on the same change — this opacity
+  // dip and that regrow are what together read as "seamless" rather than
+  // the bars just snapping to their new heights and colour.
+  // A mode switch still dips-then-recovers around the commit (see the
+  // effect below) — fine there, since growFromZero's own stagger already
+  // gives that transition its own visual continuity. A range swipe used to
+  // do the same, but with `chartInstant` bars now snapping straight to
+  // their final values, dipping AFTER the commit meant the new (already
+  // finished) chart flashed at full opacity for a frame before the dim
+  // even started — the "hard cut" this was meant to hide instead happened
+  // in plain view just ahead of it. Fixed by reordering, for a swipe only:
+  // dim first, swap the data once mostly hidden, reveal after — the
+  // classic dissolve-hides-the-cut trick, not a fade layered on top of an
+  // already-visible cut.
+  //
+  // 0.06 (near-black) fixed the cut but read as the screen going blank for
+  // a beat — correct sequencing doesn't need the dip that deep to hide a
+  // reshuffle, just deep enough that it's not the eye's focus; 0.35 still
+  // masks it while staying a soft dim rather than a blackout, and the
+  // longer, gentler reveal after is what makes it read as settling into
+  // place rather than snapping back.
+  const DIP_OPACITY = 0.35;
+  const DIP_OUT_MS = 120;
+  const DIP_IN_MS = 380;
+
+  const prevSwapKeyRef = useRef(animKey);
   const chartOpacity = useSharedValue(1);
   useEffect(() => {
-    if (prevTimeRangeRef.current === timeRange) return;
-    prevTimeRangeRef.current = timeRange;
-    chartOpacity.value = 0.25;
-    chartOpacity.value = withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) });
-  }, [timeRange, chartOpacity]);
+    if (prevSwapKeyRef.current === animKey) return;
+    prevSwapKeyRef.current = animKey;
+    // Recovery only — a range swipe already dimmed itself before this
+    // commit (see chartSwipe below) and just needs revealing; a mode
+    // switch never dimmed in the first place, so animating to 1 from
+    // wherever it already sits (1) is a harmless no-op there.
+    chartOpacity.value = withTiming(1, { duration: DIP_IN_MS, easing: Easing.out(Easing.cubic) });
+  }, [animKey, chartOpacity]);
   const chartAnimStyle = useAnimatedStyle(() => ({ opacity: chartOpacity.value }));
 
-  return (
-    <View className="mx-4 mb-3 p-5">
-      <Animated.View style={chartAnimStyle}>
-        <Text className="text-base text-center mb-2" style={{ color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.40)' }}>{periodLabel}</Text>
+  // Swipe the chart itself to change Month/Year/All — this is what actually
+  // replaced the pill row (SHOW_RANGE_SELECTOR above): the three states
+  // didn't go away, they just don't need a permanent row of chrome to
+  // reach. Left = forward through the list (Month → Year → All, the same
+  // order RANGE_OPTIONS already defines), right = back; stops at either
+  // end rather than wrapping, since this is a zoom level, not a cycle.
+  // activeOffsetX/failOffsetY mirror AddModal's own Pan gesture — a real
+  // horizontal drag has to clear 15px before this claims the touch at all,
+  // so a plain tap on a bar underneath is never contested.
+  const changeRangeBy = useCallback((delta) => {
+    const idx = RANGE_OPTIONS.findIndex(o => o.id === timeRange);
+    const nextIdx = idx + delta;
+    if (nextIdx < 0 || nextIdx >= RANGE_OPTIONS.length) return;
+    onTimeRangeChange(RANGE_OPTIONS[nextIdx].id);
+  }, [timeRange, onTimeRangeChange]);
 
-        <View className="items-center justify-center mb-8">
-          <AnimatedAmount value={Math.abs(displayAmount)} color={isOverview ? (netPositive ? '#4ade80' : 'rgba(255,75,75,0.92)') : (light ? '#111111' : '#ffffff')} />
+  // Which edge chevrons show, in lockstep with what a swipe can actually
+  // do: Month is the first stop (only a "forward" arrow, on the right —
+  // swiping left is what moves forward), Year sits in the middle (both
+  // directions live), All is the last stop (only "back", on the left).
+  const rangeIndex = RANGE_OPTIONS.findIndex(o => o.id === timeRange);
+  const showLeftChevron = rangeIndex > 0;
+  const showRightChevron = rangeIndex < RANGE_OPTIONS.length - 1;
+
+  const chartSwipe = useMemo(() => Gesture.Pan()
+    .activeOffsetX([-15, 15])
+    .failOffsetY([-10, 10])
+    .onEnd((e) => {
+      const pastThreshold = Math.abs(e.translationX) > 50 || Math.abs(e.velocityX) > 500;
+      if (!pastThreshold) return;
+      const delta = e.translationX < 0 ? 1 : -1;
+      // Dims first, and only calls into JS (which is what actually swaps
+      // the data) once that dim has finished — see the comment above.
+      chartOpacity.value = withTiming(DIP_OPACITY, { duration: DIP_OUT_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
+        if (finished) runOnJS(changeRangeBy)(delta);
+      });
+    }), [changeRangeBy, chartOpacity]);
+
+  return (
+    // mx-5 (20), not mx-4 (16) — matches the Header's own px-5 and the
+    // transaction list's gutter, so the amount, the header icons and the
+    // row text all sit on one shared left edge instead of two. pb-8 (32),
+    // not pb-5 (20): the list right below is a different group (this
+    // card's month/range vs. that period's actual transactions), and wants
+    // the larger between-groups gap rather than the tighter within-card one.
+    <View className="mx-5 mb-1 pt-5 pb-8">
+      <Animated.View style={chartAnimStyle}>
+        <View className="items-center justify-center mb-7">
+          {/* Above the figure now, not below it — the period reads as a
+              heading for the number underneath rather than a caption
+              trailing it. */}
+          <PeriodCaption periodLabel={periodLabel} light={light} />
+
+          <AnimatedAmount value={Math.abs(headlineValue)} color={headlineColor} />
         </View>
 
-        <View className="mt-4">
-          {isOverview ? (
-            // No `key={animKey}` — that forced a full remount on every
-            // period switch, discarding the chart's measured width and
-            // remounting the whole SVG. Staying mounted and passing the
-            // range as `revealKey` gets the same replayed growing reveal
-            // without the remount. It also plays whenever Overview is
-            // entered (fresh mount on a tab switch, or the screen
-            // regaining focus).
-            <LineChart
-              incomeData={lineChartData.income}
-              expenseData={lineChartData.expense}
-              labels={lineChartData.labels}
-              light={light}
-              activeIndex={chartActiveIndex}
-              revealKey={timeRange}
-            />
-          ) : (
-            // No onBarClick/onDeselect: neither chart is a drill-down at any
-            // range. Omitting them is what removes the interaction — BarChart
-            // renders its per-bar touch-target Rects and the deselect-background
-            // Rect only when those props are present.
-            <BarChart
-              values={barValues}
-              labels={chartData.labels}
-              activeIndex={chartActiveIndex}
-              disabledAfterIndex={disabledAfterIndex}
-              disabledBeforeIndex={disabledBeforeIndex}
-              hideLabelAfterIndex={timeRange === '5y' && lifetimeGranularity === 'year' ? disabledAfterIndex : null}
-              isIncome={isIncome}
-              animKey={animKey}
-              labelStep={labelStep}
-              useSqrtScale={timeRange === 'month'}
-              // Not until there's actually data to say it about. On the
-              // first render transactions is still [], so every day reads
-              // as zero and the whole month fills with "no spend" dots —
-              // both a lie (nothing has loaded yet, that isn't the same as
-              // nothing was spent) and the source of the Expense-tab-only
-              // flicker: when the real values land, every day that turns
-              // out to have spending unmounts its dot and mounts a Bar in
-              // its place, kicking off a second staggered reveal partway
-              // through the first. Income never showed it because its
-              // zero-days render an invisible placeholder instead of a dot.
-              noSpendDots={timeRange === 'month' && chartTab === 'expense' && transactions.length > 0}
-              showAverage={timeRange === 'month' || timeRange === 'year'}
-              topPad={AVG_ROOM}
-              light={light}
-            />
+        {/* Hidden, not removed — Month/Year/All is off for now, so the chart
+            just always shows Month (timeRange's own default in index.js).
+            The selector, its handler and timeRange itself are all still
+            wired up underneath; flip SHOW_RANGE_SELECTOR back on to bring
+            the row back exactly as it was. */}
+        {SHOW_RANGE_SELECTOR && (
+          <RangeSelector value={timeRange} onChange={onTimeRangeChange} light={light} />
+        )}
+
+        {/* position:'relative' scopes the chevrons below to just this
+            chart's own box, not the whole card — otherwise they'd center
+            across the amount block above too. */}
+        <View style={{ position: 'relative' }}>
+          <GestureDetector gesture={chartSwipe}>
+            <View className="mt-4">
+              {mode === 'overview' ? (
+                // Overview means "both together" — this is the same
+                // income/expense pair barValues derives its net from, just
+                // plotted as two lines instead of collapsed into one signed
+                // bar per period. LineChart doesn't know about
+                // disabledAfterIndex (a future day/month that hasn't
+                // happened yet still plots as a real 0), unlike BarChart —
+                // it never needed that for its one existing caller
+                // (MonthlyRecapModal, always a completed past period), so a
+                // month still in progress can read as "dropped to zero"
+                // near the end rather than "hasn't happened yet."
+                <LineChart
+                  incomeData={chartData.income}
+                  expenseData={chartData.expense}
+                  labels={chartData.labels}
+                  activeIndex={chartActiveIndex}
+                  revealKey={animKey}
+                  instant={chartInstant}
+                  light={light}
+                />
+              ) : (
+                // No onBarClick/onDeselect: this chart isn't a drill-down at
+                // any range. Omitting them is what removes the interaction —
+                // BarChart renders its per-bar touch-target Rects and the
+                // deselect-background Rect only when those props are present.
+                <BarChart
+                  values={barValues}
+                  labels={chartData.labels}
+                  activeIndex={chartActiveIndex}
+                  // Nothing tapped yet still gets one bar at full strength: the
+                  // most recent real period (today, this month, this year — the
+                  // same index the disabled-after cutoff is measured from), so
+                  // the chart opens pointing at where you actually are.
+                  accentIndex={chartActiveIndex >= 0 ? chartActiveIndex : disabledAfterIndex}
+                  disabledAfterIndex={disabledAfterIndex}
+                  disabledBeforeIndex={disabledBeforeIndex}
+                  hideLabelAfterIndex={timeRange === '5y' && lifetimeGranularity === 'year' ? disabledAfterIndex : null}
+                  // Expense mode's values are all >= 0 magnitudes with
+                  // isIncome false, so toneFor's sign check never fires and
+                  // every bar comes out flat red; Income mode mirrors that
+                  // for green. (Overview no longer reaches this branch.)
+                  isIncome={mode !== 'expense'}
+                  animKey={animKey}
+                  labelStep={labelStep}
+                  useSqrtScale={timeRange === 'month'}
+                  // Only in Expense + Month: that's the one combination
+                  // where a bar reading exactly 0 is unambiguously "spent
+                  // nothing that day" — Income's 0 isn't a "no spend" day,
+                  // and Year/All's bars are monthly totals, not single days.
+                  noSpendDots={mode === 'expense' && timeRange === 'month'}
+                  showAverage={false}
+                  instant={chartInstant}
+                  light={light}
+                />
+              )}
+            </View>
+          </GestureDetector>
+
+          {/* Pure hint, not a second tap target — pointerEvents="none" so
+              these never compete with the swipe/tap gesture underneath,
+              which already covers the whole chart. bottom:36 (more than the
+              axis labels alone need) shifts the centring region up a bit,
+              closer to the bars' own visual centre rather than the chart's
+              full height including its labels. Which side(s) show is just
+              rangeIndex's position in RANGE_OPTIONS (see above). */}
+          {showLeftChevron && (
+            <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, bottom: 36, justifyContent: 'center' }}>
+              <View style={{ transform: [{ rotate: '180deg' }] }}>
+                <ChevronRight color={textColor(light).disabled} />
+              </View>
+            </View>
+          )}
+          {showRightChevron && (
+            <View pointerEvents="none" style={{ position: 'absolute', right: 0, top: 0, bottom: 36, justifyContent: 'center' }}>
+              <ChevronRight color={textColor(light).disabled} />
+            </View>
           )}
         </View>
-      </Animated.View>
 
-      <RangeSelector value={timeRange} onChange={onTimeRangeChange} light={light} />
+        {/* A plain page-indicator, not colored — Month/Year/All aren't a
+            money direction, so red/green stay reserved for the chart
+            itself. Says "this is a slider, and you're on the Nth stop" at a
+            glance; no animation of its own, deliberately — it just snaps
+            with everything else now that a range swipe is instant (see
+            chartInstant above), rather than adding its own separate motion. */}
+        <View pointerEvents="none" style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 10 }}>
+          {RANGE_OPTIONS.map((opt, i) => (
+            <View
+              key={opt.id}
+              style={{
+                width: i === rangeIndex ? 6 : 5,
+                height: i === rangeIndex ? 6 : 5,
+                borderRadius: 3,
+                backgroundColor: i === rangeIndex ? textColor(light).primary : textColor(light).disabled,
+              }}
+            />
+          ))}
+        </View>
+      </Animated.View>
     </View>
   );
 }

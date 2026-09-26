@@ -12,6 +12,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { reportError } from '../utils/errors';
+import { darkText } from '../utils/colors';
 
 export const ONBOARDING_SEEN_KEY = 'okana_onboarding_seen';
 
@@ -103,7 +104,7 @@ export default function OnboardingScreen() {
       <Text
         style={{
           position: 'absolute', bottom: insets.bottom + 20, left: 0, right: 0,
-          textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 13,
+          textAlign: 'center', color: darkText.disabled, fontSize: 13,
         }}
       >
         Built with ♥ by Kushal

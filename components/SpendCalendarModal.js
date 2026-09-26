@@ -27,6 +27,7 @@ import ErrorBoundary from './ErrorBoundary';
 import { useTourStep } from '../hooks/useTourStep';
 import { SETTLE_EASING } from '../utils/motion';
 import { OfflineBanner } from './OfflineBanner';
+import { textColor } from '../utils/colors';
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // Monday-first
 
@@ -172,9 +173,10 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
     if (open) {
       setVisible(true);
       openingRef.current = true;
-      // Defaults to today so its transactions are visible right away
-      // instead of an empty grid the user has to tap into first.
-      setSelectedDate(today());
+      // No default date — opening now shows the month's average spend per
+      // day (see the render below) rather than jumping straight to today's
+      // transactions, so that's what a user sees first every time.
+      setSelectedDate(null);
       // Otherwise browsing to a past/future month, closing, and reopening
       // later (even a different day) leaves the calendar stuck wherever it
       // was last left instead of back on the actual current month — this
@@ -244,7 +246,21 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
   // transaction add/edit/delete anywhere in the app would re-run these full
   // history scans even while the calendar is closed.
   const dailyTotals = useMemo(() => (visible ? getDailyExpenseTotals(transactions) : {}), [transactions, visible]);
-  const thresholds = useMemo(() => (visible ? getIntensityThresholds(dailyTotals) : { low: 0, high: 0 }), [dailyTotals, visible]);
+  // Scoped to the month actually being viewed, not the account's whole
+  // history — getIntensityThresholds over every day ever meant a month
+  // with no unusually large days still shaded weakly the whole way through
+  // if some other month (maybe years back) happened to have the account's
+  // biggest-ever single day. Each month should be judged against its own
+  // spending, not a number from a different month entirely.
+  const thresholds = useMemo(() => {
+    if (!visible) return { max: 0 };
+    const monthTotals = {};
+    for (let d = 1; d <= daysInMonth; d++) {
+      const str = toStr(new Date(year, month, d));
+      if (dailyTotals[str] != null) monthTotals[str] = dailyTotals[str];
+    }
+    return getIntensityThresholds(monthTotals);
+  }, [visible, dailyTotals, year, month, daysInMonth]);
   const earliest = useMemo(() => (visible ? getEarliestDate(transactions) : null), [transactions, visible]);
 
   // The most recent day (in the currently-viewed month, not in the future)
@@ -262,6 +278,25 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
     }
     return null;
   }, [visible, dailyTotals, year, month, daysInMonth, todayStr]);
+
+  // Average daily spend for the viewed month, over "real" days only — from
+  // whichever is later of the month's start or the account's earliest
+  // activity, through today (or the month's end, for a past month). Shown
+  // in the space below the grid until a date is tapped, at which point that
+  // day's own transactions take over the same spot (see the render below).
+  const monthAverage = useMemo(() => {
+    if (!visible) return null;
+    let sum = 0;
+    let count = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const str = toStr(new Date(year, month, d));
+      if (str > todayStr) continue;
+      if (earliest && str < earliest) continue;
+      sum += dailyTotals[str] || 0;
+      count++;
+    }
+    return count > 0 ? sum / count : null;
+  }, [visible, dailyTotals, year, month, daysInMonth, todayStr, earliest]);
 
   // Below spentDayStr on purpose: its dependency list reads that value, and a
   // const can't be read before its declaration — Hermes' Babel transform
@@ -360,10 +395,16 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                 only the visible one takes touches. */}
             <View style={{ flex: 1 }}>
               <Animated.View style={[StyleSheet.absoluteFill, budgetLayerStyle]} pointerEvents={section === 'budget' ? 'auto' : 'none'}>
+            {/* Tapping anywhere in this section that isn't one of its own
+                buttons/date cells (those have their own onPress, which
+                claims the touch first) clears the selected date, so the
+                month's average comes back — the same as tapping the
+                selected date again, just from anywhere else on the page. */}
+            <Pressable onPress={() => setSelectedDate(null)}>
             {/* Fixed — not inside any ScrollView, so it never scrolls or
                 shifts regardless of how many transactions the day list
                 below ends up showing. */}
-            <View style={{ paddingHorizontal: 20, marginTop: windowHeight * 0.1 }}>
+            <View style={{ paddingHorizontal: 20, marginTop: windowHeight * 0.06 }}>
                 {recap?.available && (
                   <Pressable
                     onPress={recap.onOpen}
@@ -371,7 +412,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                     style={{ gap: 5, alignSelf: 'center' }}
                   >
                     <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#a855f7' }} />
-                    <Text className="text-xs font-medium" style={{ color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)' }}>
+                    <Text className="text-xs font-medium" style={{ color: textColor(light).tertiary }}>
                       Monthly Summary ›
                     </Text>
                   </Pressable>
@@ -413,7 +454,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                   <View className="flex-row mb-1.5">
                     {DAYS.map((d, i) => (
                       <View key={i} style={{ flex: 1 }}>
-                        <Text className="text-center text-[11px] font-medium" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.25)' }}>
+                        <Text className="text-center text-[11px] font-medium" style={{ color: textColor(light).disabled }}>
                           {d}
                         </Text>
                       </View>
@@ -458,21 +499,27 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                   <View className="flex-row items-center justify-center mt-3" style={{ gap: 12 }}>
                     <View className="flex-row items-center" style={{ gap: 4 }}>
                       <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(34,197,94,0.5)' }} />
-                      <Text style={{ fontSize: 10, color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>No spend</Text>
+                      <Text style={{ fontSize: 10, color: textColor(light).disabled }}>No spend</Text>
                     </View>
                     <View className="flex-row items-center" style={{ gap: 4 }}>
-                      <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(255,75,75,0.5)' }} />
-                      <Text style={{ fontSize: 10, color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>Spent</Text>
+                      <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.5)' }} />
+                      <Text style={{ fontSize: 10, color: textColor(light).disabled }}>Spent</Text>
                     </View>
                   </View>
                 </View>
                 </View>
+            </Pressable>
 
             {/* Tapping a date loads its transactions right below the fixed
                 group, each row sliding up and fading in with a small
-                stagger. Scrolls internally (rather than growing the page)
-                once there are enough to overflow the remaining space. */}
-            {selectedDate && (
+                stagger, replacing the month's average that sits here by
+                default. Scrolls internally (rather than growing the page)
+                once there are enough to overflow the remaining space. Not
+                inside the dismiss-Pressable above on purpose — that used to
+                wrap this too, and scrolling the transaction list sometimes
+                registered as a tap on it, snapping back to the average
+                mid-scroll. */}
+            {selectedDate ? (
               <View style={{ flex: 1, marginTop: 20, paddingHorizontal: 20 }}>
                 <View style={{ maxWidth: 320, alignSelf: 'center', width: '100%', flex: 1 }}>
                   <View className="flex-row items-center justify-between mb-3">
@@ -484,7 +531,7 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                     </Text>
                   </View>
                   {dayTxs.length === 0 ? (
-                    <Text className="text-base" style={{ color: light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.30)' }}>
+                    <Text className="text-base" style={{ color: textColor(light).tertiary }}>
                       You saved today - Nothing spent 🌿
                     </Text>
                   ) : (
@@ -501,6 +548,15 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                     </ScrollView>
                   )}
                 </View>
+              </View>
+            ) : monthAverage != null && (
+              <View style={{ marginTop: 20, paddingHorizontal: 20, alignItems: 'center' }}>
+                <Text className="text-sm" style={{ color: textColor(light).tertiary }}>
+                  Average spent per day
+                </Text>
+                <Text className="text-2xl font-bold mt-1" style={{ color: light ? '#111111' : '#ffffff' }}>
+                  {formatCurrency(monthAverage)}
+                </Text>
               </View>
             )}
 

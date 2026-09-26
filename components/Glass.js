@@ -1,15 +1,21 @@
 import { View, Pressable, TextInput, StyleSheet } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring } from 'react-native-reanimated';
+import { SPRING_BOUNCY } from '../utils/motion';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 // Flat, solid surfaces — no BlurView/backdrop-filter. Replaces the previous
 // glassmorphism look (translucent tint over a real-time blur), which read as
 // muddy/inconsistent on Android's software-rendered blur path.
-// Exported so pill toggles that set this same color inline (Header's chart
-// tabs, AddModal's Expense/Income toggle) can share one source of truth
-// instead of duplicating the hex.
+// Exported so pill toggles that set this same color inline (SegmentedSwitch,
+// AddModal's Expense/Income toggle) can share one source of truth instead of
+// duplicating the hex.
 export const PILL_ACTIVE_COLOR = '#3a3a3a';
+// The one primary-CTA fill used everywhere (Add Goal, Save, New goal) —
+// exported so the home screen's own add button, which isn't a
+// GlassPressable (it has its own bespoke press animation), can match it
+// exactly instead of hardcoding the hex a second time.
+export const CTA_COLOR = '#d4d4d4';
 // Same reasoning as PILL_ACTIVE_COLOR: the transaction list builds its card
 // out of its own stacked rows rather than a GlassView, so it needs this hex
 // directly. Exported so it can't drift from the surface every other card in
@@ -31,7 +37,7 @@ export const INPUT_TEXT_STYLE = { includeFontPadding: false, textAlignVertical: 
 const BG = {
   glass: CARD_COLOR,  // regular cards, secondary buttons/pills
   modal: CARD_COLOR,  // bottom sheets / modal surfaces — same solid surface color throughout, deliberately
-  active: '#d4d4d4', // primary CTAs — one consistent treatment app-wide
+  active: CTA_COLOR, // primary CTAs — one consistent treatment app-wide
   pillActive: PILL_ACTIVE_COLOR, // "this option is selected" state on segmented pill toggles
   field: 'transparent', // bordered form-field surfaces (inputs, date pickers) — outline only, no fill
 };
@@ -99,8 +105,8 @@ export function GlassPressable({ variant = 'active', radius = RADIUS.xl, corners
     opacity.value = withTiming(1, { duration: PRESS_OUT_DURATION });
     // A light spring back to 1 rather than a linear withTiming — it
     // overshoots slightly past full size before settling, reading as a
-    // bit of "give" on release instead of a flat stop.
-    if (pressScale) scale.value = withSpring(1, { damping: 12, stiffness: 220 });
+    // bit of "give" on release instead of a flat stop. SPRING_BOUNCY.
+    if (pressScale) scale.value = withSpring(1, SPRING_BOUNCY);
     onPressOut?.(e);
   };
 

@@ -3,6 +3,7 @@ import { View, Text } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { AnimatedModal } from './AnimatedModal';
 import { SuccessBadge } from './SuccessBadge';
+import { textColor } from '../utils/colors';
 
 const DEFAULT_HOLD_MS = 3000;
 
@@ -62,13 +63,13 @@ export function ActionOverlay({
               <Animated.View style={[{ height: '100%', borderRadius: 4, backgroundColor: '#4ade80' }, fillStyle]} />
             </View>
             <Text className="font-semibold text-base text-center" style={{ color: light ? '#111111' : '#ffffff' }}>{workingText}</Text>
-            <Text className="text-base mt-1 text-center" style={{ color: light ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.40)' }}>{workingSubtext}</Text>
+            <Text className="text-base mt-1 text-center" style={{ color: textColor(light).tertiary }}>{workingSubtext}</Text>
           </>
         ) : phase === 'notConfirmed' ? (
           <>
             <Text className="font-semibold text-base text-center" style={{ color: light ? '#111111' : '#ffffff' }}>{notConfirmedText}</Text>
             {!!notConfirmedSubtext && (
-              <Text className="text-base mt-1 text-center" style={{ color: light ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.40)' }}>{notConfirmedSubtext}</Text>
+              <Text className="text-base mt-1 text-center" style={{ color: textColor(light).tertiary }}>{notConfirmedSubtext}</Text>
             )}
           </>
         ) : (

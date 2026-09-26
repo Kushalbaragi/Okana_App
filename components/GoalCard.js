@@ -5,7 +5,9 @@ import Animated, { FadeOut, LinearTransition } from 'react-native-reanimated';
 import { GlassPressable } from './Glass';
 import { CheckIcon, ChevronRight } from './icons';
 import { SwipeDeleteAction, useSwipeDelete } from './SwipeDeleteAction';
-import { Card, ProgressBar, ROUNDED_FONT, POSITIVE, dim, money } from './savingsShared';
+import { Card, ProgressBar, POSITIVE, dim, money } from './savingsShared';
+import { textColor } from '../utils/colors';
+import { TABULAR } from '../utils/type';
 
 // When a goal is deleted it fades out and the ones below slide up into its
 // place, so the removal is something you see happen.
@@ -46,20 +48,25 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
         accessibilityLabel={done ? `${goal.name}, completed` : goal.name}
       >
         <View className="flex-row items-center justify-between" style={{ gap: 12 }}>
-          <View className="flex-row items-center" style={{ gap: 8, flexShrink: 1 }}>
-            {done && <CheckIcon size={14} color={POSITIVE} />}
-            <Text className="text-[15px]" numberOfLines={1} style={{ flexShrink: 1, color: dim(light, done ? 0.5 : 0.4) }}>{goal.name}</Text>
+          <View style={{ flexShrink: 1 }}>
+            <View className="flex-row items-center" style={{ gap: 8 }}>
+              {done && <CheckIcon size={14} color={POSITIVE} />}
+              <Text className="text-[15px]" numberOfLines={1} style={{ flexShrink: 1, color: done ? dim(light, 0.5) : textColor(light).tertiary }}>{goal.name}</Text>
+            </View>
+            {!!goal.location && (
+              <Text className="text-xs" numberOfLines={1} style={{ marginTop: 2, color: dim(light, 0.4) }}>{goal.location}</Text>
+            )}
           </View>
           <View className="flex-row items-center" style={{ gap: 6 }}>
             <View style={{ backgroundColor: 'rgba(74,222,128,0.14)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 }}>
               <Text className="text-[13px] font-medium" style={{ color: '#4ade80' }}>{goal.percent}%</Text>
             </View>
-            <ChevronRight color={dim(light, 0.3)} />
+            <ChevronRight color={textColor(light).disabled} />
           </View>
         </View>
         <View className="flex-row items-baseline" style={{ gap: 8, marginTop: 8, marginBottom: done ? 0 : 12 }}>
-          <Text style={{ fontSize: 24, fontWeight: '600', letterSpacing: -0.5, color: figure, fontFamily: ROUNDED_FONT }}>{money(goal.saved)}</Text>
-          <Text className="text-[13px]" numberOfLines={1} style={{ flexShrink: 1, color: dim(light, 0.4) }}>of {money(goal.target)}</Text>
+          <Text style={{ fontSize: 24, fontWeight: '400', letterSpacing: -0.5, color: figure, ...TABULAR }}>{money(goal.saved)}</Text>
+          <Text className="text-[13px]" numberOfLines={1} style={{ flexShrink: 1, color: textColor(light).tertiary }}>of {money(goal.target)}</Text>
         </View>
         {!done && <ProgressBar percent={goal.percent} height={5} light={light} />}
       </GlassPressable>
