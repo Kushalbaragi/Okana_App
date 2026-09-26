@@ -4,6 +4,7 @@
 export const storageKeys = {
   transactions: (userId) => `okana_txs_${userId}`,
   savings: (userId) => `okana_savings_${userId}`,
+  budgetPlan: (userId) => `okana_budget_plan_${userId}`,
   subscription: (userId) => `okana_subscription_cache_${userId}`,
   pendingBudget: (userId) => `okana_pending_budget_${userId}`,
   syncedBudget: (userId) => `okana_synced_budget_${userId}`,

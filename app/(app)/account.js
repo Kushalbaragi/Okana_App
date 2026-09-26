@@ -608,6 +608,8 @@ export default function AccountPage() {
         step = 'budget';
         const { error: budgetError } = await supabase.from('monthly_budgets').delete().eq('user_id', user.id);
         if (budgetError) throw budgetError;
+        const { error: planError } = await supabase.from('budget_plan_items').delete().eq('user_id', user.id);
+        if (planError) throw planError;
         // Entries go with their goals (ON DELETE CASCADE).
         step = 'savings';
         const { error: savingsError } = await supabase.from('savings_goals').delete().eq('user_id', user.id);
@@ -659,6 +661,10 @@ export default function AccountPage() {
         step = 'budget';
         const { error: budgetError } = await supabase.from('monthly_budgets').delete().eq('user_id', user.id);
         if (budgetError) throw budgetError;
+        // budget_plan_items has the same no-cascade FK to auth.users —
+        // cleared here too, before delete_user().
+        const { error: planError } = await supabase.from('budget_plan_items').delete().eq('user_id', user.id);
+        if (planError) throw planError;
         // Cleared explicitly like the rest, even though the FK cascades, so a
         // failure here reads as a savings problem rather than a mystery
         // failure of delete_user().

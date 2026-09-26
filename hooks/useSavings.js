@@ -12,12 +12,23 @@ import { today } from '../utils/format'
 
 function goalFromRow(row) {
   return {
-    id:          row.id,
-    name:        row.name,
-    target:      parseFloat(row.target_amount),
-    location:    row.location || '',
-    completedAt: row.completed_at,
-    createdAt:   row.created_at,
+    id:           row.id,
+    name:         row.name,
+    target:       parseFloat(row.target_amount),
+    location:     row.location || '',
+    kind:         row.kind || 'savings',
+    // Debt only: total number of EMIs the loan runs for. Optional — a loan
+    // added without one still tracks payments and shows its grid, just with
+    // no "of N" count or "left" figure.
+    tenureMonths: row.tenure_months ?? null,
+    // Debt only: EMIs already paid before the loan was added here (most
+    // loans aren't added on day one). Backdates the grid's start by this
+    // many months and counts toward `paidCount` without needing an entry of
+    // its own for each — logging 34 backdated payments to say "34 already
+    // paid" would be exactly the kind of data entry this grid is meant to avoid.
+    emisPaidBefore: row.emis_paid || 0,
+    completedAt:  row.completed_at,
+    createdAt:    row.created_at,
   }
 }
 
@@ -197,42 +208,50 @@ export function useSavings() {
     posthog?.capture('savings_goal_reached', { days_since_created: daysSince(goal.createdAt) })
   }, [posthog])
 
-  const addGoal = useCallback(async ({ name, target, location }) => {
+  // `kind` — 'savings' (default, every existing caller) or 'debt'. A debt
+  // goal is the exact same shape read backwards: `target` is what was
+  // borrowed rather than what's being saved toward, and `saved` (below,
+  // still just summed from entries) is what's been paid off rather than
+  // what's been set aside. Nothing else about the read/write path changes.
+  const addGoal = useCallback(async ({ name, target, location, kind = 'savings', tenureMonths = null, emisPaidBefore = 0 }) => {
     // Client-generated so the optimistic row and the server row share an id.
     const id = Crypto.randomUUID()
     const goal = {
       id,
-      name:        name.trim(),
-      target:      parseFloat(target),
-      location:    (location || '').trim(),
-      completedAt: null,
-      createdAt:   new Date().toISOString(),
+      name:         name.trim(),
+      target:       parseFloat(target),
+      location:     (location || '').trim(),
+      kind,
+      tenureMonths,
+      emisPaidBefore,
+      completedAt:  null,
+      createdAt:    new Date().toISOString(),
     }
     const result = await write({
       apply: () => setStore(s => ({ ...s, goals: [...s.goals, goal] })),
       request: () => supabase.from('savings_goals')
-        .insert({ id, user_id: user.id, name: goal.name, target_amount: goal.target, location: goal.location })
+        .insert({ id, user_id: user.id, name: goal.name, target_amount: goal.target, location: goal.location, kind, tenure_months: tenureMonths, emis_paid: emisPaidBefore })
         .select().single(),
       rollback: () => setStore(s => ({ ...s, goals: s.goals.filter(g => g.id !== id) })),
       onSuccess: row => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? goalFromRow(row) : g) })),
     })
     if (result.success) {
       hapticAdded()
-      posthog?.capture('savings_goal_created')
+      posthog?.capture(kind === 'debt' ? 'debt_created' : 'savings_goal_created')
       return { ...result, id }
     }
     return result
   }, [write, user, posthog])
 
-  const editGoal = useCallback(async (id, { name, target, location }) => {
+  const editGoal = useCallback(async (id, { name, target, location, tenureMonths = null, emisPaidBefore = 0 }) => {
     const prev = storeRef.current.goals.find(g => g.id === id)
     if (!prev) return { success: false, error: FALLBACK_MESSAGE }
-    const next = { ...prev, name: name.trim(), target: parseFloat(target), location: (location || '').trim() }
+    const next = { ...prev, name: name.trim(), target: parseFloat(target), location: (location || '').trim(), tenureMonths, emisPaidBefore }
     const saved = netFor(storeRef.current.entries, id)
     const result = await write({
       apply: () => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? next : g) })),
       request: () => supabase.from('savings_goals')
-        .update({ name: next.name, target_amount: next.target, location: next.location })
+        .update({ name: next.name, target_amount: next.target, location: next.location, tenure_months: tenureMonths, emis_paid: emisPaidBefore })
         .eq('id', id).eq('user_id', user.id),
       rollback: () => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? prev : g) })),
     })
@@ -418,9 +437,28 @@ export function useSavings() {
     return { success: true, ...done }
   }, [user, isOnlineRef, notifyOffline, refresh])
 
-  // Goals with their derived numbers attached, split into active / completed.
-  // Money in a completed goal is treated as spent on the thing it was for, so
-  // it isn't counted in the total.
+  // Goals with their derived numbers attached, split into active / completed
+  // — and, before that, split by `kind` so a debt's numbers never mix into a
+  // savings total or vice versa. Money in a completed goal is treated as
+  // spent (or, for debt, paid off) on the thing it was for, so it isn't
+  // counted in the total.
+  //
+  // `remaining` (target - saved, floored at 0) is what a debt's own UI shows
+  // as its headline figure — unused by Savings' own UI today, but it's the
+  // same derived-from-entries number either way, so it's computed once here
+  // rather than requiring every caller to redo `target - saved` itself.
+  const splitByStatus = (goals) => {
+    // Closest to done first. Compared on the exact ratio rather than the
+    // rounded percent the list shows, so two goals both at "61%" (or both capped
+    // at 100%) still order by who is really further along; a dead heat keeps the
+    // order the goals were created in.
+    const active = goals
+      .filter(g => !g.completedAt)
+      .sort((x, y) => (y.saved / y.target) - (x.saved / x.target) || x.createdAt.localeCompare(y.createdAt))
+    const completed = goals.filter(g => g.completedAt).sort((a, b) => b.completedAt.localeCompare(a.completedAt))
+    return { all: goals, active, completed, total: active.reduce((sum, g) => sum + g.saved, 0) }
+  }
+
   const derived = useMemo(() => {
     const entriesByGoal = new Map()
     for (const e of store.entries) {
@@ -431,29 +469,24 @@ export function useSavings() {
       const entries = (entriesByGoal.get(g.id) || []).slice().sort(byDateDesc)
       const saved = Math.max(0, entries.reduce((sum, e) => sum + (e.type === 'add' ? e.amount : -e.amount), 0))
       const percent = g.target > 0 ? Math.min(100, Math.round((saved / g.target) * 100)) : 0
-      return { ...g, entries, saved, percent, reached: saved >= g.target }
+      const remaining = Math.max(0, g.target - saved)
+      return { ...g, entries, saved, percent, remaining, reached: saved >= g.target }
     })
-    // Closest to done first. Compared on the exact ratio rather than the
-    // rounded percent the list shows, so two goals both at "61%" (or both capped
-    // at 100%) still order by who is really further along; a dead heat keeps the
-    // order the goals were created in.
-    const active = all
-      .filter(g => !g.completedAt)
-      .sort((x, y) => (y.saved / y.target) - (x.saved / x.target) || x.createdAt.localeCompare(y.createdAt))
-    const completed = all.filter(g => g.completedAt).sort((a, b) => b.completedAt.localeCompare(a.completedAt))
     return {
-      all,
-      active,
-      completed,
-      totalSaved: active.reduce((sum, g) => sum + g.saved, 0),
+      savings: splitByStatus(all.filter(g => g.kind !== 'debt')),
+      debt: splitByStatus(all.filter(g => g.kind === 'debt')),
     }
   }, [store])
 
   return useMemo(() => ({
-    goals: derived.active,
-    completedGoals: derived.completed,
-    allGoals: derived.all,
-    totalSaved: derived.totalSaved,
+    goals: derived.savings.active,
+    completedGoals: derived.savings.completed,
+    allGoals: derived.savings.all,
+    totalSaved: derived.savings.total,
+    debts: derived.debt.active,
+    completedDebts: derived.debt.completed,
+    allDebts: derived.debt.all,
+    totalOwed: derived.debt.active.reduce((sum, g) => sum + g.remaining, 0),
     loading,
     refresh,
     addGoal,

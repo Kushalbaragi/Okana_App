@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, Keyboard, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS, interpolateColor, FadeIn, FadeOut } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS, FadeIn, FadeOut } from 'react-native-reanimated';
 import { InlineSheet } from './InlineSheet';
 import SegmentedSwitch from './SegmentedSwitch';
 import CalendarPicker from './CalendarPicker';
@@ -10,10 +10,12 @@ import { useAmountEntry } from '../hooks/useAmountEntry';
 import { AmountRow } from './AmountField';
 import { GlassPressable, INPUT_TEXT_STYLE } from './Glass';
 import { useShake } from '../hooks/useShake';
-import AmountRuler, { RulerFigure, MIN_TARGET } from './AmountRuler';
+import AmountEntrySheet, { FieldRow } from './AmountEntrySheet';
+import { GOAL_SCALE } from './AmountRuler';
 import { formatCurrency, formatDayLabel, today } from '../utils/format';
 import { CalendarIcon } from './icons';
 import { textColor } from '../utils/colors';
+import { KIND_COPY, DEBT_SUGGESTIONS } from './savingsShared';
 
 // Same as AddModal's description pill, so the two sheets read as one family.
 const PILL_H = 40;
@@ -26,6 +28,9 @@ export const GOAL_SUGGESTIONS = ['Emergency fund', 'Vacation', 'Bike', 'Home', '
 // suggestions above. Not an exhaustive list or an enum — the field is free
 // text, these are just a fast path for the common cases.
 const LOCATION_SUGGESTIONS = ['Bank', 'Liquid Fund', 'Chit Fund', 'Cash'];
+
+// Same idea, for a loan's "From" field — who it's owed to.
+const DEBT_FROM_SUGGESTIONS = ['Bank', 'Friend', 'Family', 'NBFC'];
 
 const MONEY_TYPES = [
   { id: 'add', label: 'Add' },
@@ -62,54 +67,6 @@ function TextPill({ value, onChangeText, placeholder, maxLength, shake, light, a
   );
 }
 
-// The primary button above the keypad, running the full width of the sheet.
-function ActionRow({ primaryLabel, onPrimary, disabled }) {
-  return (
-    <View style={{ paddingHorizontal: 20, paddingBottom: 20 }}>
-      <GlassPressable
-        variant="active"
-        radius={9999}
-        disabled={disabled}
-        onPress={onPrimary}
-        style={{ paddingVertical: 16, alignItems: 'center' }}
-      >
-        <Text className="text-black text-base font-semibold">{primaryLabel}</Text>
-      </GlassPressable>
-    </View>
-  );
-}
-
-// A labelled field row. The one being edited wears a green outline that fades in
-// and out as the focus moves between rows, so it is always clear which one the
-// keypad (or keyboard) is talking to.
-function FieldRow({ label, active, onPress, shake, light, children }) {
-  const on = useSharedValue(active ? 1 : 0);
-  useEffect(() => {
-    on.value = withTiming(active ? 1 : 0, { duration: 180, easing: Easing.out(Easing.cubic) });
-  }, [active, on]);
-  const outline = useAnimatedStyle(() => ({
-    borderColor: interpolateColor(on.value, [0, 1], [light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)', 'rgba(74,222,128,0.5)']),
-  }));
-
-  return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>
-      <Animated.View
-        style={[
-          {
-            height: 48, borderRadius: 14, borderWidth: 1, paddingHorizontal: 16,
-            flexDirection: 'row', alignItems: 'center', gap: 10,
-            backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.18)',
-          },
-          outline,
-        ]}
-      >
-        <Text style={{ width: 56, fontSize: 13, color: textColor(light).tertiary }}>{label}</Text>
-        <Animated.View style={[{ flex: 1, justifyContent: 'center' }, shake.style]}>{children}</Animated.View>
-      </Animated.View>
-    </Pressable>
-  );
-}
-
 // New goal / edit goal. The target is set on a ruler rather than typed: a goal
 // is a round-ish number you feel your way to, not a figure you know to the
 // rupee, and dragging to it is quicker (and more fun) than tapping it out.
@@ -118,214 +75,162 @@ function FieldRow({ label, active, onPress, shake, light, children }) {
 // user nothing to adjust, and most goals are nearer a lakh than nothing.
 const DEFAULT_TARGET = 100000;
 
-export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onSubmit, light = false }) {
+export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onSubmit, light = false, kind = 'savings' }) {
   const isEdit = !!goal;
-  const [name, setName] = useState('');
-  const [target, setTarget] = useState(DEFAULT_TARGET);
+  const copy = KIND_COPY[kind];
+  const nameSuggestions = isEdit ? [] : (kind === 'debt' ? DEBT_SUGGESTIONS : GOAL_SUGGESTIONS);
+  const fromSuggestions = kind === 'debt' ? DEBT_FROM_SUGGESTIONS : LOCATION_SUGGESTIONS;
+
+  // Debt's own extra fields (Where/From, Tenure, Already paid) — owned here,
+  // not by the shared sheet, and merged into its `{ name, amount }` at
+  // submit time. Reset on every open, same as the shared sheet's own name
+  // and amount.
   const [location, setLocation] = useState('');
-  const [nameFocused, setNameFocused] = useState(false);
+  const [tenureMonths, setTenureMonths] = useState('');
+  const [emisPaidBefore, setEmisPaidBefore] = useState('');
   const [locationFocused, setLocationFocused] = useState(false);
-  const [error, setError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  // Bumped each time the sheet opens, which is what tells the ruler to go back
-  // to the target it is being given rather than wherever it was left.
-  const [session, setSession] = useState(0);
-  const nameRef = useRef(null);
+  const [tenureFocused, setTenureFocused] = useState(false);
+  const [emisPaidFocused, setEmisPaidFocused] = useState(false);
   const locationRef = useRef(null);
-  const nameShake = useShake();
-  const amountShake = useShake();
+  const tenureRef = useRef(null);
+  const emisPaidRef = useRef(null);
   const locationShake = useShake();
+  const tenureShake = useShake();
+  const emisPaidShake = useShake();
 
   useEffect(() => {
     if (!open) return;
-    setName(goal ? goal.name : initialName);
-    setTarget(goal ? goal.target : DEFAULT_TARGET);
     setLocation(goal ? goal.location : '');
-    setNameFocused(false);
+    setTenureMonths(goal?.tenureMonths ? String(goal.tenureMonths) : '');
+    setEmisPaidBefore(goal?.emisPaidBefore ? String(goal.emisPaidBefore) : '');
     setLocationFocused(false);
-    setError('');
-    setSubmitting(false);
-    setSession(n => n + 1);
+    setTenureFocused(false);
+    setEmisPaidFocused(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // No closing mid-request — the result (and any error) would land on a sheet
-  // the user can no longer see.
-  const handleClose = useCallback(() => { if (!submitting) onClose(); }, [submitting, onClose]);
+  const handleSubmit = useCallback(({ name, amount }) => {
+    const tenure = kind === 'debt' && parseInt(tenureMonths, 10) > 0 ? parseInt(tenureMonths, 10) : null;
+    const paidBefore = kind === 'debt' && parseInt(emisPaidBefore, 10) > 0 ? parseInt(emisPaidBefore, 10) : 0;
+    return onSubmit({ name, target: amount, location, kind, tenureMonths: tenure, emisPaidBefore: paidBefore });
+  }, [onSubmit, kind, location, tenureMonths, emisPaidBefore]);
 
-  async function handleSubmit() {
-    if (submitting) return;
-    const nameInvalid = !name.trim();
-    const targetInvalid = !(target >= MIN_TARGET);
-    if (nameInvalid || targetInvalid) {
-      if (nameInvalid) nameShake.shake();
-      if (targetInvalid) amountShake.shake();
-      return;
-    }
-    Keyboard.dismiss();
-    setSubmitting(true);
-    setError('');
-    const result = await onSubmit({ name, target, location });
-    if (result?.success === false) {
-      setSubmitting(false);
-      // Offline: the app's offline banner has said so, and the sheet stays open
-      // to try again — no red message on top of it.
-      if (!result.offline) setError(result.error || 'Something went wrong. Please try again.');
-      return;
-    }
-    onClose();
-  }
-
-  const muted = textColor(light).tertiary;
-  const surface = light ? '#FAFAF8' : '#161616';
-
-  return (
-    // Shorter than the sheets that carry a keypad — the ruler replaces it, and
-    // a tall sheet with nothing in the bottom half reads as unfinished.
-    <InlineSheet
-      open={open}
-      onClose={handleClose}
-      onClosed={onClosed}
-      light={light}
-      heightRatio={0.74}
-      dismissible={!submitting}
-      footer={(
-        <ActionRow
-          primaryLabel={isEdit ? 'Save' : 'Add Goal'}
-          onPrimary={handleSubmit}
-          disabled={submitting}
-        />
-      )}
-    >
-      <ScrollView
-        style={{ flexGrow: 0 }}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingHorizontal: 20 }}
-        bounces={false}
-        overScrollMode="never"
-      >
-        <Text
-          className="text-center"
-          style={{ fontSize: 21, fontWeight: '500', letterSpacing: -0.3, marginBottom: 18, color: light ? '#111111' : '#ffffff' }}
-        >
-          {isEdit ? 'Edit goal' : 'New goal'}
-        </Text>
-
-        <FieldRow label="Goal" active={nameFocused} onPress={() => nameRef.current?.focus()} shake={nameShake} light={light}>
+  const extraFields = (
+    <>
+      <View style={{ marginTop: 28 }}>
+        <FieldRow label={copy.whereFieldLabel} active={locationFocused} onPress={() => locationRef.current?.focus()} shake={locationShake} light={light}>
           <TextInput
-            ref={nameRef}
-            value={name}
-            onChangeText={setName}
-            onFocus={() => setNameFocused(true)}
-            onBlur={() => setNameFocused(false)}
-            placeholder="Goal name"
+            ref={locationRef}
+            value={location}
+            onChangeText={setLocation}
+            onFocus={() => setLocationFocused(true)}
+            onBlur={() => setLocationFocused(false)}
+            placeholder={copy.wherePlaceholder}
             placeholderTextColor={light ? '#b0b0b0' : '#4d4d4d'}
-            maxLength={60}
-            autoCapitalize="sentences"
+            maxLength={40}
+            autoCapitalize="words"
             returnKeyType="done"
             onSubmitEditing={Keyboard.dismiss}
             style={[INPUT_TEXT_STYLE, { fontSize: 16, color: light ? '#111111' : '#ffffff', height: 48, paddingVertical: 0 }]}
           />
         </FieldRow>
-
-        {/* Ideas for the name, only while there isn't one — once something is
-            there they would just take up room. */}
-        {!isEdit && !name.trim() && (
-          <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              style={{ marginHorizontal: -20, marginTop: 8, flexGrow: 0 }}
-              contentContainerStyle={{ paddingHorizontal: 20, gap: 8 }}
-            >
-              {GOAL_SUGGESTIONS.map(suggestion => (
-                <GlassPressable
-                  key={suggestion}
-                  variant="field"
-                  radius={9999}
-                  onPress={() => { Keyboard.dismiss(); setName(suggestion); }}
-                  accessibilityRole="button"
-                  accessibilityLabel={suggestion}
-                  style={{ paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)' }}
-                >
-                  <Text className="text-sm" style={{ color: light ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.65)' }}>{suggestion}</Text>
-                </GlassPressable>
-              ))}
-            </ScrollView>
-          </Animated.View>
-        )}
-
-        <View style={{ marginTop: 28 }}>
-          <FieldRow label="Where" active={locationFocused} onPress={() => locationRef.current?.focus()} shake={locationShake} light={light}>
-            <TextInput
-              ref={locationRef}
-              value={location}
-              onChangeText={setLocation}
-              onFocus={() => setLocationFocused(true)}
-              onBlur={() => setLocationFocused(false)}
-              placeholder="Bank, liquid fund... (optional)"
-              placeholderTextColor={light ? '#b0b0b0' : '#4d4d4d'}
-              maxLength={40}
-              autoCapitalize="words"
-              returnKeyType="done"
-              onSubmitEditing={Keyboard.dismiss}
-              style={[INPUT_TEXT_STYLE, { fontSize: 16, color: light ? '#111111' : '#ffffff', height: 48, paddingVertical: 0 }]}
-            />
-          </FieldRow>
-        </View>
-
-        {/* Ideas for where the money sits, only while there isn't one — same
-            pattern as the name suggestions above. */}
-        {!location.trim() && (
-          <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)} style={{ marginBottom: 6 }}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              style={{ marginHorizontal: -20, marginTop: 8, flexGrow: 0 }}
-              contentContainerStyle={{ paddingHorizontal: 20, gap: 8 }}
-            >
-              {LOCATION_SUGGESTIONS.map(suggestion => (
-                <GlassPressable
-                  key={suggestion}
-                  variant="field"
-                  radius={9999}
-                  onPress={() => { Keyboard.dismiss(); setLocation(suggestion); }}
-                  accessibilityRole="button"
-                  accessibilityLabel={suggestion}
-                  style={{ paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)' }}
-                >
-                  <Text className="text-sm" style={{ color: light ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.65)' }}>{suggestion}</Text>
-                </GlassPressable>
-              ))}
-            </ScrollView>
-          </Animated.View>
-        )}
-      </ScrollView>
-
-      {!!error && <Text className="text-red-400 text-base text-center mx-5 mb-2">{error}</Text>}
-
-      {/* Whatever room is left between the name field and the button goes to
-          the target, centred in it and nudged a little above true centre (the
-          bottom padding). The ruler runs edge to edge, so only the label and
-          the figure sit inside the sheet's own side padding. */}
-      <View style={{ flex: 1, justifyContent: 'center', paddingBottom: 24 }}>
-        <Text className="text-center text-[13px]" style={{ color: muted }}>Target</Text>
-        <Animated.View style={[{ alignItems: 'center', marginTop: 2, marginBottom: 6 }, amountShake.style]}>
-          <RulerFigure value={target} light={light} />
-        </Animated.View>
-
-        <AmountRuler
-          initialValue={isEdit ? goal.target : DEFAULT_TARGET}
-          sessionKey={session}
-          onChange={setTarget}
-          light={light}
-          surface={surface}
-        />
       </View>
-    </InlineSheet>
+
+      {/* Ideas for where the money sits, only while there isn't one — same
+          pattern as the shared sheet's own name suggestions. */}
+      {!location.trim() && (
+        <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)} style={{ marginBottom: 6 }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            style={{ marginHorizontal: -20, marginTop: 8, flexGrow: 0 }}
+            contentContainerStyle={{ paddingHorizontal: 20, gap: 8 }}
+          >
+            {fromSuggestions.map(suggestion => (
+              <GlassPressable
+                key={suggestion}
+                variant="field"
+                radius={9999}
+                onPress={() => { Keyboard.dismiss(); setLocation(suggestion); }}
+                accessibilityRole="button"
+                accessibilityLabel={suggestion}
+                style={{ paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)' }}
+              >
+                <Text className="text-sm" style={{ color: light ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.65)' }}>{suggestion}</Text>
+              </GlassPressable>
+            ))}
+          </ScrollView>
+        </Animated.View>
+      )}
+
+      {/* Debt only: how many EMIs the loan runs for, and how many were
+          already paid before it was added here — most loans aren't added
+          on day one. Both optional, so its page can show "34 of 60 paid,
+          26 left" instead of restarting the count from zero. */}
+      {kind === 'debt' && (
+        <View style={{ marginTop: 28, flexDirection: 'row', gap: 12 }}>
+          <View style={{ flex: 1 }}>
+            <FieldRow label={copy.tenureFieldLabel} active={tenureFocused} onPress={() => tenureRef.current?.focus()} shake={tenureShake} light={light}>
+              <TextInput
+                ref={tenureRef}
+                value={tenureMonths}
+                onChangeText={t => setTenureMonths(t.replace(/[^0-9]/g, '').slice(0, 3))}
+                onFocus={() => setTenureFocused(true)}
+                onBlur={() => setTenureFocused(false)}
+                placeholder="Months"
+                placeholderTextColor={light ? '#b0b0b0' : '#4d4d4d'}
+                keyboardType="number-pad"
+                maxLength={3}
+                returnKeyType="done"
+                onSubmitEditing={Keyboard.dismiss}
+                style={[INPUT_TEXT_STYLE, { fontSize: 16, color: light ? '#111111' : '#ffffff', height: 48, paddingVertical: 0 }]}
+              />
+            </FieldRow>
+          </View>
+          <View style={{ flex: 1 }}>
+            <FieldRow label={copy.alreadyPaidFieldLabel} active={emisPaidFocused} onPress={() => emisPaidRef.current?.focus()} shake={emisPaidShake} light={light}>
+              <TextInput
+                ref={emisPaidRef}
+                value={emisPaidBefore}
+                onChangeText={t => setEmisPaidBefore(t.replace(/[^0-9]/g, '').slice(0, 3))}
+                onFocus={() => setEmisPaidFocused(true)}
+                onBlur={() => setEmisPaidFocused(false)}
+                placeholder="EMIs"
+                placeholderTextColor={light ? '#b0b0b0' : '#4d4d4d'}
+                keyboardType="number-pad"
+                maxLength={3}
+                returnKeyType="done"
+                onSubmitEditing={Keyboard.dismiss}
+                style={[INPUT_TEXT_STYLE, { fontSize: 16, color: light ? '#111111' : '#ffffff', height: 48, paddingVertical: 0 }]}
+              />
+            </FieldRow>
+          </View>
+        </View>
+      )}
+    </>
+  );
+
+  return (
+    <AmountEntrySheet
+      open={open}
+      onClose={onClose}
+      onClosed={onClosed}
+      light={light}
+      heightRatio={0.74}
+      title={isEdit ? copy.sheetTitleEdit : copy.sheetTitleNew}
+      initialName={goal ? goal.name : initialName}
+      nameLabel={copy.nameFieldLabel}
+      namePlaceholder={copy.namePlaceholder}
+      nameSuggestions={nameSuggestions}
+      extraFields={extraFields}
+      initialAmount={isEdit ? goal.target : DEFAULT_TARGET}
+      amountLabel={copy.amountFieldLabel}
+      amountHint={kind === 'debt' ? "What's owed today, not the original loan amount" : undefined}
+      scale={GOAL_SCALE}
+      submitLabel={isEdit ? 'Save' : copy.submitLabel}
+      onSubmit={handleSubmit}
+    />
   );
 }
 
@@ -335,7 +240,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
 // calendar over the button row and keypad) and keypad. It can't literally be
 // AddModal — that is its own native Modal, and this page is already inside
 // one — so it is built from the same pieces inside an InlineSheet instead.
-export function MoneySheet({ open, onClose, onClosed, goalName, entry, initialType = 'add', maxWithdraw = 0, onSubmit, light = false }) {
+export function MoneySheet({ open, onClose, onClosed, goalName, entry, initialType = 'add', maxWithdraw = 0, onSubmit, light = false, kind = 'savings' }) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const isEdit = !!entry;
@@ -398,6 +303,8 @@ export function MoneySheet({ open, onClose, onClosed, goalName, entry, initialTy
     if (!value || value <= 0) { amountShake.shake(); return; }
     // A new withdrawal can be checked here for a friendlier message; an edit
     // is checked by the hook, which knows what the entry's own change does.
+    // Debt never offers Withdraw (see the switch below), so `type` can't
+    // actually be 'withdraw' for a debt entry — this guard is a no-op there.
     if (!isEdit && type === 'withdraw' && value > maxWithdraw) {
       amountShake.shake();
       setError(`Only ${formatCurrency(maxWithdraw)} is saved in ${goalName}.`);
@@ -499,15 +406,20 @@ export function MoneySheet({ open, onClose, onClosed, goalName, entry, initialTy
         bounces={false}
         overScrollMode="never"
       >
-        <SegmentedSwitch
-          options={MONEY_TYPES}
-          value={type}
-          onChange={setType}
-          buttonWidth={toggleButtonWidth}
-          trackColor="rgba(0,0,0,0.15)"
-          light={light}
-        />
-        <Text className="text-center text-[13px]" numberOfLines={1} style={{ color: muted, marginTop: 22 }}>
+        {/* Debt only ever logs a payment — no Withdraw side to a loan, so
+            the toggle that exists purely to pick a direction has nothing
+            to pick between and is skipped entirely. */}
+        {kind !== 'debt' && (
+          <SegmentedSwitch
+            options={MONEY_TYPES}
+            value={type}
+            onChange={setType}
+            buttonWidth={toggleButtonWidth}
+            trackColor="rgba(0,0,0,0.15)"
+            light={light}
+          />
+        )}
+        <Text className="text-center text-[13px]" numberOfLines={1} style={{ color: muted, marginTop: kind === 'debt' ? 0 : 22 }}>
           {goalName}
         </Text>
         <Animated.View style={[{ alignItems: 'center', marginTop: 6, marginBottom: 28 }, amountShake.style]}>

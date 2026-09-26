@@ -11,6 +11,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../hooks/useTransactions';
 import { useBudget } from '../../hooks/useBudget';
 import { useSavings } from '../../hooks/useSavings';
+import { useBudgetPlan } from '../../hooks/useBudgetPlan';
 import { useWidgetSync } from '../../hooks/useWidgetSync';
 import { useSubscription } from '../../hooks/useSubscription';
 import { getSubscriptionDisplayStatus } from '../../utils/trial';
@@ -73,17 +74,6 @@ async function markRecapViewedServerSide(userId, monthId) {
   }
 }
 
-// The calendar's "Monthly Summary" CTA is only visible on the day the
-// recap is actually seen, not the whole rest of the month — this stamps
-// that day so the next app-open can check it.
-async function markRecapAvailableToday(userId) {
-  try {
-    await AsyncStorage.setItem(`okana_recap_available_date_${userId}`, today());
-  } catch {
-    // best-effort
-  }
-}
-
 // AsyncStorage's own "already shown this month" flag lives only on-device —
 // a reinstall wipes it, which used to make the recap pop up again for a
 // month the account had already seen it for. The server-side write
@@ -115,6 +105,11 @@ export default function Dashboard() {
   // Lives here (not inside the calendar page) so goals are already loaded the
   // first time it opens, same as the budget above.
   const savings = useSavings();
+  // Same reasoning as savings above — lives here so the plan is already
+  // loaded the first time the calendar page opens. `refreshTransactions` so
+  // checking a line off (which writes a real expense) shows up on Home
+  // without waiting for its own next natural refresh.
+  const budgetPlan = useBudgetPlan(refreshTransactions);
   useWidgetSync({ transactions, budget, goals: savings.goals });
   const { subscription, loading: subLoading, refresh: refreshSubscription } = useSubscription(user);
   const trialInfo = useMemo(() => getSubscriptionDisplayStatus(subscription, today()), [subscription]);
@@ -211,8 +206,6 @@ export default function Dashboard() {
 
   const [recapOpen, setRecapOpen] = useState(false);
   const [recapSlides, setRecapSlides] = useState([]);
-  const [recapMonthName, setRecapMonthName] = useState('');
-  const [recapAvailable, setRecapAvailable] = useState(false);
 
   const [budgetSetupOpen, setBudgetSetupOpen] = useState(false);
   const [budgetSetupPending, setBudgetSetupPending] = useState(false);
@@ -298,24 +291,6 @@ export default function Dashboard() {
       // monthId below — they're unrelated keys for unrelated systems.
       const recapMonthId = `${prev.year}-${String(prev.month).padStart(2, '0')}`;
 
-      // The CTA is available only on the day the recap was actually seen —
-      // check whether that stamped date is today, not just whether there's
-      // data to review. Deliberately doesn't build the full slide data here
-      // (getMonthlyRecapSlides) — this whole effect re-runs on every
-      // transaction add/edit/delete (transactions is a dependency below),
-      // so doing that work here would rebuild last month's charts on every
-      // single transaction change just to answer a yes/no question. The
-      // slides are built lazily, only once the recap is actually about to
-      // be shown — see openRecapFromCalendar and the auto-open block below.
-      if (hasAnyRecapData(transactions, prev.month, prev.year)) {
-        const availDate = await AsyncStorage.getItem(`okana_recap_available_date_${user.id}`);
-        if (cancelled) return;
-        setRecapMonthName(MONTH_NAMES[prev.month]);
-        setRecapAvailable(availDate === todayStr);
-      } else if (!cancelled) {
-        setRecapAvailable(false);
-      }
-
       const shownKey = `okana_insight_shown_${user.id}`;
       const shownVal = await AsyncStorage.getItem(shownKey);
       if (shownVal === todayStr) { if (!cancelled) setDailyPopupsResolved(true); return; }
@@ -336,8 +311,6 @@ export default function Dashboard() {
           amount: budget.lastMonthAmount,
           spent: budget.lastMonthSpent,
         }, budget.hasBudget));
-        setRecapMonthName(MONTH_NAMES[prev.month]);
-        setRecapAvailable(true);
         // A short buffer before presenting this modal — this effect can fire
         // in the same tick as AddModal closing (adding a transaction changes
         // `transactions`, which is this effect's own dependency), and two
@@ -348,7 +321,6 @@ export default function Dashboard() {
         if (cancelled) return;
         setRecapOpen(true);
         setDailyPopupsResolved(true);
-        markRecapAvailableToday(user.id);
         markRecapViewedServerSide(user.id, recapMonthId);
         return;
       }
@@ -383,10 +355,7 @@ export default function Dashboard() {
       amount: budget.lastMonthAmount,
       spent: budget.lastMonthSpent,
     }, budget.hasBudget));
-    setRecapMonthName(MONTH_NAMES[prev.month]);
-    setRecapAvailable(true);
     setRecapOpen(true);
-    markRecapAvailableToday(user.id);
     markRecapViewedServerSide(user.id, recapMonthId);
   }, [params.openRecap, user, txLoading, budget.loading, transactions, budget.lastMonthAmount, budget.lastMonthSpent, budget.hasBudget, router]);
 
@@ -433,48 +402,6 @@ export default function Dashboard() {
     setRecapOpen(false);
     setBudgetSetupOpen(true);
   }, []);
-
-  // Opening a second native Modal before SpendCalendarModal's own close
-  // animation has actually finished is broken on Android (see the note in
-  // SpendCalendarModal.js) — rather than guess a delay long enough to cover
-  // it, stash what should open next and let SpendCalendarModal's onClosed
-  // (fired only once it's truly gone) trigger it. (Setting a budget from the
-  // calendar isn't one of these: that sheet opens on the calendar page itself.)
-  const pendingAfterCalendarClose = useRef(null); // 'recap' | null
-
-  // Holds whatever this render's transactions/budget values are, purely so
-  // openRecapFromCalendar below can build the actual slide data on demand
-  // (when the user taps the CTA) without needing transactions/budget in its
-  // own dependency array — see the comment on the availability effect above
-  // for why that matters.
-  const recapInputsRef = useRef(null);
-  recapInputsRef.current = { transactions, lastMonthAmount: budget.lastMonthAmount, lastMonthSpent: budget.lastMonthSpent, hasBudget: budget.hasBudget };
-
-  const openRecapFromCalendar = useCallback(() => {
-    const { month, year: cy } = currentMonthYear();
-    const prev = prevMonthYear(month, cy);
-    const { transactions: txs, lastMonthAmount, lastMonthSpent, hasBudget } = recapInputsRef.current;
-    setRecapSlides(getMonthlyRecapSlides(txs, prev.month, prev.year, { amount: lastMonthAmount, spent: lastMonthSpent }, hasBudget));
-    setRecapMonthName(MONTH_NAMES[prev.month]);
-    pendingAfterCalendarClose.current = 'recap';
-    setCalendarOpen(false);
-  }, []);
-
-  const handleCalendarClosed = useCallback(() => {
-    const pending = pendingAfterCalendarClose.current;
-    pendingAfterCalendarClose.current = null;
-    if (pending === 'recap') setRecapOpen(true);
-  }, []);
-
-  // Memoized — SpendCalendarModal stays mounted and memo()-wrapped even
-  // while closed, so a fresh object reference here on every unrelated
-  // Dashboard re-render (switching chart tabs, adding a transaction, etc.)
-  // would defeat that memo every time.
-  const recapForCalendar = useMemo(() => (
-    recapAvailable
-      ? { available: true, monthName: recapMonthName, onOpen: openRecapFromCalendar }
-      : null
-  ), [recapAvailable, recapMonthName, openRecapFromCalendar]);
 
   // What finishing with the budget setup records, wherever it was opened: it no
   // longer needs to be offered on the home screen this month.
@@ -590,9 +517,9 @@ export default function Dashboard() {
   // right after it — not opened directly there because AddModal is still
   // mid-close at that point (its own native <Modal> is still up), and two
   // native Modals mounted at once is broken on Android (same constraint
-  // documented on SpendCalendarModal/pendingAfterCalendarClose above).
-  // Stashing the amount and waiting for addModalClosed to flip true mirrors
-  // that same stash-then-fire pattern.
+  // documented on SpendCalendarModal/AddModal above). Stashing the amount
+  // and waiting for addModalClosed to flip true mirrors that same
+  // stash-then-fire pattern.
   const pendingBudgetCrossedRef = useRef(null);
 
   // Wraps addTransaction so it can compare this month's spend right before
@@ -821,11 +748,9 @@ export default function Dashboard() {
       <SpendCalendarModal
         open={calendarOpen}
         onClose={closeCalendar}
-        onClosed={handleCalendarClosed}
-        transactions={transactions}
-        recap={recapForCalendar}
         budget={budgetForCalendar}
         savings={savings}
+        budgetPlan={budgetPlan}
         light={LIGHT_HOME}
         userId={user?.id}
         slideX={calendarSlideX}

@@ -2,22 +2,10 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, View, Text, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, runOnJS, Easing } from 'react-native-reanimated';
-import { addMonths, subMonths, startOfMonth, getDaysInMonth } from 'date-fns';
-import {
-  formatCurrency,
-  formatCurrencyFull,
-  formatDateFull,
-  getDailyExpenseTotals,
-  getIntensityThresholds,
-  getEarliestDate,
-  spendShadeFor,
-  today,
-  toDateStr as toStr,
-} from '../utils/format';
-import { MONTH_NAMES as MONTHS } from '../utils/monthlyRecap';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, Easing } from 'react-native-reanimated';
 import BudgetStatusBar from './BudgetStatusBar';
 import BudgetSetupModal from './BudgetSetupModal';
+import BudgetPlan, { AddBudgetItemSheet } from './BudgetPlan';
 import { TourHint } from './TourHint';
 import { BackIcon } from './icons';
 import SegmentedSwitch from './SegmentedSwitch';
@@ -27,15 +15,16 @@ import ErrorBoundary from './ErrorBoundary';
 import { useTourStep } from '../hooks/useTourStep';
 import { SETTLE_EASING } from '../utils/motion';
 import { OfflineBanner } from './OfflineBanner';
-import { textColor } from '../utils/colors';
 
-const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // Monday-first
-
-// The page has two sections, switched from the header: the budget + spend
-// calendar it always was, and savings goals.
+// The page has three sections, switched from the header: the budget bar it
+// always was, savings goals, and debt (loans tracked the same way as a
+// savings goal, just paid down instead of built up — see savingsShared.js's
+// KIND_COPY and useSavings.js's own comment on how one goal shape covers
+// both).
 const SECTIONS = [
   { id: 'budget', label: 'Budget' },
   { id: 'savings', label: 'Savings' },
+  { id: 'debt', label: 'Debt' },
 ];
 // Same fade the home screen uses when a tab switches.
 const SECTION_FADE_MS = 220;
@@ -49,41 +38,6 @@ const CALENDAR_SLIDE_DURATION = 480;
 // How long after the budget sheet closes before the tour may point at the budget
 // bar — long enough that the sheet is gone and the new budget has been seen.
 const BUDGET_SHEET_TOUR_DELAY_MS = 2000;
-// The "tap a day" hint waits this long after the calendar has opened.
-const TAP_DATE_TOUR_DELAY_MS = 2000;
-
-// Each row slides up and fades in with a small stagger, rather than the
-// whole day's list appearing at once.
-function DayTransactionRow({ tx, index, light }) {
-  const progress = useSharedValue(0);
-
-  useEffect(() => {
-    progress.value = withDelay(index * 55, withTiming(1, { duration: 320, easing: SETTLE_EASING }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tx.id]);
-
-  const rowStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [{ translateY: (1 - progress.value) * 14 }],
-  }));
-
-  return (
-    <Animated.View style={[{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, rowStyle]}>
-      <Text className="text-base" numberOfLines={1} style={{ flex: 1, color: light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)' }}>
-        {tx.description || (tx.type === 'income' ? 'Income' : 'Expense')}
-      </Text>
-      <Text
-        className="text-base"
-        style={{
-          fontWeight: '500',
-          color: tx.type === 'income' ? '#4ade80' : light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)',
-        }}
-      >
-        {tx.type === 'income' ? '+' : '-'}{formatCurrencyFull(tx.amount)}
-      </Text>
-    </Animated.View>
-  );
-}
 
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard (and the flows it opens) — see the matching comment in
@@ -98,12 +52,9 @@ function DayTransactionRow({ tx, index, light }) {
 // amount, spent, percent — plus what setting one needs: `onSubmit`, last month's
 // amount and spend, and `onSetupClosed` for the caller's own bookkeeping when the
 // sheet closes. The sheet opens right here on the page, not by closing it first.
-function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budget, savings, light = false, userId, slideX }) {
+function SpendCalendarModal({ open, onClose, onClosed, budget, savings, budgetPlan, light = false, userId, slideX }) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const now = new Date();
-  const [view, setView] = useState(startOfMonth(now));
-  const [selectedDate, setSelectedDate] = useState(null);
 
   // Which section is showing. Deliberately survives closing and reopening
   // (this component stays mounted between opens), so it comes back where it
@@ -113,16 +64,72 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
   const [section, setSection] = useState('budget');
   const [detailGoalId, setDetailGoalId] = useState(null);
   const savingsUI = useSavingsUI();
-  const sectionProgress = useSharedValue(0); // 0 budget -> 1 savings
+  // Debt is a second, fully independent instance of the same goal-tracking
+  // UI — its own sheet/confirm state and its own selected-item id, since
+  // opening a loan's detail page has nothing to do with a savings goal's.
+  const debtUI = useSavingsUI();
+  const [detailDebtId, setDetailDebtId] = useState(null);
+
+  // One opacity per section rather than a single 0..1 slider (that only
+  // ever worked for exactly two) — each animates toward 1 when it's the
+  // active section and 0 otherwise, same duration/easing for all three, so
+  // the crossfade reads identically regardless of which pair is swapping.
+  const budgetProgress = useSharedValue(1);
+  const savingsProgress = useSharedValue(0);
+  const debtProgress = useSharedValue(0);
   useEffect(() => {
-    sectionProgress.value = withTiming(section === 'savings' ? 1 : 0, { duration: SECTION_FADE_MS, easing: Easing.out(Easing.cubic) });
-  }, [section, sectionProgress]);
-  const budgetLayerStyle = useAnimatedStyle(() => ({ opacity: 1 - sectionProgress.value }));
-  const savingsLayerStyle = useAnimatedStyle(() => ({ opacity: sectionProgress.value }));
+    const opts = { duration: SECTION_FADE_MS, easing: Easing.out(Easing.cubic) };
+    budgetProgress.value = withTiming(section === 'budget' ? 1 : 0, opts);
+    savingsProgress.value = withTiming(section === 'savings' ? 1 : 0, opts);
+    debtProgress.value = withTiming(section === 'debt' ? 1 : 0, opts);
+  }, [section, budgetProgress, savingsProgress, debtProgress]);
+  const budgetLayerStyle = useAnimatedStyle(() => ({ opacity: budgetProgress.value }));
+  const savingsLayerStyle = useAnimatedStyle(() => ({ opacity: savingsProgress.value }));
+  const debtLayerStyle = useAnimatedStyle(() => ({ opacity: debtProgress.value }));
 
   const { onSubmit: submitBudget, onSetupClosed, lastMonthAmount, lastMonthSpent, ...budgetBar } = budget || {};
   const [budgetSheetOpen, setBudgetSheetOpen] = useState(false);
   const openBudgetSheet = useCallback(() => setBudgetSheetOpen(true), []);
+  // The Budget Plan's one popup — same "render at the page root, slide over
+  // everything" treatment as the savings/debt sheets below.
+  const [addItemOpen, setAddItemOpen] = useState(false);
+  const openAddItem = useCallback(() => setAddItemOpen(true), []);
+  const closeAddItem = useCallback(() => setAddItemOpen(false), []);
+  // What a plan line is most often for: something already tracked as a loan
+  // or a savings goal, so its name is one tap away instead of retyped.
+  // Active ones only — a cleared loan or a finished goal isn't something
+  // you're still planning to pay into.
+  const planSuggestions = useMemo(
+    () => [...(savings?.debts || []), ...(savings?.goals || [])].map(g => g.name),
+    [savings?.debts, savings?.goals]
+  );
+
+  // A small bottom toast confirming a Budget Plan line's checkbox actually
+  // did something to the real ledger (added or removed an expense) — not
+  // the top banner, OfflineBanner already owns that spot. Self-timed:
+  // appears when the text is set, clears itself after a fixed duration.
+  const [planToastText, setPlanToastText] = useState(null);
+  const planToastProgress = useSharedValue(0);
+  const planToastTimerRef = useRef(null);
+  const showPlanToast = useCallback((text) => {
+    if (planToastTimerRef.current) clearTimeout(planToastTimerRef.current);
+    setPlanToastText(text);
+    planToastProgress.value = withTiming(1, { duration: 480, easing: SETTLE_EASING });
+    planToastTimerRef.current = setTimeout(() => {
+      planToastProgress.value = withTiming(0, { duration: 420, easing: Easing.in(Easing.cubic) }, finished => {
+        if (finished) runOnJS(setPlanToastText)(null);
+      });
+    }, 1800);
+  }, [planToastProgress]);
+  useEffect(() => () => { if (planToastTimerRef.current) clearTimeout(planToastTimerRef.current); }, []);
+  const planToastStyle = useAnimatedStyle(() => ({
+    opacity: planToastProgress.value,
+    transform: [{ translateY: (1 - planToastProgress.value) * 60 }],
+  }));
+  const handleItemChecked = useCallback((checked, name) => {
+    showPlanToast(checked ? `${name} added to your expenses` : `${name} expense removed`);
+  }, [showPlanToast]);
+
   const budgetSheetClosedAtRef = useRef(0);
   const closeBudgetSheet = useCallback(() => {
     budgetSheetClosedAtRef.current = Date.now();
@@ -132,36 +139,45 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
 
   const openGoal = useCallback((id) => setDetailGoalId(id), []);
   const closeGoal = useCallback(() => setDetailGoalId(null), []);
+  const openDebt = useCallback((id) => setDetailDebtId(id), []);
+  const closeDebt = useCallback(() => setDetailDebtId(null), []);
 
   // Back steps out one level at a time: an open sheet, then an open goal, and
-  // only then the whole page. Also what the Android back button does.
+  // only then the whole page. Also what the Android back button does. Debt's
+  // own sheet/confirm/detail are checked the same way, independently of
+  // Savings' — whichever section is actually showing is the one with
+  // something open to step back out of.
   const { sheetOpen, closeSheet, confirmOpen, closeConfirm } = savingsUI;
+  const { sheetOpen: debtSheetOpen, closeSheet: closeDebtSheet, confirmOpen: debtConfirmOpen, closeConfirm: closeDebtConfirm } = debtUI;
   const handleBack = useCallback(() => {
     if (budgetSheetOpen) { closeBudgetSheet(); return; }
+    if (addItemOpen) { closeAddItem(); return; }
     if (confirmOpen) { closeConfirm(); return; }
+    if (debtConfirmOpen) { closeDebtConfirm(); return; }
     if (sheetOpen) { closeSheet(); return; }
+    if (debtSheetOpen) { closeDebtSheet(); return; }
     if (section === 'savings' && detailGoalId != null) { setDetailGoalId(null); return; }
+    if (section === 'debt' && detailDebtId != null) { setDetailDebtId(null); return; }
     onClose();
-  }, [budgetSheetOpen, closeBudgetSheet, confirmOpen, closeConfirm, sheetOpen, closeSheet, section, detailGoalId, onClose]);
+  }, [
+    budgetSheetOpen, closeBudgetSheet, addItemOpen, closeAddItem, confirmOpen, closeConfirm, debtConfirmOpen, closeDebtConfirm,
+    sheetOpen, closeSheet, debtSheetOpen, closeDebtSheet, section, detailGoalId, detailDebtId, onClose,
+  ]);
 
-  // First-run tour for this page: that tapping a day shows its transactions,
-  // and (only once a budget actually exists) what the budget bar shows. Separate
-  // from the Home-screen tour in app/(app)/index.js — this one only makes sense
-  // once the user has actually opened the calendar, not forced on them right
-  // after signup.
-  const spentDayRef = useRef(null);
+  // First-run tour for this page: once a budget actually exists, what the
+  // budget bar shows. Separate from the Home-screen tour in app/(app)/index.js
+  // — this one only makes sense once the user has actually opened the
+  // calendar, not forced on them right after signup.
   const budgetSectionRef = useRef(null);
-  const tapDateTour = useTourStep(userId, 'calendar_tap_date');
   const budgetTour = useTourStep(userId, 'calendar_budget_left');
-  const [calendarTourActive, setCalendarTourActive] = useState(null); // 'tapDate' | 'budget' | null
+  const [budgetTourActive, setBudgetTourActive] = useState(false);
 
   // Same pattern as AddModal — managed independently of RN's Modal
   // animationType so `visible` stays mounted through the close animation.
   // Slides in from the right (like a pushed page) rather than up from the
   // bottom — translateX/windowWidth, not translateY/windowHeight. No drag-
   // to-dismiss any more — the back button below is the only way to close
-  // this now, so there's no gesture to reconcile with the day-list
-  // ScrollView's own vertical scrolling either.
+  // this now.
   const [visible, setVisible] = useState(open);
   const ownPageX = useSharedValue(windowWidth);
   const pageTranslateX = slideX ?? ownPageX;
@@ -173,15 +189,6 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
     if (open) {
       setVisible(true);
       openingRef.current = true;
-      // No default date — opening now shows the month's average spend per
-      // day (see the render below) rather than jumping straight to today's
-      // transactions, so that's what a user sees first every time.
-      setSelectedDate(null);
-      // Otherwise browsing to a past/future month, closing, and reopening
-      // later (even a different day) leaves the calendar stuck wherever it
-      // was last left instead of back on the actual current month — this
-      // modal stays mounted across opens/closes, so nothing else resets it.
-      setView(startOfMonth(now));
       // The slide-in itself is kicked off from handleModalShow below, not
       // here: starting it in the same tick as setVisible(true) races the
       // native <Modal> window's own presentation, so the first frame or two
@@ -193,9 +200,13 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
       // Back to the list, sheet away — the page reopens fresh, not on
       // whichever goal or sheet it was closed from.
       setDetailGoalId(null);
+      setDetailDebtId(null);
       setBudgetSheetOpen(false);
+      setAddItemOpen(false);
       savingsUI.closeSheet();
       savingsUI.closeConfirm();
+      debtUI.closeSheet();
+      debtUI.closeConfirm();
       pageTranslateX.value = withTiming(
         windowWidth,
         { duration: CALENDAR_SLIDE_DURATION, easing: SETTLE_EASING },
@@ -222,134 +233,38 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
   }, [pageTranslateX]);
 
 
-  const advanceCalendarTour = useCallback(() => {
-    if (calendarTourActive === 'tapDate') tapDateTour.markSeen();
-    else if (calendarTourActive === 'budget') budgetTour.markSeen();
-    setCalendarTourActive(null);
-  }, [calendarTourActive, tapDateTour, budgetTour]);
+  const advanceBudgetTour = useCallback(() => {
+    budgetTour.markSeen();
+    setBudgetTourActive(false);
+  }, [budgetTour]);
 
   const pageStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: pageTranslateX.value }],
   }));
 
-  const year = view.getFullYear();
-  const month = view.getMonth();
-  // getDay() is Sunday-indexed (0-6) — remap so Monday is column 0, matching
-  // the Monday-first DAYS header below.
-  const rawFirstDay = view.getDay();
-  const firstDay = rawFirstDay === 0 ? 6 : rawFirstDay - 1;
-  const daysInMonth = getDaysInMonth(view);
-  const todayStr = today();
-
-  // Gated on `visible` — this component stays mounted (rendering null)
-  // between opens rather than unmounting, so without this guard every
-  // transaction add/edit/delete anywhere in the app would re-run these full
-  // history scans even while the calendar is closed.
-  const dailyTotals = useMemo(() => (visible ? getDailyExpenseTotals(transactions) : {}), [transactions, visible]);
-  // Scoped to the month actually being viewed, not the account's whole
-  // history — getIntensityThresholds over every day ever meant a month
-  // with no unusually large days still shaded weakly the whole way through
-  // if some other month (maybe years back) happened to have the account's
-  // biggest-ever single day. Each month should be judged against its own
-  // spending, not a number from a different month entirely.
-  const thresholds = useMemo(() => {
-    if (!visible) return { max: 0 };
-    const monthTotals = {};
-    for (let d = 1; d <= daysInMonth; d++) {
-      const str = toStr(new Date(year, month, d));
-      if (dailyTotals[str] != null) monthTotals[str] = dailyTotals[str];
-    }
-    return getIntensityThresholds(monthTotals);
-  }, [visible, dailyTotals, year, month, daysInMonth]);
-  const earliest = useMemo(() => (visible ? getEarliestDate(transactions) : null), [transactions, visible]);
-
-  // The most recent day (in the currently-viewed month, not in the future)
-  // that actually has spending on it — the "tap a date" tour step targets
-  // this instead of today's cell, so tapping it during the tour actually
-  // demonstrates something (a populated day view) rather than "You saved
-  // today - Nothing spent" on a day that may have no data at all. Null
-  // (and the step just stays deferred) when nothing in this month qualifies.
-  const spentDayStr = useMemo(() => {
-    if (!visible) return null;
-    for (let d = daysInMonth; d >= 1; d--) {
-      const str = toStr(new Date(year, month, d));
-      if (str > todayStr) continue;
-      if (dailyTotals[str] > 0) return str;
-    }
-    return null;
-  }, [visible, dailyTotals, year, month, daysInMonth, todayStr]);
-
-  // Average daily spend for the viewed month, over "real" days only — from
-  // whichever is later of the month's start or the account's earliest
-  // activity, through today (or the month's end, for a past month). Shown
-  // in the space below the grid until a date is tapped, at which point that
-  // day's own transactions take over the same spot (see the render below).
-  const monthAverage = useMemo(() => {
-    if (!visible) return null;
-    let sum = 0;
-    let count = 0;
-    for (let d = 1; d <= daysInMonth; d++) {
-      const str = toStr(new Date(year, month, d));
-      if (str > todayStr) continue;
-      if (earliest && str < earliest) continue;
-      sum += dailyTotals[str] || 0;
-      count++;
-    }
-    return count > 0 ? sum / count : null;
-  }, [visible, dailyTotals, year, month, daysInMonth, todayStr, earliest]);
-
-  // Below spentDayStr on purpose: its dependency list reads that value, and a
-  // const can't be read before its declaration — Hermes' Babel transform
-  // quietly tolerates it (const becomes var), a strict engine throws.
   useEffect(() => {
     // Resets immediately on close so a tour hint mid-flow doesn't linger
     // pointing at a row that's now sliding off-screen with the sheet.
     // Only the Budget section has anything for the tour to point at.
-    if (!open || section !== 'budget') { setCalendarTourActive(null); return; }
+    if (!open || section !== 'budget') { setBudgetTourActive(false); return; }
     // Not while the budget sheet is up: setting a budget makes `hasBudget` true
     // before the sheet has finished, and the tour must not appear over it.
-    if (!userId || calendarTourActive || budgetSheetOpen) return;
-    // Deferred until there's an actual spent day to point at — same "only show
-    // it once it's real" rule as budget-left below and the Home-screen tour's
-    // swipe step. Budget-left only makes sense once a budget actually exists —
-    // deferred (not skipped outright) until one does.
-    const next = !tapDateTour.seen && spentDayStr ? 'tapDate'
-      : !budgetTour.seen && budget?.hasBudget ? 'budget'
-      : null;
-    if (!next) return;
-    // Just after the budget sheet closed, the budget step waits a further beat
-    // so the tour doesn't land the instant the sheet goes.
+    if (!userId || budgetTourActive || budgetSheetOpen) return;
+    // Budget-left only makes sense once a budget actually exists — deferred
+    // (not skipped outright) until one does.
+    if (budgetTour.seen || !budget?.hasBudget) return;
+    // Just after the budget sheet closed, the step waits a further beat so
+    // the tour doesn't land the instant the sheet goes.
     const sinceSheetClosed = Date.now() - budgetSheetClosedAtRef.current;
     // At least the sheet's own opening slide, so the tour doesn't spotlight
     // something that's still animating into place.
     const settle = CALENDAR_SLIDE_DURATION + 150;
-    const delay = next === 'tapDate'
-      ? TAP_DATE_TOUR_DELAY_MS
-      : sinceSheetClosed < BUDGET_SHEET_TOUR_DELAY_MS
-        ? Math.max(settle, BUDGET_SHEET_TOUR_DELAY_MS - sinceSheetClosed)
-        : settle;
-    const t = setTimeout(() => setCalendarTourActive(next), delay);
+    const delay = sinceSheetClosed < BUDGET_SHEET_TOUR_DELAY_MS
+      ? Math.max(settle, BUDGET_SHEET_TOUR_DELAY_MS - sinceSheetClosed)
+      : settle;
+    const t = setTimeout(() => setBudgetTourActive(true), delay);
     return () => clearTimeout(t);
-  }, [open, section, userId, calendarTourActive, budgetSheetOpen, tapDateTour.seen, spentDayStr, budgetTour.seen, budget?.hasBudget]);
-
-  const dayTxs = useMemo(
-    () => (visible && selectedDate
-      ? transactions
-        .filter(tx => tx.date === selectedDate)
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-      : []),
-    [transactions, selectedDate, visible],
-  );
-
-  const cells = [];
-  for (let i = 0; i < firstDay; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-  while (cells.length % 7 !== 0) cells.push(null);
-  const weeks = [];
-  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
-
-  function prevMonth() { setView(subMonths(view, 1)); setSelectedDate(null); }
-  function nextMonth() { setView(addMonths(view, 1)); setSelectedDate(null); }
+  }, [open, section, userId, budgetTourActive, budgetSheetOpen, budgetTour.seen, budget?.hasBudget]);
 
   if (!visible) return null;
 
@@ -386,7 +301,10 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                   of px taller) can't push everything below it down — the
                   Budget section sits exactly where it always did. */}
               <View style={{ flex: 1, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-                <SegmentedSwitch options={SECTIONS} value={section} onChange={setSection} buttonWidth={92} light={light} />
+                {/* Narrower than the old 2-option width (92) — a third
+                    option at that width would run right up against the
+                    header's own side margins on a narrower phone. */}
+                <SegmentedSwitch options={SECTIONS} value={section} onChange={setSection} buttonWidth={78} light={light} />
               </View>
               <View style={{ width: 36 }} />
             </View>
@@ -395,170 +313,28 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                 only the visible one takes touches. */}
             <View style={{ flex: 1 }}>
               <Animated.View style={[StyleSheet.absoluteFill, budgetLayerStyle]} pointerEvents={section === 'budget' ? 'auto' : 'none'}>
-            {/* Tapping anywhere in this section that isn't one of its own
-                buttons/date cells (those have their own onPress, which
-                claims the touch first) clears the selected date, so the
-                month's average comes back — the same as tapping the
-                selected date again, just from anywhere else on the page. */}
-            <Pressable onPress={() => setSelectedDate(null)}>
-            {/* Fixed — not inside any ScrollView, so it never scrolls or
-                shifts regardless of how many transactions the day list
-                below ends up showing. */}
-            <View style={{ paddingHorizontal: 20, marginTop: windowHeight * 0.06 }}>
-                {recap?.available && (
-                  <Pressable
-                    onPress={recap.onOpen}
-                    className="flex-row items-center justify-center mb-4"
-                    style={{ gap: 5, alignSelf: 'center' }}
-                  >
-                    <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#a855f7' }} />
-                    <Text className="text-xs font-medium" style={{ color: textColor(light).tertiary }}>
-                      Monthly Summary ›
-                    </Text>
-                  </Pressable>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: windowHeight * 0.06, paddingBottom: insets.bottom + 40 }}
+            >
+                {/* The budget bar draws its own gray card now (see
+                    BudgetStatusBar.js) — full width, same as the Budget Plan
+                    below it, not capped to a narrow centred column any more.
+                    The calendar heatmap that used to fill this block (month
+                    nav, day-of-week header, the shaded grid) was cut
+                    entirely, not just visually trimmed. */}
+                {budget && <View ref={budgetSectionRef}><BudgetStatusBar {...budgetBar} onSetup={openBudgetSheet} light={light} /></View>}
+
+                {/* The space that heatmap left behind, now a plan for where
+                    next month's money is going, written before the salary
+                    that pays for it lands — see BudgetPlan.js. */}
+                {budgetPlan && (
+                  <View style={{ marginTop: 24 }}>
+                    <BudgetPlan plan={budgetPlan} onAddPress={openAddItem} onItemChecked={handleItemChecked} light={light} />
+                  </View>
                 )}
-
-                {/* Budget + calendar grouped into one padded block — no
-                    card surface, sits directly on the page background.
-                    Top padding trimmed and matched by extra margin below
-                    the budget bar, so Budget sits higher while the
-                    calendar grid underneath stays put — just a wider gap
-                    between the two. */}
-                <View className="rounded-3xl px-4 pb-4" style={{ maxWidth: 320, alignSelf: 'center', width: '100%', paddingTop: 6 }}>
-                  {budget && <View ref={budgetSectionRef} style={{ marginBottom: 10 }}><BudgetStatusBar {...budgetBar} onSetup={openBudgetSheet} light={light} hideDivider /></View>}
-
-                  <View className="flex-row items-center justify-between mb-4">
-                    <Pressable
-                      onPress={prevMonth}
-                      className="w-7 h-7 rounded-full items-center justify-center"
-                      style={{ backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.07)' }}
-                      accessibilityRole="button"
-                      accessibilityLabel="Previous month"
-                    >
-                      <Text style={{ color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>‹</Text>
-                    </Pressable>
-                    <Text className="text-base font-semibold" style={{ color: light ? 'rgba(0,0,0,0.8)' : 'rgba(255,255,255,0.8)' }}>
-                      {MONTHS[month]} {year}
-                    </Text>
-                    <Pressable
-                      onPress={nextMonth}
-                      className="w-7 h-7 rounded-full items-center justify-center"
-                      style={{ backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.07)' }}
-                      accessibilityRole="button"
-                      accessibilityLabel="Next month"
-                    >
-                      <Text style={{ color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>›</Text>
-                    </Pressable>
-                  </View>
-
-                  <View className="flex-row mb-1.5">
-                    {DAYS.map((d, i) => (
-                      <View key={i} style={{ flex: 1 }}>
-                        <Text className="text-center text-[11px] font-medium" style={{ color: textColor(light).disabled }}>
-                          {d}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-
-                  {weeks.map((week, wi) => (
-                    <View key={wi} className="flex-row" style={{ gap: 5, marginBottom: 5 }}>
-                      {week.map((d, i) => {
-                        if (!d) return <View key={i} style={{ flex: 1 }} />;
-                        const str = toStr(new Date(year, month, d));
-                        const shade = spendShadeFor(str, { dailyTotals, thresholds, earliest, todayStr, light });
-                        const isToday = str === todayStr;
-                        const isSelected = selectedDate === str;
-                        return (
-                          <Pressable
-                            key={i}
-                            ref={str === spentDayStr ? spentDayRef : undefined}
-                            disabled={!shade.isKnown}
-                            onPress={() => setSelectedDate(prev => (prev === str ? null : str))}
-                            className="aspect-square items-center justify-center rounded-md"
-                            style={{
-                              flex: 1,
-                              backgroundColor: shade.bg,
-                              borderWidth: isSelected ? 1.5 : isToday ? 1 : 0,
-                              borderColor: isSelected
-                                ? (light ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.65)')
-                                : isToday
-                                ? (light ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.3)')
-                                : 'transparent',
-                            }}
-                          >
-                            <Text style={{ color: shade.color, fontSize: 12, fontWeight: '500' }}>
-                              {d}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  ))}
-
-                  <View className="flex-row items-center justify-center mt-3" style={{ gap: 12 }}>
-                    <View className="flex-row items-center" style={{ gap: 4 }}>
-                      <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(34,197,94,0.5)' }} />
-                      <Text style={{ fontSize: 10, color: textColor(light).disabled }}>No spend</Text>
-                    </View>
-                    <View className="flex-row items-center" style={{ gap: 4 }}>
-                      <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.5)' }} />
-                      <Text style={{ fontSize: 10, color: textColor(light).disabled }}>Spent</Text>
-                    </View>
-                  </View>
-                </View>
-                </View>
-            </Pressable>
-
-            {/* Tapping a date loads its transactions right below the fixed
-                group, each row sliding up and fading in with a small
-                stagger, replacing the month's average that sits here by
-                default. Scrolls internally (rather than growing the page)
-                once there are enough to overflow the remaining space. Not
-                inside the dismiss-Pressable above on purpose — that used to
-                wrap this too, and scrolling the transaction list sometimes
-                registered as a tap on it, snapping back to the average
-                mid-scroll. */}
-            {selectedDate ? (
-              <View style={{ flex: 1, marginTop: 20, paddingHorizontal: 20 }}>
-                <View style={{ maxWidth: 320, alignSelf: 'center', width: '100%', flex: 1 }}>
-                  <View className="flex-row items-center justify-between mb-3">
-                    <Text className="text-base font-bold" style={{ color: light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)' }}>
-                      {formatDateFull(selectedDate)}
-                    </Text>
-                    <Text className="text-base font-bold" style={{ color: light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)' }}>
-                      {formatCurrency(dailyTotals[selectedDate] || 0)}
-                    </Text>
-                  </View>
-                  {dayTxs.length === 0 ? (
-                    <Text className="text-base" style={{ color: textColor(light).tertiary }}>
-                      You saved today - Nothing spent 🌿
-                    </Text>
-                  ) : (
-                    <ScrollView
-                      showsVerticalScrollIndicator={false}
-                      style={{ flex: 1 }}
-                      contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
-                    >
-                      <View style={{ gap: 12 }}>
-                        {dayTxs.map((tx, i) => (
-                          <DayTransactionRow key={tx.id} tx={tx} index={i} light={light} />
-                        ))}
-                      </View>
-                    </ScrollView>
-                  )}
-                </View>
-              </View>
-            ) : monthAverage != null && (
-              <View style={{ marginTop: 20, paddingHorizontal: 20, alignItems: 'center' }}>
-                <Text className="text-sm" style={{ color: textColor(light).tertiary }}>
-                  Average spent per day
-                </Text>
-                <Text className="text-2xl font-bold mt-1" style={{ color: light ? '#111111' : '#ffffff' }}>
-                  {formatCurrency(monthAverage)}
-                </Text>
-              </View>
-            )}
+            </ScrollView>
 
               </Animated.View>
 
@@ -575,19 +351,28 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                   />
                 </SavingsBoundary>
               </Animated.View>
+
+              <Animated.View style={[StyleSheet.absoluteFill, debtLayerStyle]} pointerEvents={section === 'debt' ? 'auto' : 'none'}>
+                <SavingsBoundary light={light} onReset={closeDebt}>
+                  <SavingsSection
+                    kind="debt"
+                    savings={savings}
+                    ui={debtUI}
+                    active={open && section === 'debt'}
+                    light={light}
+                    detailGoalId={detailDebtId}
+                    onOpenGoal={openDebt}
+                    onCloseGoal={closeDebt}
+                  />
+                </SavingsBoundary>
+              </Animated.View>
             </View>
 
             <TourHint
-              visible={calendarTourActive === 'tapDate'}
-              targetRef={spentDayRef}
-              description="Tap a date to see what you spent or earned that day."
-              onNext={advanceCalendarTour}
-            />
-            <TourHint
-              visible={calendarTourActive === 'budget'}
+              visible={budgetTourActive}
               targetRef={budgetSectionRef}
               description="This shows what's left in your budget this month."
-              onNext={advanceCalendarTour}
+              onNext={advanceBudgetTour}
             />
 
             {/* Last child of the page, so its sheets slide up over everything
@@ -597,6 +382,12 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
               onError={() => { savingsUI.closeSheet(); savingsUI.closeConfirm(); }}
             >
               <SavingsSheetsHost savings={savings} ui={savingsUI} light={light} />
+            </ErrorBoundary>
+            <ErrorBoundary
+              resetKeys={[debtUI.sheetData, debtUI.confirmData]}
+              onError={() => { debtUI.closeSheet(); debtUI.closeConfirm(); }}
+            >
+              <SavingsSheetsHost savings={savings} ui={debtUI} light={light} kind="debt" />
             </ErrorBoundary>
 
             {/* Setting a budget happens here, on the page: this is the same sheet the
@@ -614,6 +405,38 @@ function SpendCalendarModal({ open, onClose, onClosed, transactions, recap, budg
                   lastMonthSpent={lastMonthSpent}
                 />
               </ErrorBoundary>
+            )}
+
+            {/* Budget Plan's own add popup — same overlay treatment as the
+                budget-setup sheet just above. */}
+            {budgetPlan && (
+              <ErrorBoundary resetKeys={[addItemOpen]} onError={() => setAddItemOpen(false)}>
+                <AddBudgetItemSheet
+                  open={addItemOpen}
+                  onClose={closeAddItem}
+                  onSubmit={budgetPlan.addItem}
+                  suggestions={planSuggestions}
+                  light={light}
+                />
+              </ErrorBoundary>
+            )}
+
+            {/* The Budget Plan checkbox's own toast (see above) — a bottom
+                pill, out of OfflineBanner's way at the top. */}
+            {!!planToastText && (
+              <Animated.View
+                pointerEvents="none"
+                style={[{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom + 24, alignItems: 'center', zIndex: 90 }, planToastStyle]}
+              >
+                <View
+                  style={{
+                    maxWidth: '85%', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 9999,
+                    backgroundColor: light ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.92)',
+                  }}
+                >
+                  <Text numberOfLines={1} style={{ color: light ? '#ffffff' : '#111111', fontSize: 13, fontWeight: '600' }}>{planToastText}</Text>
+                </View>
+              </Animated.View>
             )}
 
             {/* This page is a native <Modal>, its own window drawn over the root
