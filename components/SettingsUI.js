@@ -57,10 +57,16 @@ export function Card({ children, light = false }) {
 // `accessibilityLabel` defaults to `label` — every settings-style row gets a
 // sensible VoiceOver/TalkBack label for free unless a caller needs to
 // override it (e.g. a row whose visible label alone doesn't say enough).
-export function Row({ label, value, onPress, right, labelColor, light = false, accessibilityLabel }) {
+// `icon` is an optional leading glyph (a rendered element, e.g. a Feather
+// icon) — every existing caller omits it and gets the exact same
+// icon-less row as before; only Account's icon-led redesign passes one.
+export function Row({ label, value, onPress, right, labelColor, light = false, accessibilityLabel, icon = null }) {
   const content = (
     <View className="flex-row items-center justify-between px-4 py-[14px]">
-      <Text className="text-base" style={{ color: labelColor || (light ? '#111111' : '#ffffff') }}>{label}</Text>
+      <View className="flex-row items-center" style={{ gap: 12 }}>
+        {icon}
+        <Text className="text-base" style={{ color: labelColor || (light ? '#111111' : '#ffffff') }}>{label}</Text>
+      </View>
       <View className="flex-row items-center" style={{ gap: 8 }}>
         {!!value && <Text className="text-xs" style={{ color: textColor(light).tertiary }}>{value}</Text>}
         {right || (onPress && !right && <ChevronRight color={light ? 'rgba(0,0,0,0.25)' : undefined} />)}

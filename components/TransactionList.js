@@ -77,10 +77,11 @@ function RevealRow({ index, children }) {
 // just a summary, so there's nothing lost by not unrolling every month at
 // once.
 //
-// `total` is expense only, not net — a month's header is "what did I
-// spend", the same question the whole app's chart answers; income still
-// shows on its own rows underneath, just not folded into this figure.
-function MonthHeader({ label, total, light, isOpen, onPress }) {
+// `amount` follows whichever tab the Home chart is on: Expense shows the
+// month's expense total, Income its income total, Overview shows nothing
+// (see TransactionList's own comment on why Overview has no single figure
+// that means anything here) — `amount == null` is what skips it below.
+function MonthHeader({ label, amount, light, isOpen, onPress }) {
   return (
     <>
       {/* A true hairline (device pixel, not a logical point) above every
@@ -119,8 +120,12 @@ function MonthHeader({ label, total, light, isOpen, onPress }) {
               same hierarchy as before, just without the box around it. */}
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Text style={[BODY, { color: textColor(light).primary }]}>{label}</Text>
-            <Text style={[BODY, { color: textColor(light).disabled, marginHorizontal: 12 }]}>—</Text>
-            <Text style={[BODY, TABULAR, { color: textColor(light).primary }]}>{formatCurrency(total)}</Text>
+            {amount != null && (
+              <>
+                <Text style={[BODY, { color: textColor(light).disabled, marginHorizontal: 12 }]}>—</Text>
+                <Text style={[BODY, TABULAR, { color: textColor(light).primary }]}>{formatCurrency(amount)}</Text>
+              </>
+            )}
           </View>
 
           {/* Rotates between pointing right (collapsed) and down (open) —
@@ -149,6 +154,10 @@ function TransactionList({
   // Handed the element the rows sit inside, for a caller that wants to
   // point at it (the tour outlines it).
   cardRef,
+  // Same Expense/Income/Overview value the Home chart's slider is on —
+  // decides which figure (if any) each month's header shows, see
+  // MonthHeader's own comment.
+  mode = 'expense',
 }, ref) {
   // The page's own background, not a raised fill — the rows sit directly on
   // the screen. They still have to paint an opaque colour of their own — a
@@ -225,10 +234,9 @@ function TransactionList({
   }, []);
 
   // Every month that has anything in it, newest first, with its own
-  // transactions (also newest first) and its EXPENSE total — not net.
-  // Income still shows on its own row underneath; it just isn't folded
-  // into the header figure, the same way the chart above answers "what did
-  // I spend" rather than a net cashflow number.
+  // transactions (also newest first) and BOTH an expense and an income
+  // total — which one (if either) a header actually shows depends on
+  // `mode`, resolved down in flatData below.
   const groups = useMemo(() => {
     const map = new Map();
     for (const tx of transactions) {
@@ -239,8 +247,9 @@ function TransactionList({
       const d = parseISO(tx.date);
       const key = d.getFullYear() * 12 + d.getMonth();
       let g = map.get(key);
-      if (!g) { g = { key, year: d.getFullYear(), month: d.getMonth(), total: 0, items: [] }; map.set(key, g); }
-      if (tx.type !== 'income') g.total += tx.amount;
+      if (!g) { g = { key, year: d.getFullYear(), month: d.getMonth(), expenseTotal: 0, incomeTotal: 0, items: [] }; map.set(key, g); }
+      if (tx.type === 'income') g.incomeTotal += tx.amount;
+      else g.expenseTotal += tx.amount;
       g.items.push({ tx, ts: d.getTime(), cts: new Date(tx.createdAt).getTime() });
     }
     const list = [...map.values()].sort((a, b) => b.key - a.key);
@@ -280,7 +289,11 @@ function TransactionList({
           key: `h-${g.key}`,
           groupKey: g.key,
           label: `${MONTH_NAMES[g.month].slice(0, 3).toUpperCase()}-${g.year}`,
-          total: g.total,
+          // Overview shows neither figure — expense-only and income-only
+          // are each an answer to "what happened", but there's no single
+          // net number this list has ever meant to show (see the chart's
+          // own expense-only convention this used to just inherit).
+          amount: mode === 'income' ? g.incomeTotal : mode === 'expense' ? g.expenseTotal : null,
           isOpen,
         });
       }
@@ -291,7 +304,7 @@ function TransactionList({
       }
     }
     return out;
-  }, [groups, currentMonthKey, expandedKey]);
+  }, [groups, currentMonthKey, expandedKey, mode]);
 
   // True only while the list's very first paint is still revealing. This is
   // state rather than a ref-flipped-on-mount deliberately: `settled` below
@@ -352,7 +365,7 @@ function TransactionList({
       ? (
         <MonthHeader
           label={item.label}
-          total={item.total}
+          amount={item.amount}
           light={light}
           isOpen={item.isOpen}
           onPress={() => toggleMonth(item.groupKey)}

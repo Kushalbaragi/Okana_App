@@ -2,26 +2,36 @@ import { memo, useCallback, useState, useEffect, useRef } from 'react';
 import { Modal, View, Text, TextInput, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, Easing } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring, runOnJS, Easing } from 'react-native-reanimated';
 import { today, formatDayLabel } from '../utils/format';
 import CalendarPicker from './CalendarPicker';
-import { GlassPressable, PILL_ACTIVE_COLOR, INPUT_TEXT_STYLE, POPUP_RADIUS, SMOOTH } from './Glass';
+import { GlassPressable, INPUT_TEXT_STYLE, POPUP_RADIUS, SMOOTH } from './Glass';
 import { NumericKeypad } from './NumericKeypad';
 import { useAmountEntry } from '../hooks/useAmountEntry';
 import { AmountRow } from './AmountField';
 import { useShake } from '../hooks/useShake';
 import { hapticHeavy } from '../utils/haptics';
-import { SETTLE_EASING } from '../utils/motion';
+import { SPRING_SMOOTH } from '../utils/motion';
 import { CalendarIcon } from './icons';
+import { textColor } from '../utils/colors';
 
-// Height of the description pill. Shared by the pill itself, the input
-// inside it and the placeholder overlay on top, so all three are centring
-// text within the exact same box — see the comment at the pill's render.
-const DESCRIPTION_PILL_H = 40;
+// Height of the description field. Shared by its wrapper and the input
+// inside it, so both are centring text within the exact same box.
+const DESCRIPTION_FIELD_H = 40;
 
 // The sheet covers most, not all, of the screen — a real bottom sheet with
-// a dimmed backdrop above it, rather than a full-screen takeover.
-const SHEET_HEIGHT_RATIO = 0.855;
+// a dimmed backdrop above it, rather than a full-screen takeover. Brought
+// down from 0.855 — the description field losing its own pill (see
+// DESCRIPTION_FIELD_H's own comment), the smaller amount digits, and the
+// tighter margins around both freed up enough vertical space that the
+// sheet no longer needed quite this much height to feel balanced.
+// NumericKeypad is fixed-height (4 rows, doesn't shrink to fit — see its
+// own comment), so this can't drop further than the space actually freed
+// up above it without clipping the keypad's bottom row against the
+// sheet's own overflow:hidden — 0.75 dropped too far on its own before
+// the amount/description got smaller too; this matches what those
+// changes actually saved.
+const SHEET_HEIGHT_RATIO = 0.75;
 // Backdrop opacity while open — a soft dark tint, not pure black.
 const BACKDROP_MAX_OPACITY = 0.55;
 // Plain, fixed slide — same shape both ways as the calendar's own slide
@@ -45,6 +55,98 @@ const DRAG_CLOSE_EASING = Easing.out(Easing.cubic);
 const DISMISS_DISTANCE = 120;
 const DISMISS_VELOCITY = 800;
 
+// Same sliding-reel-under-a-fixed-window design as the Home header's own
+// Expense/Income/Overview switch (see ModeSlider/DimReel in Header.js) —
+// two slots instead of three, otherwise an unmodified copy of that same
+// look: a dim, always-visible reel underneath (where taps actually land),
+// and a solid pill window on top that clips a second bright/bold copy of
+// the same labels as it glides between them. `type` here is local state
+// (not owned by a parent the way Header's `mode` is), so this drives
+// itself off the type/onSelect props directly rather than round-tripping
+// through an effect the way ModeSlider's `mode` prop does.
+const TYPE_MODES = ['expense', 'income'];
+const TYPE_LABELS = { expense: 'Expense', income: 'Income' };
+const TYPE_SLOT = 72;
+// Header's own version gets this for free at 3 slots: with the active
+// slot centred, showing its one immediate neighbour in full (not clipped)
+// needs a container at least 3 slots wide, regardless of how many modes
+// actually exist — the maths is the same either way (a container exactly
+// N slots wide only fully shows a neighbour up to (N-1)/2 slots away). At
+// exactly 2 slots (one per mode here), that neighbour was clipped by
+// exactly half its own width. Padding the container out to 3 slots — with
+// only 2 real modes still centred inside it via the same offset formula —
+// fixes it without changing anything about how many modes there are.
+const TYPE_CONTAINER_WIDTH = TYPE_SLOT * 3;
+const TYPE_BOX_PAD_V = 4;
+const TYPE_BOX_PAD_H = 3;
+const TYPE_BASE_TRACK_HEIGHT = 26;
+const TYPE_TRACK_HEIGHT = TYPE_BASE_TRACK_HEIGHT + TYPE_BOX_PAD_V * 2;
+const TYPE_BOX_WIDTH = TYPE_SLOT + TYPE_BOX_PAD_H * 2;
+
+function typeIndexOffset(i) {
+  return -(i * TYPE_SLOT + TYPE_SLOT / 2);
+}
+
+function TypeDimReel({ trackStyle, light, onSelect }) {
+  return (
+    <Animated.View style={[{ position: 'absolute', left: TYPE_CONTAINER_WIDTH / 2, top: 0, height: '100%', flexDirection: 'row' }, trackStyle]}>
+      {TYPE_MODES.map(m => (
+        <Pressable key={m} onPress={() => onSelect(m)} style={{ width: TYPE_SLOT, height: '100%', alignItems: 'center', justifyContent: 'center' }}>
+          <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: '500', color: textColor(light).disabled, letterSpacing: 0.1 }}>
+            {TYPE_LABELS[m]}
+          </Text>
+        </Pressable>
+      ))}
+    </Animated.View>
+  );
+}
+
+function TypeSlider({ type, onSelect, light }) {
+  const offset = useSharedValue(typeIndexOffset(TYPE_MODES.indexOf(type)));
+
+  useEffect(() => {
+    offset.value = withSpring(typeIndexOffset(TYPE_MODES.indexOf(type)), SPRING_SMOOTH);
+  }, [type, offset]);
+
+  const trackStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: offset.value }],
+  }));
+
+  return (
+    <View style={{ width: TYPE_CONTAINER_WIDTH, height: TYPE_TRACK_HEIGHT, overflow: 'hidden' }}>
+      <TypeDimReel trackStyle={trackStyle} light={light} onSelect={onSelect} />
+
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          left: TYPE_CONTAINER_WIDTH / 2 - TYPE_BOX_WIDTH / 2,
+          top: 0,
+          width: TYPE_BOX_WIDTH,
+          height: TYPE_TRACK_HEIGHT,
+          borderRadius: TYPE_TRACK_HEIGHT / 2,
+          backgroundColor: light ? '#eeeeec' : '#0f0f0f',
+          overflow: 'hidden',
+        }}
+      >
+        <Animated.View style={[{ position: 'absolute', left: TYPE_BOX_WIDTH / 2, top: 0, height: '100%', flexDirection: 'row' }, trackStyle]}>
+          {TYPE_MODES.map(m => (
+            <View key={m} style={{ width: TYPE_SLOT, height: '100%', alignItems: 'center', justifyContent: 'center' }}>
+              {/* Neutral for both, active or not — the box itself (position,
+                  fill, weight, uppercase) already says which one is
+                  selected; red/green stay reserved for the amount figure
+                  and don't need repeating here too. */}
+              <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase', color: textColor(light).primary }}>
+                {TYPE_LABELS[m]}
+              </Text>
+            </View>
+          ))}
+        </Animated.View>
+      </View>
+    </View>
+  );
+}
+
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard (and the flows it opens) — see the matching comment in
 // Header.js. Callers outside the Dashboard keep passing nothing.
@@ -54,17 +156,6 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
 
   const isEdit = !!editData;
   const [type, setType] = useState('expense');
-  // Container width is measured (not a fixed constant like Header's tab
-  // toggle) since this modal is full device width and needs to work across
-  // screen sizes — the sliding pill's target position derives from it.
-  const [typeToggleWidth, setTypeToggleWidth] = useState(0);
-  const typePillX = useSharedValue(0);
-  const typePillStyle = useAnimatedStyle(() => ({ transform: [{ translateX: typePillX.value }] }));
-  useEffect(() => {
-    if (!typeToggleWidth) return;
-    const pillWidth = (typeToggleWidth - 6) / 2; // p-[3px] container padding on both sides
-    typePillX.value = withTiming((type === 'income' ? 1 : 0) * pillWidth, { duration: 260, easing: SETTLE_EASING });
-  }, [type, typeToggleWidth]);
   const { amount, prevAmountLength, skipDigitAnim, onKeyPress: handleKeypadPress, setProgrammatic: setAmountProgrammatically } = useAmountEntry();
   const [date, setDate] = useState(today());
   const [description, setDescription] = useState('');
@@ -411,44 +502,30 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
           bounces={false}
           overScrollMode="never"
         >
-          <View
-            className="flex-row rounded-full p-[3px] mb-8"
-            style={{ backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.15)' }}
-            onLayout={e => setTypeToggleWidth(e.nativeEvent.layout.width)}
-          >
-            {typeToggleWidth > 0 && (
-              <Animated.View
-                style={[
-                  { position: 'absolute', top: 3, bottom: 3, left: 3, width: (typeToggleWidth - 6) / 2, borderRadius: 999, backgroundColor: PILL_ACTIVE_COLOR },
-                  typePillStyle,
-                ]}
-              />
-            )}
-            {['expense', 'income'].map(t => (
-              <Pressable
-                key={t}
-                onPress={() => setType(t)}
-                className="flex-1 py-[6px] rounded-full items-center"
-              >
-                <Text
-                  className="text-base font-medium"
-                  style={{ color: type === t ? '#ffffff' : light ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.55)' }}>
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
-                </Text>
-              </Pressable>
-            ))}
+          <View className="items-center mb-6">
+            <TypeSlider type={type} onSelect={setType} light={light} />
           </View>
 
-          <Animated.View className="items-center" style={[{ marginTop: 24, marginBottom: 24 }, amountShake.style]}>
+          <Animated.View className="items-center" style={[{ marginTop: 16, marginBottom: 8 }, amountShake.style]}>
             <AmountRow
               amount={amount}
               prevAmountLength={prevAmountLength}
               skipDigitAnim={skipDigitAnim}
               light={light}
-              digitFontSize={72}
-              lineHeight={80}
+              digitFontSize={56}
+              lineHeight={64}
               zeroColor={light ? 'rgba(0,0,0,0.82)' : 'rgba(255,255,255,0.82)'}
-              weight="500"
+              // Matches SummaryCard's own headline figure (weight 400,
+              // letterSpacing -1.75 at its 44px) — same ratio scaled to
+              // this field's 56px, so the two "the one number that matters"
+              // amounts in the app read as the same typeface treatment.
+              weight="400"
+              letterSpacing={-2.2}
+              // This sheet has real spare room around the amount (unlike
+              // the callers autoShrink was built for), so a longer entry
+              // just keeps typing at the same size instead of shrinking
+              // toward MIN_SCALE.
+              autoShrink={false}
             />
           </Animated.View>
 
@@ -457,29 +534,28 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
               unexplained gap between them; being a direct, tightly-margined
               neighbor here guarantees there's no room for anything to
               insert space between the two. */}
-          {/* The input fills the pill's full height and centres its own text
-              inside it, rather than the pill centring an auto-height input.
-              A TextInput's natural height isn't its text's height — it
-              reserves extra room for the editing caret — so centring that
-              box put the text off-centre. Height also has to be explicit
-              rather than padding-derived: with zero padding and no height
-              the box hugs the text and clips descenders. */}
+          {/* No background/border any more — a plain ghost-text field,
+              matching the amount above it (no box there either). The input
+              still fills its wrapper's full height and centres its own
+              text inside it, rather than the wrapper centring an
+              auto-height input: a TextInput's natural height isn't its
+              text's height — it reserves extra room for the editing caret
+              — so centring that box put the text off-centre. Height also
+              has to be explicit rather than padding-derived: with zero
+              padding and no height the box hugs the text and clips
+              descenders. */}
           <View
             style={{
-              alignSelf: 'center', marginTop: 40, minWidth: 130, height: DESCRIPTION_PILL_H,
-              borderRadius: 9999, justifyContent: 'center',
-              backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.15)',
-              borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)',
+              alignSelf: 'center', marginTop: 12, minWidth: 130, height: DESCRIPTION_FIELD_H,
+              justifyContent: 'center',
             }}
           >
-            {/* The shake rides on this wrapper, not on the pill: the pill's
-                background and border belong to the View above, and the
-                input itself is transparent, so translating this moves only
-                the text and caret — the same "only the wording shakes, not
-                the box around it" this used to get from a separate
-                placeholder overlay. The shake only ever fires while the
-                field is empty (see the submit guard above), so what
-                visibly shakes is still the placeholder. */}
+            {/* The shake rides on this wrapper, not the input itself, so
+                translating this moves only the text and caret — the same
+                "only the wording shakes, not anything around it" this used
+                to get from a separate placeholder overlay. The shake only
+                ever fires while the field is empty (see the submit guard
+                above), so what visibly shakes is still the placeholder. */}
             <Animated.View style={descriptionShake.style}>
               <TextInput
                 ref={descriptionInputRef}
@@ -505,7 +581,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
                   INPUT_TEXT_STYLE,
                   {
                     color: light ? '#111111' : '#ffffff',
-                    height: DESCRIPTION_PILL_H,
+                    height: DESCRIPTION_FIELD_H,
                     paddingVertical: 0,
                   },
                 ]}

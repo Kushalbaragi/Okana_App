@@ -5,13 +5,14 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, FadeIn 
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { GlassPressable, CARD_RADIUS, SMOOTH } from './Glass';
 import MonthSlider from './MonthSlider';
+import PaymentGrid from './PaymentGrid';
 import Celebration from './Celebration';
 import ErrorBoundary from './ErrorBoundary';
 import { InlineConfirm } from './InlineConfirm';
 import { GOAL_SUGGESTIONS, GoalSheet, MoneySheet } from './SavingsSheets';
 import GoalCard from './GoalCard';
 import { SwipeDeleteAction, useSwipeDelete, useSwipeGroup } from './SwipeDeleteAction';
-import { Card, ProgressBar, POSITIVE, cardFill, dim, money } from './savingsShared';
+import { Card, ProgressBar, POSITIVE, cardFill, dim, money, KIND_COPY, DEBT_SUGGESTIONS } from './savingsShared';
 import { textColor } from '../utils/colors';
 import { TABULAR } from '../utils/type';
 import { CheckIcon, ChevronRight, EditIcon, PlusIcon } from './icons';
@@ -39,15 +40,15 @@ const PLACEHOLDER_MONTHS = 12;
 // reports having closed (see flushGoalDelete): longer than its close animation.
 const GOAL_DELETE_BACKSTOP_MS = 700;
 
-// A line on how the goal got there: how many deposits, over how long, since
-// when. Empty when there are no deposits to speak of.
-function journeyNote(entries) {
+// A line on how the goal got there: how many deposits (or payments, for a
+// loan), over how long, since when. Empty when there are none to speak of.
+function journeyNote(entries, depositWord = 'deposit') {
   const deposits = entries.filter(e => e.type === 'add').length;
   if (deposits === 0) return '';
   const first = entries.reduce((min, e) => (e.date < min ? e.date : min), entries[0].date);
   const days = Math.max(1, Math.floor((Date.now() - new Date(`${first}T00:00:00`).getTime()) / 86400000));
   const span = days < 60 ? `${days} day${days === 1 ? '' : 's'}` : `${Math.round(days / 30.44)} months`;
-  return `${deposits} deposit${deposits === 1 ? '' : 's'} over ${span} · since ${MONTH_NAMES[Number(first.slice(5, 7)) - 1].slice(0, 3)} ${first.slice(0, 4)}`;
+  return `${deposits} ${depositWord}${deposits === 1 ? '' : 's'} over ${span} · since ${MONTH_NAMES[Number(first.slice(5, 7)) - 1].slice(0, 3)} ${first.slice(0, 4)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -119,23 +120,27 @@ export function useSavingsUI() {
   };
 }
 
-export function SavingsSheetsHost({ savings, ui, light = false }) {
+export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings' }) {
+  const copy = KIND_COPY[kind];
+  const goalList = kind === 'debt' ? savings.allDebts : savings.allGoals;
   const { sheetOpen, sheetData, closeSheet, confirmOpen, confirmData, closeConfirm } = ui;
   const goalId = sheetData?.goalId ?? null;
-  const goal = goalId ? savings.allGoals.find(g => g.id === goalId) : null;
+  const goal = goalId ? goalList.find(g => g.id === goalId) : null;
   const entry = sheetData?.entryId && goal ? goal.entries.find(e => e.id === sheetData.entryId) : null;
 
-  const submitGoal = useCallback(({ name, target, location }) => (
-    goalId ? savings.editGoal(goalId, { name, target, location }) : savings.addGoal({ name, target, location })
-  ), [savings, goalId]);
+  const submitGoal = useCallback(({ name, target, location, tenureMonths, emisPaidBefore }) => (
+    goalId
+      ? savings.editGoal(goalId, { name, target, location, tenureMonths, emisPaidBefore })
+      : savings.addGoal({ name, target, location, kind, tenureMonths, emisPaidBefore })
+  ), [savings, goalId, kind]);
 
-  const submitMoney = useCallback(({ type, amount, note, date }) => (
-    entry ? savings.updateEntry(entry.id, { type, amount, note, date }) : savings.addEntry(goalId, { type, amount, note, date })
+  const submitMoney = useCallback((payload) => (
+    entry ? savings.updateEntry(entry.id, payload) : savings.addEntry(goalId, payload)
   ), [savings, goalId, entry]);
 
   // What the confirmation is about, looked up from the data rather than
   // carried in state so it can't go stale.
-  const confirmGoal = confirmData ? savings.allGoals.find(g => g.id === confirmData.goalId) : null;
+  const confirmGoal = confirmData ? goalList.find(g => g.id === confirmData.goalId) : null;
   const confirmEntry = confirmData?.kind === 'entry' && confirmGoal ? confirmGoal.entries.find(e => e.id === confirmData.entryId) : null;
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [confirmError, setConfirmError] = useState('');
@@ -149,11 +154,11 @@ export function SavingsSheetsHost({ savings, ui, light = false }) {
     const what = confirmGoal.saved > 0
       ? `${confirmGoal.name} and its ${money(confirmGoal.saved)} history`
       : confirmGoal.entries.length > 0 ? `${confirmGoal.name} and its history` : confirmGoal.name;
-    confirmTitle = 'Delete goal?';
+    confirmTitle = copy.deleteTitle;
     confirmMessage = `${what} will be deleted. This can't be undone.`;
   } else if (confirmData?.kind === 'entry' && confirmEntry && confirmGoal) {
     confirmTitle = 'Delete entry?';
-    confirmMessage = `This ${money(confirmEntry.amount)} ${confirmEntry.type === 'add' ? 'deposit' : 'withdrawal'} will be removed from ${confirmGoal.name}.`;
+    confirmMessage = `This ${money(confirmEntry.amount)} ${kind === 'debt' ? 'payment' : (confirmEntry.type === 'add' ? 'deposit' : 'withdrawal')} will be removed from ${confirmGoal.name}.`;
   }
 
   // A goal is deleted once the dialog has closed, not while it is still on
@@ -198,6 +203,7 @@ export function SavingsSheetsHost({ savings, ui, light = false }) {
         initialName={sheetData?.initialName || ''}
         onSubmit={submitGoal}
         light={light}
+        kind={kind}
       />
       <MoneySheet
         open={sheetOpen && sheetData?.kind === 'money'}
@@ -209,6 +215,7 @@ export function SavingsSheetsHost({ savings, ui, light = false }) {
         maxWithdraw={goal?.saved || 0}
         onSubmit={submitMoney}
         light={light}
+        kind={kind}
       />
       {/* Last, so it sits above the sheets as well as the page. */}
       <InlineConfirm
@@ -260,11 +267,48 @@ function monthlyNets(entries) {
   };
 }
 
+// Debt's own equivalent of monthlyNets above: rather than a per-month net, a
+// year x month grid of which months have a payment logged. Runs from the
+// month the loan was added to either its last tenured month (tenureMonths
+// set) or the current month/latest payment, whichever is later, so a month
+// with nothing in it yet still shows as "due" rather than being cut off.
+//
+// `emisPaidBefore` backdates that start by however many EMIs were already
+// paid before the loan was added here — most loans aren't added on day one.
+// Those months are marked paid outright, with no entry of their own behind
+// them; only the ones from the loan's app-add date on are read off real
+// entries.
+function paymentGrid(entries, createdAt, tenureMonths, emisPaidBefore = 0) {
+  const payments = entries.filter(e => e.type === 'add');
+  const { month: curMonth, year: curYear } = currentMonthYear();
+  const curIndex = curYear * 12 + curMonth;
+  const created = new Date(createdAt);
+  const trackedIndex = created.getFullYear() * 12 + created.getMonth();
+  const startIndex = trackedIndex - emisPaidBefore;
+  const paidIndexes = new Set(payments.map(e => Number(e.date.slice(0, 4)) * 12 + Number(e.date.slice(5, 7)) - 1));
+  const latestPaid = paidIndexes.size ? Math.max(...paidIndexes) : trackedIndex;
+  const endIndex = tenureMonths ? startIndex + tenureMonths - 1 : Math.max(curIndex, latestPaid);
+
+  const startYear = Math.floor(startIndex / 12);
+  const endYear = Math.floor(endIndex / 12);
+  const years = [];
+  for (let y = startYear; y <= endYear; y++) {
+    const cells = [];
+    for (let m = 0; m < 12; m++) {
+      const idx = y * 12 + m;
+      const paid = idx < trackedIndex ? idx >= startIndex : paidIndexes.has(idx);
+      cells.push({ paid, inRange: idx >= startIndex && idx <= endIndex });
+    }
+    years.push({ year: y, cells });
+  }
+  return { years, paidCount: emisPaidBefore + payments.length };
+}
+
 // The button at the bottom of the list: a labelled pill rather than a bare "+",
 // since starting a goal is the one thing this page is for and the words say so.
 // The app's primary-CTA treatment (light fill, dark text) — the same as Create,
 // Add and Save — because it is this page's one main action.
-function NewGoalButton({ onPress }) {
+function NewGoalButton({ onPress, label }) {
   const insets = useSafeAreaInsets();
   return (
     // The wrapper spans the width only to centre the pill without measuring
@@ -275,10 +319,10 @@ function NewGoalButton({ onPress }) {
         radius={9999}
         onPress={onPress}
         accessibilityRole="button"
-        accessibilityLabel="New goal"
+        accessibilityLabel={label}
         style={{ paddingHorizontal: 28, paddingVertical: 16, alignItems: 'center' }}
       >
-        <Text className="text-base font-semibold text-black">New goal</Text>
+        <Text className="text-base font-semibold text-black">{label}</Text>
       </GlassPressable>
     </View>
   );
@@ -306,18 +350,20 @@ function Divider({ inset = 16, light }) {
   return <View style={{ height: StyleSheet.hairlineWidth, marginHorizontal: inset, backgroundColor: light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }} />;
 }
 
-function EmptyState({ onNew, light }) {
+function EmptyState({ onNew, light, kind = 'savings' }) {
+  const copy = KIND_COPY[kind];
+  const suggestions = kind === 'debt' ? DEBT_SUGGESTIONS : GOAL_SUGGESTIONS;
   return (
     <View className="items-center" style={{ paddingTop: 72, paddingHorizontal: 16 }}>
-      <Text className="text-xl font-semibold text-center" style={{ color: light ? '#111111' : '#ffffff' }}>Start your first goal</Text>
+      <Text className="text-xl font-semibold text-center" style={{ color: light ? '#111111' : '#ffffff' }}>{copy.emptyTitle}</Text>
       <Text className="text-base text-center" style={{ color: textColor(light).tertiary, marginTop: 8, marginBottom: 24, lineHeight: 22 }}>
-        Track what you're setting aside for a bike, a home, or a rainy day.
+        {copy.emptyBody}
       </Text>
       <GlassPressable variant="active" radius={9999} onPress={() => onNew('')} style={{ paddingHorizontal: 32, paddingVertical: 12, alignItems: 'center' }}>
-        <Text className="text-black text-[15px] font-semibold">New goal</Text>
+        <Text className="text-black text-[15px] font-semibold">{copy.newLabel}</Text>
       </GlassPressable>
       <View className="flex-row flex-wrap justify-center" style={{ gap: 8, marginTop: 20 }}>
-        {GOAL_SUGGESTIONS.map(name => (
+        {suggestions.map(name => (
           <GlassPressable key={name} variant="field" radius={9999} onPress={() => onNew(name)} style={{ paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1, borderColor: dim(light, 0.14) }}>
             <Text className="text-sm" style={{ color: dim(light, 0.7) }}>{name}</Text>
           </GlassPressable>
@@ -342,7 +388,8 @@ function DateChip({ dateStr, light }) {
 // and going, a sheet holding) doesn't repaint every row. Swiping it left reveals
 // a delete button, which asks `onDelete` (the caller confirms). It paints the
 // card's own fill, or the button underneath would show through as it slides.
-const HistoryRow = memo(function HistoryRow({ entry, onPress, onDelete, registerSwipeable, onSwipeOpen, onRowPress, light }) {
+const HistoryRow = memo(function HistoryRow({ entry, onPress, onDelete, registerSwipeable, onSwipeOpen, onRowPress, light, kind = 'savings' }) {
+  const copy = KIND_COPY[kind];
   const isAdd = entry.type === 'add';
   const { setSwipeableRef, handleDelete } = useSwipeDelete(entry.id, onDelete, registerSwipeable);
   // A tap that closed an open row is spent on that, so it doesn't also open the
@@ -367,7 +414,7 @@ const HistoryRow = memo(function HistoryRow({ entry, onPress, onDelete, register
             <View className="flex-row items-center flex-1" style={{ gap: 10 }}>
               <DateChip dateStr={entry.date} light={light} />
               <Text className="text-base" numberOfLines={1} style={{ flexShrink: 1, color: light ? '#111111' : '#ffffff' }}>
-                {entry.note || (isAdd ? 'Added' : 'Withdrew')}
+                {entry.note || (isAdd ? copy.addedLabel : copy.withdrewLabel)}
               </Text>
             </View>
             <Text className="text-base font-medium" style={{ color: isAdd ? POSITIVE : dim(light, 0.5) }}>
@@ -383,13 +430,22 @@ const HistoryRow = memo(function HistoryRow({ entry, onPress, onDelete, register
 // ---------------------------------------------------------------------------
 // Detail
 // ---------------------------------------------------------------------------
-function GoalDetail({ goal, savings, ui, light }) {
+function GoalDetail({ goal, savings, ui, light, kind = 'savings' }) {
+  const copy = KIND_COPY[kind];
   const insets = useSafeAreaInsets();
   // Held back while the celebration is up, so the "goal reached" prompt comes
   // in once it has been dismissed rather than under it.
   const [celebrating, setCelebrating] = useState(false);
   const showReached = goal.reached && !goal.completedAt && !celebrating;
   const chart = useMemo(() => monthlyNets(goal.entries), [goal.entries]);
+  const grid = useMemo(
+    () => (kind === 'debt' ? paymentGrid(goal.entries, goal.createdAt, goal.tenureMonths, goal.emisPaidBefore) : null),
+    [kind, goal.entries, goal.createdAt, goal.tenureMonths, goal.emisPaidBefore]
+  );
+  const emisLeft = kind === 'debt' && goal.tenureMonths != null ? Math.max(0, goal.tenureMonths - grid.paidCount) : null;
+  const showChart = kind === 'debt'
+    ? (goal.entries.length > 0 || goal.tenureMonths != null || goal.emisPaidBefore > 0)
+    : goal.entries.length > 0;
 
   // Celebrates the moment the goal reaches its target while this page is open.
   // A goal that was already reached when its page opened does not (nor one whose
@@ -426,7 +482,7 @@ function GoalDetail({ goal, savings, ui, light }) {
           onPress={() => ui.openEditGoal(goal.id)}
           style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 32, alignItems: 'center', justifyContent: 'center' }}
           accessibilityRole="button"
-          accessibilityLabel="Edit goal"
+          accessibilityLabel={copy.editGoalLabel}
         >
           <EditIcon color={textColor(light).disabled} />
         </Pressable>
@@ -436,16 +492,19 @@ function GoalDetail({ goal, savings, ui, light }) {
       )}
 
       {/* The big figure, a plain progress bar (the same one the goal cards
-          use) and its two captions. */}
+          use) and its two captions. Debt's headline is `remaining`, not
+          `saved` — see GoalCard's own comment on why. */}
       <View style={{ marginTop: 16, paddingBottom: 10, marginBottom: 16 }}>
         <View className="flex-row items-baseline justify-center mb-4" style={{ gap: 6 }}>
-          <Text style={{ color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.80)', fontSize: 32, fontWeight: '600', letterSpacing: -0.5 }}>{money(goal.saved)}</Text>
-          <Text style={{ color: dim(light, 0.5), fontSize: 15 }}>saved</Text>
+          <Text style={{ color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.80)', fontSize: 32, fontWeight: '600', letterSpacing: -0.5 }}>
+            {money(kind === 'debt' ? goal.remaining : goal.saved)}
+          </Text>
+          <Text style={{ color: dim(light, 0.5), fontSize: 15 }}>{copy.figureSuffix}</Text>
         </View>
         <ProgressBar percent={goal.percent} height={8} light={light} />
         <View className="flex-row items-center justify-between mt-2.5">
           <Text className="text-xs" style={{ color: textColor(light).disabled }}>{goal.percent}%</Text>
-          <Text className="text-xs" style={{ color: textColor(light).tertiary }}>{money(goal.target)} target</Text>
+          <Text className="text-xs" style={{ color: textColor(light).tertiary }}>{money(goal.target)} {copy.targetSuffix}</Text>
         </View>
       </View>
 
@@ -453,7 +512,7 @@ function GoalDetail({ goal, savings, ui, light }) {
         <View className="flex-row items-center justify-center" style={{ gap: 10, marginTop: 20 }}>
           <View className="flex-row items-center" style={{ gap: 6 }}>
             <CheckIcon size={16} color={POSITIVE} />
-            <Text className="text-base" style={{ color: POSITIVE }}>Completed</Text>
+            <Text className="text-base" style={{ color: POSITIVE }}>{copy.completedLabel}</Text>
           </View>
           <Pressable onPress={() => savings.setGoalCompleted(goal.id, false)} hitSlop={8} accessibilityRole="button">
             <Text className="text-base" style={{ color: textColor(light).disabled }}>Reopen</Text>
@@ -463,10 +522,10 @@ function GoalDetail({ goal, savings, ui, light }) {
         <Animated.View entering={FadeIn.duration(SWAP_MS)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, paddingVertical: 12, paddingHorizontal: 16, borderRadius: CARD_RADIUS, ...SMOOTH, backgroundColor: 'rgba(74,222,128,0.10)' }}>
           <View className="flex-row items-center" style={{ gap: 8 }}>
             <CheckIcon size={16} color={POSITIVE} />
-            <Text className="text-base" style={{ color: POSITIVE }}>Goal reached</Text>
+            <Text className="text-base" style={{ color: POSITIVE }}>{copy.reachedLabel}</Text>
           </View>
           <Pressable onPress={() => savings.setGoalCompleted(goal.id, true)} hitSlop={8} accessibilityRole="button">
-            <Text className="text-base font-medium" style={{ color: light ? '#111111' : '#ffffff' }}>Mark as done</Text>
+            <Text className="text-base font-medium" style={{ color: light ? '#111111' : '#ffffff' }}>{copy.markDoneLabel}</Text>
           </Pressable>
         </Animated.View>
       ) : null}
@@ -475,27 +534,46 @@ function GoalDetail({ goal, savings, ui, light }) {
           fixed centre — the month in the middle is the one read out. Not shown
           until there is something to plot. `key` reopens it on the current
           month when another goal's page takes over this one. */}
-      {goal.entries.length > 0 && (
+      {showChart && (
         <View style={{ marginTop: 12 }}>
-          <Text className="text-[11px] font-medium uppercase tracking-wider px-5 mb-2" style={{ color: textColor(light).disabled }}>Monthly savings</Text>
+          <Text className="text-[11px] font-medium uppercase tracking-wider px-5 mb-2" style={{ color: textColor(light).disabled }}>{copy.monthlyTitle}</Text>
           <Card light={light}>
-            {/* The average sits at the top left; the slider below has no side
-                padding, so its bars slide right out to the card's edge. */}
-            <View style={{ paddingVertical: 16 }}>
-              <View style={{ paddingHorizontal: 20, marginBottom: 6 }}>
-                <Text style={{ color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.90)', fontSize: 26, fontWeight: '600', letterSpacing: -0.5 }}>
-                  {chart.average < 0 ? '−' : ''}{money(Math.abs(chart.average))}
-                </Text>
-                <Text className="text-sm" style={{ color: dim(light, 0.5), marginTop: 2 }}>average per month</Text>
+            {kind === 'debt' ? (
+              // EMIs paid on the left, EMIs left on the right (only once a
+              // tenure is known) — then the grid itself, one row per year.
+              <View style={{ paddingVertical: 16, paddingHorizontal: 20 }}>
+                <View className="flex-row items-end justify-between" style={{ marginBottom: 14 }}>
+                  <View className="flex-row items-baseline" style={{ gap: 6 }}>
+                    <Text style={{ color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.90)', fontSize: 26, fontWeight: '600', letterSpacing: -0.5 }}>
+                      {grid.paidCount}{goal.tenureMonths != null ? ` / ${goal.tenureMonths}` : ''}
+                    </Text>
+                    <Text className="text-sm" style={{ color: dim(light, 0.5) }}>{copy.monthlyAvgSuffix}</Text>
+                  </View>
+                  {emisLeft != null && (
+                    <Text className="text-xs" style={{ color: textColor(light).tertiary }}>{emisLeft} left</Text>
+                  )}
+                </View>
+                <PaymentGrid years={grid.years} light={light} />
               </View>
-              <MonthSlider key={goal.id} months={chart.months} initialIndex={chart.initialIndex} light={light} />
-            </View>
+            ) : (
+              // The average sits at the top left; the slider below has no side
+              // padding, so its bars slide right out to the card's edge.
+              <View style={{ paddingVertical: 16 }}>
+                <View style={{ paddingHorizontal: 20, marginBottom: 6 }}>
+                  <Text style={{ color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.90)', fontSize: 26, fontWeight: '600', letterSpacing: -0.5 }}>
+                    {chart.average < 0 ? '−' : ''}{money(Math.abs(chart.average))}
+                  </Text>
+                  <Text className="text-sm" style={{ color: dim(light, 0.5), marginTop: 2 }}>{copy.monthlyAvgSuffix}</Text>
+                </View>
+                <MonthSlider key={goal.id} months={chart.months} initialIndex={chart.initialIndex} light={light} />
+              </View>
+            )}
           </Card>
         </View>
       )}
 
       <Text className="text-[11px] font-medium uppercase tracking-wider px-4 mb-2" style={{ color: textColor(light).disabled, marginTop: 28 }}>
-        History
+        {copy.historyTitle}
       </Text>
     </View>
 
@@ -507,7 +585,7 @@ function GoalDetail({ goal, savings, ui, light }) {
       contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: insets.bottom + 120 }}
     >
       {goal.entries.length === 0 ? (
-        <Text className="text-base px-1" style={{ color: textColor(light).tertiary }}>Nothing added yet.</Text>
+        <Text className="text-base px-1" style={{ color: textColor(light).tertiary }}>{copy.historyEmpty}</Text>
       ) : (
         <Card light={light}>
           {goal.entries.map((e, i) => (
@@ -520,6 +598,7 @@ function GoalDetail({ goal, savings, ui, light }) {
                 onSwipeOpen={swipes.onSwipeOpen}
                 onRowPress={swipes.onRowPress}
                 light={light}
+                kind={kind}
               />
               {i < goal.entries.length - 1 && <Divider inset={16} light={light} />}
             </View>
@@ -527,12 +606,12 @@ function GoalDetail({ goal, savings, ui, light }) {
         </Card>
       )}
     </ScrollView>
-    <AddFab onPress={() => ui.openMoney(goal.id, 'add')} label="Add or withdraw money" />
+    <AddFab onPress={() => ui.openMoney(goal.id, 'add')} label={copy.fabLabel} />
     {/* Decoration: if it fails it goes away, and the "goal reached" prompt it was
         holding back comes straight in. */}
     {celebrating && (
       <ErrorBoundary onError={endCelebration}>
-        <Celebration title="Congrats, you made it" subtitle={`${goal.name} · ${money(goal.target)}`} note={journeyNote(goal.entries)} onDone={endCelebration} />
+        <Celebration title={copy.celebrationTitle} subtitle={`${goal.name} · ${money(goal.target)}`} note={journeyNote(goal.entries, copy.depositWord)} onDone={endCelebration} />
       </ErrorBoundary>
     )}
     </View>
@@ -542,12 +621,15 @@ function GoalDetail({ goal, savings, ui, light }) {
 // ---------------------------------------------------------------------------
 // Section
 // ---------------------------------------------------------------------------
-function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOpenGoal, onCloseGoal }) {
+function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOpenGoal, onCloseGoal, kind = 'savings' }) {
+  const copy = KIND_COPY[kind];
   const insets = useSafeAreaInsets();
   // What is shown is held while a sheet is open, and let go once it has
   // finished closing. The held copy is whatever was current the last time no
   // sheet was up, i.e. the moment before the one now open appeared.
-  const liveView = { goals: savings.goals, completedGoals: savings.completedGoals, allGoals: savings.allGoals, totalSaved: savings.totalSaved };
+  const liveView = kind === 'debt'
+    ? { goals: savings.debts, completedGoals: savings.completedDebts, allGoals: savings.allDebts, totalSaved: savings.totalOwed }
+    : { goals: savings.goals, completedGoals: savings.completedGoals, allGoals: savings.allGoals, totalSaved: savings.totalSaved };
   const heldViewRef = useRef(liveView);
   if (ui.sheetClosed) heldViewRef.current = liveView;
   const { goals, completedGoals, allGoals, totalSaved } = ui.sheetClosed ? liveView : heldViewRef.current;
@@ -600,13 +682,16 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
           contentContainerStyle={{ paddingHorizontal: GUTTER, paddingTop: 8, paddingBottom: insets.bottom + 130 }}
         >
           {isEmpty ? (
-            <EmptyState onNew={ui.openNewGoal} light={light} />
+            <EmptyState onNew={ui.openNewGoal} light={light} kind={kind} />
           ) : (
             <>
               <View className="items-center" style={{ paddingBottom: 22 }}>
-                <Text className="text-sm" style={{ color: textColor(light).tertiary }}>Total Savings</Text>
+                <Text className="text-sm" style={{ color: textColor(light).tertiary }}>{copy.sectionTotal}</Text>
+                {/* Same size/weight as Home's own headline figure
+                    (SummaryCard's HEADLINE_TEXT_STYLE) — this is the same
+                    kind of number, just on a different screen. */}
                 <Text
-                  style={{ fontSize: 44, lineHeight: 52, fontWeight: '300', letterSpacing: -1, color: light ? '#111111' : '#ffffff', ...TABULAR }}
+                  style={{ fontSize: 44, lineHeight: 52, fontWeight: '400', letterSpacing: -1.75, color: light ? '#111111' : '#ffffff', ...TABULAR }}
                 >
                   {money(totalSaved)}
                 </Text>
@@ -621,9 +706,9 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
                     className="flex-row items-center justify-between px-1"
                     style={{ paddingVertical: 14 }}
                     accessibilityRole="button"
-                    accessibilityLabel="Completed goals"
+                    accessibilityLabel={`${copy.completedLabel} ${kind === 'debt' ? 'loans' : 'goals'}`}
                   >
-                    <Text className="text-sm" style={{ color: textColor(light).tertiary }}>Completed · {completedGoals.length}</Text>
+                    <Text className="text-sm" style={{ color: textColor(light).tertiary }}>{copy.completedLabel} · {completedGoals.length}</Text>
                     <View style={{ transform: [{ rotate: showCompleted ? '90deg' : '0deg' }] }}>
                       <ChevronRight color={textColor(light).disabled} />
                     </View>
@@ -639,11 +724,11 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
           )}
         </ScrollView>
 
-        {!isEmpty && <NewGoalButton onPress={() => ui.openNewGoal('')} />}
+        {!isEmpty && <NewGoalButton onPress={() => ui.openNewGoal('')} label={copy.newLabel} />}
       </Animated.View>
 
       <Animated.View style={[StyleSheet.absoluteFill, detailStyle]} pointerEvents={detailOpen ? 'auto' : 'none'}>
-        {detailGoal && <GoalDetail goal={detailGoal} savings={savings} ui={ui} light={light} />}
+        {detailGoal && <GoalDetail goal={detailGoal} savings={savings} ui={ui} light={light} kind={kind} />}
       </Animated.View>
     </View>
   );

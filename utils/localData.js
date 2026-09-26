@@ -16,6 +16,7 @@ export async function clearDataCaches(userId) {
   await AsyncStorage.multiRemove([
     storageKeys.transactions(userId),
     storageKeys.savings(userId),
+    storageKeys.budgetPlan(userId),
     storageKeys.syncedBudget(userId),
     storageKeys.pendingBudget(userId),
     storageKeys.budgetSetupShown(userId),
