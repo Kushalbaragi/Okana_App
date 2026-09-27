@@ -21,7 +21,7 @@ import Header from '../../components/Header';
 import SummaryCard from '../../components/SummaryCard';
 import TransactionList from '../../components/TransactionList';
 import AddModal from '../../components/AddModal';
-import SpendCalendarModal from '../../components/SpendCalendarModal';
+import WalletPage from '../../components/WalletPage';
 import MonthlyRecapModal from '../../components/MonthlyRecapModal';
 import BudgetSetupModal from '../../components/BudgetSetupModal';
 import { UpdateSheet } from '../../components/UpdateSheet';
@@ -133,14 +133,28 @@ export default function Dashboard() {
   const transactionListRef = useRef(null);
   const { showUpdate, latestVersion, dismiss: dismissUpdate } = useAppUpdate();
 
-  // Scale-in-and-fade on mount — Dashboard only ever mounts once per app
-  // session (it stays mounted underneath Settings/Subscription when
-  // navigating there and back, standard stack behavior), so this plays on
-  // the actual app-open moment only, not on every visit here.
+  // Slow fade-in on mount — Dashboard only ever mounts once per app session
+  // (it stays mounted underneath Settings/Subscription when navigating
+  // there and back, standard stack behavior), so this plays on the actual
+  // app-open moment only, not on every visit here.
+  //
+  // Held at 0 until transactions have actually loaded, rather than firing
+  // the instant this effect runs — starting it immediately faded in an
+  // empty shell (header up, chart/list still blank) that then had its
+  // candles and rows pop in separately a beat later once the fetch
+  // resolved, which read as two staggered loads rather than one. Waiting
+  // for real data means the whole screen — header, chart, transactions —
+  // appears together in the same single fade. entranceStartedRef makes
+  // sure this only ever fires once: txLoading also flips true→false on a
+  // later refresh() (e.g. regaining focus after Settings), which must not
+  // replay the entrance.
   const entranceProgress = useSharedValue(0);
+  const entranceStartedRef = useRef(false);
   useEffect(() => {
-    entranceProgress.value = withTiming(1, { duration: 480, easing: SETTLE_EASING });
-  }, []);
+    if (entranceStartedRef.current || txLoading) return;
+    entranceStartedRef.current = true;
+    entranceProgress.value = withTiming(1, { duration: 1100, easing: SETTLE_EASING });
+  }, [txLoading]);
 
   // The Calendar page slides in over Home, and Home eases back and dims beneath
   // it (a parallax). It is driven by the page's own position, `calendarSlideX`,
@@ -157,7 +171,6 @@ export default function Dashboard() {
     return {
       opacity: entranceProgress.value * (1 - covered * PARALLAX_DIM),
       transform: [
-        { scale: 0.94 + entranceProgress.value * 0.06 },
         { translateX: -covered * windowWidth * PARALLAX_SHIFT },
       ],
     };
@@ -315,7 +328,7 @@ export default function Dashboard() {
         // in the same tick as AddModal closing (adding a transaction changes
         // `transactions`, which is this effect's own dependency), and two
         // native RN <Modal>s open at once is a known broken state on Android
-        // (see the note in SpendCalendarModal.js). Let whatever's closing
+        // (see the note in WalletPage.js). Let whatever's closing
         // actually finish first.
         await new Promise(r => setTimeout(r, 320));
         if (cancelled) return;
@@ -517,7 +530,7 @@ export default function Dashboard() {
   // right after it — not opened directly there because AddModal is still
   // mid-close at that point (its own native <Modal> is still up), and two
   // native Modals mounted at once is broken on Android (same constraint
-  // documented on SpendCalendarModal/AddModal above). Stashing the amount
+  // documented on WalletPage/AddModal above). Stashing the amount
   // and waiting for addModalClosed to flip true mirrors that same
   // stash-then-fire pattern.
   const pendingBudgetCrossedRef = useRef(null);
@@ -564,7 +577,7 @@ export default function Dashboard() {
   // Expense/Income/Overview tabs are. Nothing forces a brand-new, data-less
   // account through a step with nothing to show. (The calendar's tap-a-date and
   // budget hints get their own separate tour, triggered from
-  // SpendCalendarModal.js, for the same "only show it once it's real" reason.)
+  // WalletPage.js, for the same "only show it once it's real" reason.)
   const fabRef = useRef(null);
   // The FAB had zero press feedback at all (a plain Pressable) — the most
   // frequently-tapped button on the whole screen deserved better than
@@ -630,7 +643,7 @@ export default function Dashboard() {
 
   // Stable no-arg toggles for the modal props below — each was previously
   // an inline arrow function created fresh every render, which defeated
-  // memo() on Header/AddModal/SpendCalendarModal:
+  // memo() on Header/AddModal/WalletPage:
   // any unrelated Dashboard state change (e.g. switching chart tabs) handed
   // them a "new" onClose/onMenuOpen prop and forced a full re-render of
   // each of those subtrees, AddModal being the heaviest of them.
@@ -642,6 +655,7 @@ export default function Dashboard() {
   const handleAddModalClosed = useCallback(() => setAddModalClosed(true), []);
 
   return (
+    <View style={{ flex: 1, backgroundColor: HOME_BG }}>
     <Animated.View
       className="flex-1"
       style={[{ backgroundColor: HOME_BG }, entranceStyle]}
@@ -745,17 +759,6 @@ export default function Dashboard() {
         light={LIGHT_HOME}
       />
 
-      <SpendCalendarModal
-        open={calendarOpen}
-        onClose={closeCalendar}
-        budget={budgetForCalendar}
-        savings={savings}
-        budgetPlan={budgetPlan}
-        light={LIGHT_HOME}
-        userId={user?.id}
-        slideX={calendarSlideX}
-      />
-
       <MonthlyRecapModal
         open={recapOpen}
         slides={recapSlides}
@@ -817,7 +820,7 @@ export default function Dashboard() {
 
       {/* Gated on the same "nothing else is showing" set the tour hints use
           above — two native <Modal>s mounted at once is broken on Android
-          (see AddModal/SpendCalendarModal's own notes on this), so this
+          (see AddModal/WalletPage's own notes on this), so this
           only actually opens once every other popup has cleared, not the
           instant the version check itself resolves. */}
       <UpdateSheet
@@ -826,5 +829,17 @@ export default function Dashboard() {
         onDismiss={dismissUpdate}
       />
     </Animated.View>
+
+    <WalletPage
+      open={calendarOpen}
+      onClose={closeCalendar}
+      budget={budgetForCalendar}
+      savings={savings}
+      budgetPlan={budgetPlan}
+      light={LIGHT_HOME}
+      userId={user?.id}
+      slideX={calendarSlideX}
+    />
+    </View>
   );
 }

@@ -1,9 +1,6 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { View, Text, FlatList, Pressable, InteractionManager, StyleSheet } from 'react-native';
 import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withDelay,
   withTiming,
 } from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
@@ -35,37 +32,8 @@ function rowEntering() {
   };
 }
 
-// Per-row stagger on the very first paint, capped so a long history doesn't
-// take forever to finish revealing — rows past the cap all settle together
-// at the tail instead of queuing further out.
-const REVEAL_STAGGER_MS = 40;
-const REVEAL_STAGGER_CAP_MS = 420;
-// Only the top rows that are plausibly visible without scrolling get the
-// animated wrapper at all.
-const REVEAL_ANIMATE_MAX = 6;
-
 // How long the tour's demo swipe holds the delete button in view before closing.
 const DEMO_SWIPE_HOLD_MS = 1300;
-
-// Slides up + fades in on mount. Only ever plays for the list's very first
-// paint (see `revealing` below) — later adds/edits/deletes don't replay it,
-// since re-animating every row on every change would be real per-row
-// Reanimated setup cost for no visible benefit past the first paint.
-function RevealRow({ index, children }) {
-  const progress = useSharedValue(0);
-
-  useEffect(() => {
-    progress.value = withDelay(Math.min(index * REVEAL_STAGGER_MS, REVEAL_STAGGER_CAP_MS), withTiming(1, { duration: 300, easing: SETTLE_EASING }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const style = useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [{ translateY: (1 - progress.value) * 14 }],
-  }));
-
-  return <Animated.View style={style}>{children}</Animated.View>;
-}
 
 // One running ledger — every month that has anything in it, newest first,
 // each with a total; every transaction under its own month, newest first.
@@ -118,15 +86,22 @@ function MonthHeader({ label, amount, light, isOpen, onPress }) {
               same language instead of looking like a different component
               bolted onto the same list. Label/total stay bright, dash dim —
               same hierarchy as before, just without the box around it. */}
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={[BODY, { color: textColor(light).primary }]}>{label}</Text>
+          {/* One Text with nested spans, not three sibling Text boxes in a
+              row — siblings each get their own layout box, and the dash's
+              glyph sits at a different optical height within its box than
+              the label/amount do within theirs, so the row read as
+              misaligned even though every box shared the same line-height.
+              Nesting spans inside a single Text lays them out on one
+              shared baseline instead. */}
+          <Text style={[BODY, { color: textColor(light).primary }]}>
+            {label}
             {amount != null && (
               <>
-                <Text style={[BODY, { color: textColor(light).disabled, marginHorizontal: 12 }]}>—</Text>
-                <Text style={[BODY, TABULAR, { color: textColor(light).primary }]}>{formatCurrency(amount)}</Text>
+                <Text style={{ color: textColor(light).disabled }}>{'   —   '}</Text>
+                <Text style={TABULAR}>{formatCurrency(amount)}</Text>
               </>
             )}
-          </View>
+          </Text>
 
           {/* Rotates between pointing right (collapsed) and down (open) —
               same treatment SavingsSection's own "Completed" toggle already
@@ -269,12 +244,8 @@ function TransactionList({
   // did, is what made scrolling janky. FlatList only ever mounts what's on
   // screen plus a small buffer.
   //
-  // `revealIndex` only counts transaction rows (not headers), since
-  // REVEAL_ANIMATE_MAX is about how many rows are plausibly visible on the
-  // first paint, not position within the flattened array.
   const flatData = useMemo(() => {
     const out = [];
-    let revealIndex = 0;
     for (const g of groups) {
       const isCurrent = g.key === currentMonthKey;
       const isOpen = isCurrent || g.key === expandedKey;
@@ -299,25 +270,12 @@ function TransactionList({
       }
       if (isOpen) {
         for (const { tx } of g.items) {
-          out.push({ type: 'tx', key: tx.id, tx, revealIndex: revealIndex++ });
+          out.push({ type: 'tx', key: tx.id, tx });
         }
       }
     }
     return out;
   }, [groups, currentMonthKey, expandedKey, mode]);
-
-  // True only while the list's very first paint is still revealing. This is
-  // state rather than a ref-flipped-on-mount deliberately: `settled` below
-  // forces a re-render a frame or two after that first paint, and a ref
-  // that had already flipped would drop RevealRow's wrapper mid-animation,
-  // popping the rows into place. Held for the reveal's full duration
-  // instead, then flipped once — after which nothing mounts a RevealRow
-  // again, even as more transactions are added later.
-  const [revealing, setRevealing] = useState(true);
-  useEffect(() => {
-    const t = setTimeout(() => setRevealing(false), REVEAL_STAGGER_CAP_MS + 300);
-    return () => clearTimeout(t);
-  }, []);
 
   // False for the first commit only, true once it has settled. Gates the
   // two per-row costs that profiling showed dominate a first paint —
@@ -335,30 +293,26 @@ function TransactionList({
   // Hoisted rather than inlined at the call site so memo(TransactionItem)
   // keeps getting stable props and can actually bail out of re-rendering
   // rows that haven't changed.
-  const renderTransaction = useCallback((item, revealIndex) => {
-    const card = (
-      <Animated.View
-        layout={settled ? ROW_LAYOUT_TRANSITION : undefined}
-        entering={item.id === justAddedId ? rowEntering : undefined}
-        style={{ backgroundColor: cardColor }}
-      >
-        <TransactionItem
-          tx={item}
-          isIncome={item.type === 'income'}
-          onEdit={onEdit}
-          onDelete={onDelete}
-          registerSwipeable={registerSwipeable}
-          onSwipeOpen={onSwipeOpen}
-          onCardPress={onCardPress}
-          light={light}
-          cardColor={cardColor}
-          swipeable={settled}
-        />
-      </Animated.View>
-    );
-    const shouldAnimate = revealing && revealIndex < REVEAL_ANIMATE_MAX;
-    return shouldAnimate ? <RevealRow index={revealIndex}>{card}</RevealRow> : card;
-  }, [settled, revealing, justAddedId, cardColor, onEdit, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light]);
+  const renderTransaction = useCallback((item) => (
+    <Animated.View
+      layout={settled ? ROW_LAYOUT_TRANSITION : undefined}
+      entering={item.id === justAddedId ? rowEntering : undefined}
+      style={{ backgroundColor: cardColor }}
+    >
+      <TransactionItem
+        tx={item}
+        isIncome={item.type === 'income'}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        registerSwipeable={registerSwipeable}
+        onSwipeOpen={onSwipeOpen}
+        onCardPress={onCardPress}
+        light={light}
+        cardColor={cardColor}
+        swipeable={settled}
+      />
+    </Animated.View>
+  ), [settled, justAddedId, cardColor, onEdit, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light]);
 
   const renderItem = useCallback(({ item }) => (
     item.type === 'header'
@@ -371,7 +325,7 @@ function TransactionList({
           onPress={() => toggleMonth(item.groupKey)}
         />
       )
-      : renderTransaction(item.tx, item.revealIndex)
+      : renderTransaction(item.tx)
   ), [renderTransaction, light, toggleMonth]);
 
   const empty = (

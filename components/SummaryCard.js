@@ -357,23 +357,28 @@ function SummaryCard({
 
   const animKey   = `${timeRange}-${year}-${mode}`;
 
-  // Only a genuine mode switch (or the very first paint) gets the full
-  // grow-from-zero reveal — a Month/Year/All swipe is frequent and minor
-  // (same chart type, just paging), and replaying a staggered regrow on
-  // every single swipe added real perceived lag to that; it now just snaps
-  // in under the same opacity dip-and-recover that already softens the
-  // swap (see chartOpacity below), which reads as instant rather than
-  // laggy. A mode switch is the bigger context change (Overview can even
-  // swap chart types entirely, bars to a line) and keeps the full reveal.
+  // Only a genuine mode switch gets the full grow-from-zero reveal — a
+  // Month/Year/All swipe is frequent and minor (same chart type, just
+  // paging), and replaying a staggered regrow on every single swipe added
+  // real perceived lag to that; it now just snaps in under the slide
+  // transition that already carries the swap (see chartTranslateX below),
+  // which reads as instant rather than laggy. A mode switch is the bigger
+  // context change (Overview can even swap chart types entirely, bars to a
+  // line) and keeps the full reveal.
+  //
+  // The very first paint is instant too, not a grow-from-zero reveal — the
+  // whole home screen already plays its own single fade-in on app open (see
+  // Dashboard's entranceProgress), and a staggered bar-by-bar grow-in
+  // underneath that read as the chart loading in a second, separate wave
+  // after the header. Snapping straight to full height here means the
+  // chart rides the same one fade as everything else around it.
   //
   // Writing to a ref during render like this — not in an effect — is what
   // lets `chartInstant` reflect *this* render's change rather than
   // lagging a render behind; see React's own "adjusting state as you
   // render" pattern for why that's safe here (no setState involved).
-  const isFirstRenderRef = useRef(true);
   const prevModeForRevealRef = useRef(mode);
-  const growFromZero = isFirstRenderRef.current || prevModeForRevealRef.current !== mode;
-  isFirstRenderRef.current = false;
+  const growFromZero = prevModeForRevealRef.current !== mode;
   prevModeForRevealRef.current = mode;
   const chartInstant = !growFromZero;
   const labelStep = timeRange === 'month' ? 4 : (timeRange === '5y' && lifetimeGranularity === 'month' ? 6 : 1);
@@ -384,48 +389,46 @@ function SummaryCard({
     timeRange === '5y' ? selectedPeriodIndex :
     -1;
 
-  // Very small, deliberately — a dip-and-recover on the chart's own
-  // opacity when switching between the September/2026/All Time pills, or
-  // between Expense/Income/Overview. Never drops fully to 0 — that read as
-  // a bigger transition than this is meant to be; a shallow dip is enough
-  // to soften the swap without becoming its own moment. animKey (above)
-  // separately regrows every bar from 0 on the same change — this opacity
-  // dip and that regrow are what together read as "seamless" rather than
-  // the bars just snapping to their new heights and colour.
-  // A mode switch still dips-then-recovers around the commit (see the
-  // effect below) — fine there, since growFromZero's own stagger already
-  // gives that transition its own visual continuity. A range swipe used to
-  // do the same, but with `chartInstant` bars now snapping straight to
-  // their final values, dipping AFTER the commit meant the new (already
-  // finished) chart flashed at full opacity for a frame before the dim
-  // even started — the "hard cut" this was meant to hide instead happened
-  // in plain view just ahead of it. Fixed by reordering, for a swipe only:
-  // dim first, swap the data once mostly hidden, reveal after — the
-  // classic dissolve-hides-the-cut trick, not a fade layered on top of an
-  // already-visible cut.
+  // A directional slide on just the chart itself (not the headline amount,
+  // period caption or the page dots below — those live outside this
+  // Animated.View, see the JSX below) when swiping between the Month/Year/
+  // All Time pills, or between Expense/Income/Overview: the chart slides
+  // fully off screen in the swipe direction; once it's off, the data swaps
+  // (chartInstant snaps every bar straight to its new height — no
+  // stagger); the chart then slides in from the opposite side. No fade —
+  // tried a plain opacity dip (read as a light switching on/off) and a
+  // dissolve+scale (softer, but ended up not liked either) before settling
+  // back on this.
   //
-  // 0.06 (near-black) fixed the cut but read as the screen going blank for
-  // a beat — correct sequencing doesn't need the dip that deep to hide a
-  // reshuffle, just deep enough that it's not the eye's focus; 0.35 still
-  // masks it while staying a soft dim rather than a blackout, and the
-  // longer, gentler reveal after is what makes it read as settling into
-  // place rather than snapping back.
-  const DIP_OPACITY = 0.35;
-  const DIP_OUT_MS = 120;
-  const DIP_IN_MS = 380;
+  // pendingSlideDirRef carries the swipe's direction from the gesture
+  // handler (UI thread) to changeRangeBy (JS thread, via runOnJS) to this
+  // effect (fires after the next commit) — a plain ref write on the JS
+  // side of runOnJS, not a worklet mutation, so it's safely visible by
+  // the time this effect reads it. 0 means "not a swipe" (a mode switch,
+  // which has no gesture direction to key off) — that path plays no slide
+  // of its own; growFromZero's own stagger already gives a mode switch
+  // its own visual continuity.
+  const SLIDE_DISTANCE = 36;
+  const SLIDE_OUT_MS = 160;
+  const SLIDE_IN_MS = 320;
 
   const prevSwapKeyRef = useRef(animKey);
-  const chartOpacity = useSharedValue(1);
+  const pendingSlideDirRef = useRef(0);
+  const chartTranslateX = useSharedValue(0);
   useEffect(() => {
     if (prevSwapKeyRef.current === animKey) return;
     prevSwapKeyRef.current = animKey;
-    // Recovery only — a range swipe already dimmed itself before this
-    // commit (see chartSwipe below) and just needs revealing; a mode
-    // switch never dimmed in the first place, so animating to 1 from
-    // wherever it already sits (1) is a harmless no-op there.
-    chartOpacity.value = withTiming(1, { duration: DIP_IN_MS, easing: Easing.out(Easing.cubic) });
-  }, [animKey, chartOpacity]);
-  const chartAnimStyle = useAnimatedStyle(() => ({ opacity: chartOpacity.value }));
+    const dir = pendingSlideDirRef.current;
+    pendingSlideDirRef.current = 0;
+    if (dir === 0) return;
+    // Park the new (already-swapped-in) block on the far side, in the
+    // same direction the old one just exited, then release it.
+    chartTranslateX.value = dir * SLIDE_DISTANCE;
+    chartTranslateX.value = withTiming(0, { duration: SLIDE_IN_MS, easing: SETTLE_EASING });
+  }, [animKey, chartTranslateX]);
+  const chartAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: chartTranslateX.value }],
+  }));
 
   // Swipe the chart itself to change Month/Year/All — this is what actually
   // replaced the pill row (SHOW_RANGE_SELECTOR above): the three states
@@ -456,7 +459,14 @@ function SummaryCard({
 
   const changeRangeBy = useCallback((delta) => {
     const next = resolveNextRange(delta);
-    if (next) onTimeRangeChange(next);
+    if (next) {
+      // Runs on the JS thread (changeRangeBy is only ever invoked via
+      // runOnJS from the gesture worklet below) — a plain ref write here
+      // is safely visible to the slide-in effect above once this commit
+      // lands, unlike mutating a ref from inside the worklet itself.
+      pendingSlideDirRef.current = delta;
+      onTimeRangeChange(next);
+    }
   }, [resolveNextRange, onTimeRangeChange]);
 
   // Which edge chevrons show, in lockstep with what a swipe can actually
@@ -486,21 +496,24 @@ function SummaryCard({
       // Same reachability check as resolveNextRange above, inlined rather
       // than called — this handler runs as a worklet on the UI thread, and
       // calling back into a plain JS closure from there needs runOnJS,
-      // which can't hand back a return value to decide whether to dim.
+      // which can't hand back a return value to decide whether to slide.
       // Checking first (instead of letting changeRangeBy silently bail
-      // after the dip had already started) is what actually matters here:
-      // a blocked swipe used to dim the chart and then never recover,
-      // since nothing changed to trigger the recovery effect.
+      // after the slide-out had already started) is what actually matters
+      // here: a blocked swipe used to dim the chart and then never
+      // recover, since nothing changed to trigger the recovery effect —
+      // same failure mode would apply to a slide left stranded off-screen.
       const idx = RANGE_OPTIONS.findIndex(o => o.id === timeRange);
       let nextIdx = idx + delta;
       if (RANGE_OPTIONS[nextIdx] && RANGE_OPTIONS[nextIdx].id === 'month' && mode !== 'expense') nextIdx += delta;
       if (nextIdx < 0 || nextIdx >= RANGE_OPTIONS.length) return;
-      // Dims first, and only calls into JS (which is what actually swaps
-      // the data) once that dim has finished — see the comment above.
-      chartOpacity.value = withTiming(DIP_OPACITY, { duration: DIP_OUT_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
+      // Slides out first, and only calls into JS (which is what actually
+      // swaps the data) once that's finished — see the comment above.
+      // delta=1 is a forward swipe (finger moving left), so the block
+      // exits to the left (-SLIDE_DISTANCE); delta=-1 exits right.
+      chartTranslateX.value = withTiming(-delta * SLIDE_DISTANCE, { duration: SLIDE_OUT_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
         if (finished) runOnJS(changeRangeBy)(delta);
       });
-    }), [changeRangeBy, chartOpacity, timeRange, mode]);
+    }), [changeRangeBy, chartTranslateX, timeRange, mode]);
 
   return (
     // mx-5 (20), not mx-4 (16) — matches the Header's own px-5 and the
@@ -510,7 +523,6 @@ function SummaryCard({
     // card's month/range vs. that period's actual transactions), and wants
     // the larger between-groups gap rather than the tighter within-card one.
     <View className="mx-5 mb-1 pt-5 pb-8">
-      <Animated.View style={chartAnimStyle}>
         <View className="items-center justify-center mb-7">
           {/* Above the figure now, not below it — the period reads as a
               heading for the number underneath rather than a caption
@@ -534,7 +546,7 @@ function SummaryCard({
             across the amount block above too. */}
         <View style={{ position: 'relative' }}>
           <GestureDetector gesture={chartSwipe}>
-            <View className="mt-4">
+            <Animated.View className="mt-4" style={chartAnimStyle}>
               {mode === 'overview' ? (
                 // Overview means "both together" — this is the same
                 // income/expense pair barValues derives its net from, just
@@ -599,7 +611,7 @@ function SummaryCard({
                   light={light}
                 />
               )}
-            </View>
+            </Animated.View>
           </GestureDetector>
 
           {/* Pure hint, not a second tap target — pointerEvents="none" so
@@ -642,7 +654,6 @@ function SummaryCard({
             />
           ))}
         </View>
-      </Animated.View>
     </View>
   );
 }
