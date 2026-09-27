@@ -24,19 +24,17 @@ export const money = (n) => (Number.isInteger(n) ? formatCurrency(n) : formatCur
 export const KIND_COPY = {
   savings: {
     sectionTotal: 'Total Savings',
-    newLabel: 'New goal',
+    listLabel: 'Add new saving goal',
+    newLabel: 'Add saving goal',
     emptyTitle: 'Start your first goal',
     emptyBody: "Track what you're setting aside for a bike, a home, or a rainy day.",
-    nameFieldLabel: 'Goal',
     namePlaceholder: 'Goal name',
-    whereFieldLabel: 'Where',
     wherePlaceholder: 'Bank, liquid fund... (optional)',
-    amountFieldLabel: 'Target',
-    sheetTitleNew: 'New goal',
+    amountFieldLabel: '',
+    sheetTitleNew: 'Add saving goal',
     sheetTitleEdit: 'Edit goal',
     submitLabel: 'Add Goal',
     figureSuffix: 'saved',
-    targetSuffix: 'target',
     fabLabel: 'Add or withdraw money',
     editGoalLabel: 'Edit goal',
     historyTitle: 'History',
@@ -52,32 +50,26 @@ export const KIND_COPY = {
     addedLabel: 'Added',
     withdrewLabel: 'Withdrew',
     depositWord: 'deposit',
-    withdrawalWord: 'withdrawal',
-    moneySheetLabel: (goalName) => goalName,
   },
   debt: {
     sectionTotal: 'Total Owed',
+    listLabel: 'Track new loan',
     newLabel: 'New loan',
     emptyTitle: 'Track your first loan',
     emptyBody: 'Car loan, personal loan, an EMI, money from a friend — anything you owe, in one place.',
-    nameFieldLabel: 'Loan',
     namePlaceholder: 'Loan name',
-    whereFieldLabel: 'From',
     wherePlaceholder: "Bank, friend's name... (optional)",
-    amountFieldLabel: 'Outstanding amount',
+    amountFieldLabel: 'Amount paid',
     sheetTitleNew: 'New loan',
     sheetTitleEdit: 'Edit loan',
     submitLabel: 'Add Loan',
     figureSuffix: 'remaining',
-    targetSuffix: 'at start',
     fabLabel: 'Log a payment',
     editGoalLabel: 'Edit loan',
     historyTitle: 'Payments',
     historyEmpty: 'No payments logged yet.',
     monthlyTitle: 'EMI tracker',
-    monthlyAvgSuffix: 'EMIs paid',
-    tenureFieldLabel: 'Tenure',
-    alreadyPaidFieldLabel: 'Paid',
+    monthlyAvgSuffix: 'EMI paid',
     completedLabel: 'Cleared',
     reachedLabel: 'Loan cleared',
     markDoneLabel: 'Mark as cleared',
@@ -87,8 +79,6 @@ export const KIND_COPY = {
     addedLabel: 'Payment',
     withdrewLabel: 'Payment',
     depositWord: 'payment',
-    withdrawalWord: 'payment',
-    moneySheetLabel: (goalName) => goalName,
   },
 };
 
@@ -101,9 +91,9 @@ export const dim = (light, a = 0.4) => (light ? `rgba(0,0,0,${a})` : `rgba(255,2
 
 // Solid rounded bar. Fills toward its value whenever it changes, and on first
 // mount — the width is a percentage string on the UI thread, so no layout
-// measuring is needed. `color` overrides the usual green — the Budget bar
-// switches it to red once spend crosses the budget, the same "money leaving"
-// red used everywhere else (see utils/colors.js's EXPENSE).
+// measuring is needed. `color` overrides the usual green, for a caller that
+// wants this same bar in a different state's colour (Budget's own status
+// bar draws its own instead, rather than using this one).
 export function ProgressBar({ percent, height = 6, light, color = FILL_COLOR }) {
   const progress = useSharedValue(0);
   useEffect(() => {

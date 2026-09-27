@@ -33,8 +33,8 @@ const CONTAINER_WIDTH = SLOT * MODES.length;
 // SLOT/BASE_TRACK_HEIGHT it'd otherwise exactly match, on top of and
 // besides the reel's own per-slot spacing (SLOT itself stays untouched, so
 // the track's alignment math below doesn't shift).
-const BOX_PAD_V = 4;
-const BOX_PAD_H = 3;
+const BOX_PAD_V = 5;
+const BOX_PAD_H = 4;
 const BASE_TRACK_HEIGHT = 26;
 const TRACK_HEIGHT = BASE_TRACK_HEIGHT + BOX_PAD_V * 2;
 const BOX_WIDTH = SLOT + BOX_PAD_H * 2;
@@ -60,7 +60,7 @@ function DimReel({ trackStyle, light, onSelectMode }) {
     >
       {MODES.map(m => (
         <Pressable key={m} onPress={() => onSelectMode(m)} style={{ width: SLOT, height: '100%', alignItems: 'center', justifyContent: 'center' }}>
-          <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: '500', color: textColor(light).disabled, letterSpacing: 0.1 }}>
+          <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: '500', color: textColor(light).disabled, letterSpacing: 0.1 }}>
             {MODE_LABELS[m]}
           </Text>
         </Pressable>

@@ -39,14 +39,21 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
   const figure = done ? dim(light, 0.6) : light ? '#111111' : '#ffffff';
   const isDebt = goal.kind === 'debt';
 
-  // Debt's own card, one line and a bar — the user's own sketch: "Car Loan —
-  // 2,50,000 left" with the arrow, then just the progress underneath.
-  // Deliberately lighter than Savings' card (no percent badge, no location,
-  // no second "of X at start" line) — the loan's own page still has all of
-  // that; this is the list, and a loan reads fine as one line and a bar.
-  // Only one of these two is ever built — a list row has no use for the
-  // other kind's tree, so there's no reason to pay for building it too.
-  const card = isDebt ? (
+  // Debt and Savings share the exact same card shape — a name row, then the
+  // headline figure with its "of X" caption (debt's own reads "left of X",
+  // since the headline there is what's still owed rather than what's been
+  // saved), then the bar — differing only in which numbers and words go
+  // into it, so those are picked once here rather than building two
+  // near-identical trees.
+  const headlineAmount = isDebt ? goal.remaining : goal.saved;
+  const caption = isDebt
+    ? (goal.location ? `left from ${goal.location}` : `left of ${money(goal.target)}`)
+    : (goal.location ? `saved in ${goal.location}` : `of ${money(goal.target)}`);
+  const accessibilityLabel = done
+    ? `${goal.name}, ${isDebt ? 'cleared' : 'completed'}`
+    : isDebt ? `${goal.name}, ${money(goal.remaining)} left` : goal.name;
+
+  const card = (
     <Card light={light}>
       <GlassPressable
         variant="field"
@@ -54,59 +61,31 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
         onPress={handlePress}
         style={{ padding: 16 }}
         accessibilityRole="button"
-        accessibilityLabel={done ? `${goal.name}, cleared` : `${goal.name}, ${money(goal.remaining)} left`}
+        accessibilityLabel={accessibilityLabel}
       >
         <View className="flex-row items-center justify-between" style={{ gap: 12 }}>
-          <View className="flex-row items-baseline flex-1" style={{ gap: 6 }}>
+          <View className="flex-row items-center flex-1" style={{ gap: 8 }}>
             {done && <CheckIcon size={14} color={POSITIVE} />}
-            <Text numberOfLines={1} style={{ fontSize: 15, color: done ? dim(light, 0.5) : figure }}>{goal.name}</Text>
-            {!done && (
-              <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 15, color: textColor(light).tertiary }}>
-                — {money(goal.remaining)} left
-              </Text>
-            )}
+            <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 15, color: done ? dim(light, 0.5) : textColor(light).tertiary }}>{goal.name}</Text>
           </View>
-          <ChevronRight color={textColor(light).disabled} />
-        </View>
-        {!done && <View style={{ marginTop: 12 }}><ProgressBar percent={goal.percent} height={5} light={light} /></View>}
-      </GlassPressable>
-    </Card>
-  ) : (
-    <Card light={light}>
-      <GlassPressable
-        variant="field"
-        pressScale={false}
-        onPress={handlePress}
-        style={{ padding: 16 }}
-        accessibilityRole="button"
-        accessibilityLabel={done ? `${goal.name}, completed` : goal.name}
-      >
-        <View className="flex-row items-center justify-between" style={{ gap: 12 }}>
-          <View style={{ flexShrink: 1 }}>
-            <View className="flex-row items-center" style={{ gap: 8 }}>
-              {done && <CheckIcon size={14} color={POSITIVE} />}
-              <Text className="text-[15px]" numberOfLines={1} style={{ flexShrink: 1, color: done ? dim(light, 0.5) : textColor(light).tertiary }}>{goal.name}</Text>
-            </View>
-            {!!goal.location && (
-              <Text className="text-xs" numberOfLines={1} style={{ marginTop: 2, color: dim(light, 0.4) }}>{goal.location}</Text>
-            )}
-          </View>
-          <View className="flex-row items-center" style={{ gap: 6 }}>
-            <View style={{ backgroundColor: 'rgba(74,222,128,0.14)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 }}>
-              <Text className="text-[13px] font-medium" style={{ color: '#4ade80' }}>{goal.percent}%</Text>
-            </View>
+          <View className="flex-row items-center" style={{ gap: 8 }}>
+            {!done && <Text className="text-[13px] font-medium" style={{ color: POSITIVE }}>{goal.percent}%</Text>}
             <ChevronRight color={textColor(light).disabled} />
           </View>
         </View>
-        <View className="flex-row items-baseline" style={{ gap: 8, marginTop: 8, marginBottom: done ? 0 : 12 }}>
-          <Text style={{ fontSize: 24, fontWeight: '400', letterSpacing: -0.5, color: figure, ...TABULAR }}>
-            {money(goal.saved)}
-          </Text>
-          <Text className="text-[13px]" numberOfLines={1} style={{ flexShrink: 1, color: textColor(light).tertiary }}>
-            of {money(goal.target)}
-          </Text>
-        </View>
-        {!done && <ProgressBar percent={goal.percent} height={5} light={light} />}
+        {!done && (
+          <>
+            <View className="flex-row items-baseline" style={{ gap: 8, marginTop: 8, marginBottom: 12 }}>
+              <Text style={{ fontSize: 24, fontWeight: '400', letterSpacing: -0.5, color: figure, ...TABULAR }}>
+                {money(headlineAmount)}
+              </Text>
+              <Text className="text-[13px]" numberOfLines={1} style={{ flexShrink: 1, color: textColor(light).tertiary }}>
+                {caption}
+              </Text>
+            </View>
+            <ProgressBar percent={goal.percent} height={5} light={light} />
+          </>
+        )}
       </GlassPressable>
     </Card>
   );

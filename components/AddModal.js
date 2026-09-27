@@ -2,7 +2,7 @@ import { memo, useCallback, useState, useEffect, useRef } from 'react';
 import { Modal, View, Text, TextInput, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring, runOnJS, Easing } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, Easing } from 'react-native-reanimated';
 import { today, formatDayLabel } from '../utils/format';
 import CalendarPicker from './CalendarPicker';
 import { GlassPressable, INPUT_TEXT_STYLE, POPUP_RADIUS, SMOOTH } from './Glass';
@@ -11,9 +11,8 @@ import { useAmountEntry } from '../hooks/useAmountEntry';
 import { AmountRow } from './AmountField';
 import { useShake } from '../hooks/useShake';
 import { hapticHeavy } from '../utils/haptics';
-import { SPRING_SMOOTH } from '../utils/motion';
+import { ReelSlider } from './ReelSlider';
 import { CalendarIcon } from './icons';
-import { textColor } from '../utils/colors';
 
 // Height of the description field. Shared by its wrapper and the input
 // inside it, so both are centring text within the exact same box.
@@ -55,107 +54,57 @@ const DRAG_CLOSE_EASING = Easing.out(Easing.cubic);
 const DISMISS_DISTANCE = 120;
 const DISMISS_VELOCITY = 800;
 
-// Same sliding-reel-under-a-fixed-window design as the Home header's own
-// Expense/Income/Overview switch (see ModeSlider/DimReel in Header.js) —
-// two slots instead of three, otherwise an unmodified copy of that same
-// look: a dim, always-visible reel underneath (where taps actually land),
-// and a solid pill window on top that clips a second bright/bold copy of
-// the same labels as it glides between them. `type` here is local state
-// (not owned by a parent the way Header's `mode` is), so this drives
-// itself off the type/onSelect props directly rather than round-tripping
-// through an effect the way ModeSlider's `mode` prop does.
+// Expense/Income modes for the ReelSlider below (see its own comment for
+// the shared sliding-reel design this and Savings' Add/Withdraw toggle and
+// the Home header's own Expense/Income/Overview switch all use).
 const TYPE_MODES = ['expense', 'income'];
 const TYPE_LABELS = { expense: 'Expense', income: 'Income' };
-const TYPE_SLOT = 72;
-// Header's own version gets this for free at 3 slots: with the active
-// slot centred, showing its one immediate neighbour in full (not clipped)
-// needs a container at least 3 slots wide, regardless of how many modes
-// actually exist — the maths is the same either way (a container exactly
-// N slots wide only fully shows a neighbour up to (N-1)/2 slots away). At
-// exactly 2 slots (one per mode here), that neighbour was clipped by
-// exactly half its own width. Padding the container out to 3 slots — with
-// only 2 real modes still centred inside it via the same offset formula —
-// fixes it without changing anything about how many modes there are.
-const TYPE_CONTAINER_WIDTH = TYPE_SLOT * 3;
-const TYPE_BOX_PAD_V = 4;
-const TYPE_BOX_PAD_H = 3;
-const TYPE_BASE_TRACK_HEIGHT = 26;
-const TYPE_TRACK_HEIGHT = TYPE_BASE_TRACK_HEIGHT + TYPE_BOX_PAD_V * 2;
-const TYPE_BOX_WIDTH = TYPE_SLOT + TYPE_BOX_PAD_H * 2;
-
-function typeIndexOffset(i) {
-  return -(i * TYPE_SLOT + TYPE_SLOT / 2);
-}
-
-function TypeDimReel({ trackStyle, light, onSelect }) {
-  return (
-    <Animated.View style={[{ position: 'absolute', left: TYPE_CONTAINER_WIDTH / 2, top: 0, height: '100%', flexDirection: 'row' }, trackStyle]}>
-      {TYPE_MODES.map(m => (
-        <Pressable key={m} onPress={() => onSelect(m)} style={{ width: TYPE_SLOT, height: '100%', alignItems: 'center', justifyContent: 'center' }}>
-          <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: '500', color: textColor(light).disabled, letterSpacing: 0.1 }}>
-            {TYPE_LABELS[m]}
-          </Text>
-        </Pressable>
-      ))}
-    </Animated.View>
-  );
-}
-
-function TypeSlider({ type, onSelect, light }) {
-  const offset = useSharedValue(typeIndexOffset(TYPE_MODES.indexOf(type)));
-
-  useEffect(() => {
-    offset.value = withSpring(typeIndexOffset(TYPE_MODES.indexOf(type)), SPRING_SMOOTH);
-  }, [type, offset]);
-
-  const trackStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: offset.value }],
-  }));
-
-  return (
-    <View style={{ width: TYPE_CONTAINER_WIDTH, height: TYPE_TRACK_HEIGHT, overflow: 'hidden' }}>
-      <TypeDimReel trackStyle={trackStyle} light={light} onSelect={onSelect} />
-
-      <View
-        pointerEvents="none"
-        style={{
-          position: 'absolute',
-          left: TYPE_CONTAINER_WIDTH / 2 - TYPE_BOX_WIDTH / 2,
-          top: 0,
-          width: TYPE_BOX_WIDTH,
-          height: TYPE_TRACK_HEIGHT,
-          borderRadius: TYPE_TRACK_HEIGHT / 2,
-          backgroundColor: light ? '#eeeeec' : '#0f0f0f',
-          overflow: 'hidden',
-        }}
-      >
-        <Animated.View style={[{ position: 'absolute', left: TYPE_BOX_WIDTH / 2, top: 0, height: '100%', flexDirection: 'row' }, trackStyle]}>
-          {TYPE_MODES.map(m => (
-            <View key={m} style={{ width: TYPE_SLOT, height: '100%', alignItems: 'center', justifyContent: 'center' }}>
-              {/* Neutral for both, active or not — the box itself (position,
-                  fill, weight, uppercase) already says which one is
-                  selected; red/green stay reserved for the amount figure
-                  and don't need repeating here too. */}
-              <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase', color: textColor(light).primary }}>
-                {TYPE_LABELS[m]}
-              </Text>
-            </View>
-          ))}
-        </Animated.View>
-      </View>
-    </View>
-  );
-}
 
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard (and the flows it opens) — see the matching comment in
 // Header.js. Callers outside the Dashboard keep passing nothing.
-function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = false }) {
+//
+// Generalised beyond Home's own Expense/Income use so Savings/Debt's money
+// sheet (see MoneySheet in SavingsSheets.js) can be a real second caller of
+// this exact sheet instead of a separately-built lookalike — every new prop
+// below defaults to Home's own existing behaviour, so its own call site
+// needs no changes. (Savings/Debt's goal sheet — name, target, location,
+// tenure — stays on AmountEntrySheet's own boxed-name design instead, the
+// same one Budget's own "Add plan" sheet uses; only the money-entry sheet
+// reuses this one.)
+// - `modes`/`labels` swap what the ReelSlider offers (Add/Withdraw instead
+//   of Expense/Income); a single mode skips the toggle entirely (debt only
+//   ever logs a payment, so there's nothing to pick between).
+// - `initialMode` is the mode a fresh (non-edit) open starts on, default
+//   the first of `modes`.
+// - `subtitle` is optional text under the toggle (Savings/Debt use it for
+//   the goal's own name; Home has none).
+// - `fieldPlaceholder`/`fieldRequired` cover the one text field reading
+//   "Description" (required) on Home and "Note (optional)" (optional) on
+//   Savings/Debt.
+// - `extraValidate(type, value)` is an optional extra check beyond "not
+//   empty" — Savings/Debt use it to refuse a withdrawal bigger than what's
+//   saved, which Home has no equivalent of.
+function AddModal({
+  open, onClose, onClosed, onAdd, onEdit, editData, light = false,
+  modes = TYPE_MODES,
+  labels = TYPE_LABELS,
+  // Passed straight through to ReelSlider — see its own comment on why
+  // Savings/Debt's longer "Withdraw" label asks for a wider slot than
+  // Home's own Expense/Income default.
+  sliderSlot,
+  initialMode,
+  subtitle,
+  fieldPlaceholder = 'Description',
+  fieldRequired = true,
+  extraValidate,
+}) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
+  const defaultMode = initialMode ?? modes[0];
 
   const isEdit = !!editData;
-  const [type, setType] = useState('expense');
+  const [type, setType] = useState(defaultMode);
   const { amount, prevAmountLength, skipDigitAnim, onKeyPress: handleKeypadPress, setProgrammatic: setAmountProgrammatically } = useAmountEntry();
   const [date, setDate] = useState(today());
   const [description, setDescription] = useState('');
@@ -211,6 +160,19 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
   // as one transform — managed independently here instead so `visible`
   // stays mounted through the close animation and it can actually play.
   const [visible, setVisible] = useState(open);
+  const [resetKey, setResetKey] = useState(0);
+
+  const cleanupOnClose = useCallback(() => {
+    setVisible(false);
+    setAmountProgrammatically('');
+    setType(defaultMode);
+    setDate(today());
+    setDescription('');
+    setCalOpen(false);
+    setError('');
+    setSubmitting(false);
+    setResetKey(k => k + 1);
+  }, [setAmountProgrammatically, defaultMode]);
   // The sheet's one and only vertical offset — driven either by a live
   // drag gesture or by a programmatic open/close withTiming, never both at
   // once through separate values reconciled into each other (that hazard,
@@ -272,11 +234,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
         { duration: CLOSE_DURATION, easing: CLOSE_EASING },
         finished => {
           if (!finished) return;
-          runOnJS(setVisible)(false);
-          // Lets callers know the native <Modal> is actually gone before
-          // presenting a different one (e.g. an auto-popup right after
-          // adding a transaction) — two native Modals mounted at once is
-          // broken on Android.
+          runOnJS(cleanupOnClose)();
           if (onClosed) runOnJS(onClosed)();
         },
       );
@@ -284,27 +242,25 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  useEffect(() => {
-    if (open) {
-      if (editData) {
-        setType(editData.type);
-        setAmountProgrammatically(String(editData.amount));
-        setDate(editData.date);
-        setDescription(editData.description);
-      } else {
-        setType('expense');
-        setAmountProgrammatically('');
-        setDate(today());
-        setDescription('');
-      }
-      setCalOpen(false);
-      setError('');
-      // Without this, a successful add left `submitting` permanently true
-      // (see handleSubmit below) — the next time the sheet opened fresh,
-      // the button stayed disabled forever.
-      setSubmitting(false);
+  const prevOpenRef = useRef(false);
+  if (open && !prevOpenRef.current) {
+    prevOpenRef.current = true;
+    if (editData) {
+      setType(editData.type);
+      setAmountProgrammatically(String(editData.amount));
+      setDate(editData.date);
+      setDescription(editData.description);
+    } else {
+      setType(defaultMode);
+      setAmountProgrammatically('');
+      setDate(today());
+      setDescription('');
     }
-  }, [open, editData]);
+    setCalOpen(false);
+    setError('');
+    setSubmitting(false);
+  }
+  if (!open) prevOpenRef.current = false;
 
   async function handleSubmit() {
     // Belt-and-suspenders alongside the button's own `disabled` prop — see
@@ -315,10 +271,19 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
     if (submitting) return;
     const val = parseFloat(amount);
     const amountInvalid = !val || val <= 0;
-    const descriptionInvalid = !description.trim();
+    const descriptionInvalid = fieldRequired && !description.trim();
     if (amountInvalid || descriptionInvalid) {
       if (amountInvalid) amountShake.shake();
       if (descriptionInvalid) descriptionShake.shake();
+      return;
+    }
+    // Beyond "not empty" — e.g. Savings/Debt refusing a withdrawal bigger
+    // than what's saved. Home passes no `extraValidate`, so this is a no-op
+    // there.
+    const extraError = extraValidate?.(type, val);
+    if (extraError) {
+      amountShake.shake();
+      setError(extraError);
       return;
     }
     const mySession = sessionRef.current;
@@ -388,18 +353,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
           { duration: CLOSE_DURATION, easing: DRAG_CLOSE_EASING },
           finished => {
             if (!finished) return;
-            runOnJS(setVisible)(false);
-            // onClose fires HERE, not the instant the drag ends — this is
-            // what the "stalls partway through the slide" bug actually
-            // was. Calling it up front flips `open` in the parent, and
-            // that re-render's native view commit lands on the UI thread
-            // one or two frames into this animation, competing with it for
-            // the same thread and dropping frames right at the start.
-            // Tapping to close never had the problem because there the
-            // commit happens *first* and the effect starts the animation
-            // afterwards — the exact asymmetry that made this look like an
-            // easing bug for so long. Deferring it to here keeps the whole
-            // slide on an otherwise-idle UI thread.
+            runOnJS(cleanupOnClose)();
             runOnJS(onClose)();
             if (onClosed) runOnJS(onClosed)();
           },
@@ -503,10 +457,20 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
           overScrollMode="never"
         >
           <View className="items-center mb-6">
-            <TypeSlider type={type} onSelect={setType} light={light} />
+            {/* A single mode (Debt's own payment-only case) has nothing to
+                pick between, so the toggle itself is skipped rather than
+                shown with nothing to slide to. */}
+            {modes.length > 1 && (
+              <ReelSlider modes={modes} labels={labels} value={type} onSelect={setType} light={light} slot={sliderSlot} />
+            )}
+            {!!subtitle && (
+              <Text numberOfLines={1} style={{ marginTop: modes.length > 1 ? 10 : 0, fontSize: 13, color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>
+                {subtitle}
+              </Text>
+            )}
           </View>
 
-          <Animated.View className="items-center" style={[{ marginTop: 16, marginBottom: 8 }, amountShake.style]}>
+          <Animated.View key={resetKey} className="items-center" style={[{ marginTop: 16, marginBottom: 8 }, amountShake.style]}>
             <AmountRow
               amount={amount}
               prevAmountLength={prevAmountLength}
@@ -569,7 +533,7 @@ function AddModal({ open, onClose, onClosed, onAdd, onEdit, editData, light = fa
                 // typed. Matching their padding, height and centring can
                 // get close but never exact; one view drawing both states
                 // is the only arrangement where they can't disagree.
-                placeholder="Description"
+                placeholder={fieldPlaceholder}
                 placeholderTextColor={light ? '#b0b0b0' : '#4d4d4d'}
                 // The `transactions.description` column is plain text with no
                 // server-side length constraint — this is the only cap it

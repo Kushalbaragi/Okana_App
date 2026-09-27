@@ -7,6 +7,7 @@ import BudgetStatusBar from './BudgetStatusBar';
 import { GlassPressable } from './Glass';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { formatCurrency } from '../utils/format';
+import { EXPENSE_HEX } from '../utils/colors';
 
 const SLIDE_MS = 9000;
 // Below this, a press+release counts as a tap (navigate) rather than a
@@ -412,7 +413,9 @@ function budgetCopy(percent, diff) {
     return {
       headline: `You went ${formatCurrency(diff)} over budget`,
       message: 'Try to stick closer to your budget next month to stay on track.',
-      color: '#f87171',
+      // Same bright red BudgetStatusBar's own over-budget percent uses
+      // right above this, not a separate dimmer red for the headline below it.
+      color: EXPENSE_HEX,
     };
   }
   if (percent < 100) {
@@ -474,7 +477,7 @@ function BudgetSlide({ month, year, budgetAmount, budgetSpent, percent, paused }
 const CAL_DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 // Static (non-interactive) read-only month grid — same per-day spend-shade
-// coloring and legend as SpendCalendarModal's calendar, minus navigation
+// coloring and legend as WalletPage's calendar, minus navigation
 // and day-tap selection, since this is a fixed snapshot of one past month.
 function CalendarGrid({ firstDay, days }) {
   const cells = [];

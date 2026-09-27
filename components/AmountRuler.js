@@ -24,26 +24,28 @@ const HEIGHT = 62;
 const TICK_TOP = 8;
 const MINOR_H = 14;
 const MAJOR_H = 26;
-// Every tenth tick is taller and carries a label.
-const MAJOR_EVERY = 10;
 const LABEL_Y = 48;
 const FADE_W = 44;
 
 // The step between ticks grows with the amount. A flat step can't serve both
 // ends: fine enough for a ₹20,000 goal means thousands of ticks to reach ₹20
 // lakh. Widening it keeps small goals precise and big ones a few swipes away.
-// Each use gets its own set of bands — a monthly budget lives at a smaller
-// scale than a savings goal, so it wants finer steps down there.
-export const GOAL_BANDS = [
-  { upTo: 100000, step: 1000 },
-  { upTo: 1000000, step: 10000 },
-  { upTo: 5000000, step: 50000 },
-];
-
-export const BUDGET_BANDS = [
-  { upTo: 20000, step: 500 },
-  { upTo: 100000, step: 1000 },
-  { upTo: 1000000, step: 10000 },
+// One shared set of bands now — every ruler in the app (Budget Plan, budget
+// setup, savings, debt) feels identical: ₹100 steps up to ₹1 lakh, ₹1,000
+// steps up to ₹10 lakh, ₹10,000 beyond that.
+//
+// `labelEvery` is separate from `step`: it's a rupee amount, not a tick
+// count, so a dense band (₹100 ticks) doesn't also mean a dense row of
+// labels. A fixed "every 10th tick" rule used to tie the two together —
+// harmless at ~150 ticks total, but at the ~2,300 ticks a flat ₹100 step to
+// ₹1 lakh needs, that was ~230 SvgText nodes (react-native-svg text is far
+// more expensive to lay out than a Path segment) and was the actual cause
+// of the sheet hanging on open. Ticks (Path, cheap) can stay dense; labels
+// (SvgText, not cheap) are picked by rupee spacing instead, ~45 total here.
+export const AMOUNT_BANDS = [
+  { upTo: 100000, step: 100, labelEvery: 5000 },
+  { upTo: 1000000, step: 1000, labelEvery: 50000 },
+  { upTo: 5000000, step: 10000, labelEvery: 500000 },
 ];
 
 // "5K", "1.5L", "1Cr" — short enough to sit under a tick without crowding
@@ -61,9 +63,13 @@ function shortLabel(v) {
 // hundred. The ruler is otherwise the same at every size and in every theme.
 export function createScale(bands) {
   const ticks = [0];
+  // Every tick, tagged with which band produced it — needed below to know
+  // that tick's own `labelEvery`, since bands can differ once ticks are
+  // flattened into one array.
+  const tickBand = [bands[0]];
   let prev = 0;
   for (const band of bands) {
-    for (let v = prev + band.step; v <= band.upTo; v += band.step) ticks.push(v);
+    for (let v = prev + band.step; v <= band.upTo; v += band.step) { ticks.push(v); tickBand.push(band); }
     prev = band.upTo;
   }
   const count = ticks.length;
@@ -73,7 +79,7 @@ export function createScale(bands) {
   const labels = [];
   for (let i = 0; i < count; i++) {
     const x = PAD + i * SPACING;
-    if (i % MAJOR_EVERY === 0) {
+    if (ticks[i] % tickBand[i].labelEvery === 0) {
       major += `M${x} ${TICK_TOP}V${TICK_TOP + MAJOR_H}`;
       labels.push({ x, text: shortLabel(ticks[i]) });
     } else {
@@ -107,8 +113,11 @@ export function createScale(bands) {
   };
 }
 
-export const GOAL_SCALE = createScale(GOAL_BANDS);
-export const BUDGET_SCALE = createScale(BUDGET_BANDS);
+const AMOUNT_SCALE = createScale(AMOUNT_BANDS);
+// Kept as two names for the call sites that already import them (a savings
+// goal vs. a budget line) — both now point at the identical scale.
+export const GOAL_SCALE = AMOUNT_SCALE;
+export const BUDGET_SCALE = AMOUNT_SCALE;
 
 export const MIN_TARGET = GOAL_SCALE.min;
 
@@ -191,7 +200,7 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
         horizontal
         showsHorizontalScrollIndicator={false}
         snapToInterval={SPACING}
-        decelerationRate="fast"
+        decelerationRate="normal"
         onScroll={scrollHandler}
         scrollEventThrottle={16}
         // Half the screen of empty space at each end, so the first and last

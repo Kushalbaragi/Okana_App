@@ -101,8 +101,11 @@ export default function Dashboard() {
   const { transactions, loading: txLoading, addTransaction, editTransaction, deleteTransaction, refresh: refreshTransactions } = useTransactions();
   const budget = useBudget(user, transactions);
   // Lives here (not inside the calendar page) so goals are already loaded the
-  // first time it opens, same as the budget above.
-  const savings = useSavings();
+  // first time it opens, same as the budget above. `refreshTransactions` so
+  // logging an EMI payment as an expense (optional, asked about after the
+  // payment itself is logged — see SavingsSheetsHost's own confirm prompt)
+  // shows up on Home right away, same reasoning as budgetPlan below.
+  const savings = useSavings(refreshTransactions);
   // Same reasoning as savings above — lives here so the plan is already
   // loaded the first time the calendar page opens. `refreshTransactions` so
   // checking a line off (which writes a real expense) shows up on Home

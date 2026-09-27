@@ -86,7 +86,11 @@ function byDateDesc(a, b) {
 // also announces when the connection returns) — so the caller shows no error of
 // its own on top of it. Reads still fall back to the cached copy, so the list is
 // viewable offline.
-export function useSavings() {
+// `onEntryLogged` (optional) mirrors useBudgetPlan's own `onChecked`: told
+// once `logEntryAsExpense` below actually lands a row, so the caller's own
+// transaction list (which has no way to know about a write here on its own)
+// can refresh.
+export function useSavings(onEntryLogged) {
   const { user } = useAuth()
   const { isOnlineRef, notifyOffline } = useNetwork()
   const posthog = usePostHog()
@@ -330,6 +334,26 @@ export function useSavings() {
     return result
   }, [write, user, posthog, trackReached])
 
+  // Mirrors a debt payment into the main transaction list as a real expense —
+  // asked about after the payment is logged here (see SavingsSheetsHost's
+  // own confirm prompt), never automatic: paying down a loan isn't itself a
+  // home-screen expense unless the user says it should be counted as one.
+  // Unlike Budget's own checked lines (see useBudgetPlan.setChecked) this
+  // isn't linked back to the entry that prompted it — declining just means
+  // nothing more happens, so there's nothing to undo if the entry is later
+  // edited or deleted.
+  const logEntryAsExpense = useCallback(async ({ amount, date, description }) => {
+    const id = Crypto.randomUUID()
+    return write({
+      apply: () => {},
+      rollback: () => {},
+      request: () => supabase.from('transactions').insert({
+        id, user_id: user.id, type: 'expense', amount: parseFloat(amount), date: date || today(), description: description || 'Payment',
+      }),
+      onSuccess: () => onEntryLogged?.(),
+    })
+  }, [write, user, onEntryLogged])
+
   const updateEntry = useCallback(async (id, { type, amount, note, date }) => {
     const prev = storeRef.current.entries.find(e => e.id === id)
     if (!prev) return { success: false, error: FALLBACK_MESSAGE }
@@ -494,8 +518,9 @@ export function useSavings() {
     deleteGoal,
     setGoalCompleted,
     addEntry,
+    logEntryAsExpense,
     updateEntry,
     deleteEntry,
     importSavings,
-  }), [derived, loading, refresh, addGoal, editGoal, deleteGoal, setGoalCompleted, addEntry, updateEntry, deleteEntry, importSavings])
+  }), [derived, loading, refresh, addGoal, editGoal, deleteGoal, setGoalCompleted, addEntry, logEntryAsExpense, updateEntry, deleteEntry, importSavings])
 }

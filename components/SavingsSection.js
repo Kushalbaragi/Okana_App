@@ -9,6 +9,7 @@ import PaymentGrid from './PaymentGrid';
 import Celebration from './Celebration';
 import ErrorBoundary from './ErrorBoundary';
 import { InlineConfirm } from './InlineConfirm';
+import { ConfirmPill } from './ConfirmPill';
 import { GOAL_SUGGESTIONS, GoalSheet, MoneySheet } from './SavingsSheets';
 import GoalCard from './GoalCard';
 import { SwipeDeleteAction, useSwipeDelete, useSwipeGroup } from './SwipeDeleteAction';
@@ -37,8 +38,12 @@ const CENTERED = { alignItems: 'center', justifyContent: 'center' };
 const PLACEHOLDER_MONTHS = 12;
 
 // How long after a delete is confirmed it goes ahead even if the dialog never
-// reports having closed (see flushGoalDelete): longer than its close animation.
+// reports having closed (see flushPendingDelete): longer than its close animation.
 const GOAL_DELETE_BACKSTOP_MS = 700;
+// How long after logging an EMI payment before the "add to your
+// transactions?" pill appears — same value WalletPage's own plan-check
+// confirm uses, so the two read as one consistent beat.
+const EMI_CONFIRM_DELAY_MS = 1500;
 
 // A line on how the goal got there: how many deposits (or payments, for a
 // loan), over how long, since when. Empty when there are none to speak of.
@@ -120,7 +125,7 @@ export function useSavingsUI() {
   };
 }
 
-export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings' }) {
+export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings', showToast }) {
   const copy = KIND_COPY[kind];
   const goalList = kind === 'debt' ? savings.allDebts : savings.allGoals;
   const { sheetOpen, sheetData, closeSheet, confirmOpen, confirmData, closeConfirm } = ui;
@@ -134,18 +139,55 @@ export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings'
       : savings.addGoal({ name, target, location, kind, tenureMonths, emisPaidBefore })
   ), [savings, goalId, kind]);
 
-  const submitMoney = useCallback((payload) => (
-    entry ? savings.updateEntry(entry.id, payload) : savings.addEntry(goalId, payload)
-  ), [savings, goalId, entry]);
+  // Logging an EMI payment doesn't touch the main transaction list on its
+  // own — asked about afterward instead (see below), same reasoning as
+  // Budget's own checked lines: paying down a loan isn't automatically a
+  // home-screen expense. Only offered for a brand-new debt payment, not an
+  // edit (an edited entry already made its own choice the first time) and
+  // not Savings (a deposit into a goal isn't spending). Only two outcomes,
+  // both real (see ConfirmPill's own comment) — the write runs in the
+  // background rather than holding the pill open on a busy/error state.
+  const [pendingEmiConfirm, setPendingEmiConfirm] = useState(null);
+  const emiConfirmDelayRef = useRef(null);
+  useEffect(() => () => { if (emiConfirmDelayRef.current) clearTimeout(emiConfirmDelayRef.current); }, []);
+  const submitMoney = useCallback(async (payload) => {
+    const result = entry ? await savings.updateEntry(entry.id, payload) : await savings.addEntry(goalId, payload);
+    if (result?.success && kind === 'debt' && !entry && payload.type === 'add') {
+      // The pill doesn't pop up the instant the payment is logged — a beat
+      // first, so it reads as a follow-up prompt rather than a jarring
+      // interruption right on top of the sheet closing.
+      const pending = { amount: payload.amount, date: payload.date, name: goal?.name || 'this loan' };
+      if (emiConfirmDelayRef.current) clearTimeout(emiConfirmDelayRef.current);
+      emiConfirmDelayRef.current = setTimeout(() => setPendingEmiConfirm(pending), EMI_CONFIRM_DELAY_MS);
+    }
+    return result;
+  }, [savings, goalId, entry, kind, goal]);
+  const resolveEmiConfirm = useCallback((addTransaction) => {
+    if (!pendingEmiConfirm) return;
+    const pending = pendingEmiConfirm;
+    setPendingEmiConfirm(null);
+    if (!addTransaction) return;
+    (async () => {
+      const result = await savings.logEntryAsExpense({
+        amount: pending.amount, date: pending.date, description: pending.name,
+      });
+      if (!result?.success) return;
+      // A full second after the pill has closed, not right on top of it —
+      // see WalletPage's own comment on the same delay for its plan-check
+      // confirm.
+      setTimeout(() => showToast?.(`${pending.name} added to your expenses`), 1000);
+    })();
+  }, [pendingEmiConfirm, savings, showToast]);
+  const confirmEmiTransaction = useCallback(() => resolveEmiConfirm(true), [resolveEmiConfirm]);
+  const declineEmiTransaction = useCallback(() => resolveEmiConfirm(false), [resolveEmiConfirm]);
 
   // What the confirmation is about, looked up from the data rather than
   // carried in state so it can't go stale.
   const confirmGoal = confirmData ? goalList.find(g => g.id === confirmData.goalId) : null;
   const confirmEntry = confirmData?.kind === 'entry' && confirmGoal ? confirmGoal.entries.find(e => e.id === confirmData.entryId) : null;
-  const [confirmBusy, setConfirmBusy] = useState(false);
   const [confirmError, setConfirmError] = useState('');
   useEffect(() => {
-    if (confirmOpen) { setConfirmBusy(false); setConfirmError(''); }
+    if (confirmOpen) setConfirmError('');
   }, [confirmOpen]);
 
   let confirmTitle = '';
@@ -161,37 +203,48 @@ export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings'
     confirmMessage = `This ${money(confirmEntry.amount)} ${kind === 'debt' ? 'payment' : (confirmEntry.type === 'add' ? 'deposit' : 'withdrawal')} will be removed from ${confirmGoal.name}.`;
   }
 
-  // A goal is deleted once the dialog has closed, not while it is still on
-  // screen, so the card leaving the list is something you see. `flushGoalDelete`
-  // runs from the dialog's own "closed" and from a timer behind it, in case that
-  // never comes; whichever is first does it, once.
+  // Both a goal and an entry are removed only once their dialog has actually
+  // closed, not the moment "Delete" is tapped — so the row leaving the list
+  // is something the user sees happen, rather than something that already
+  // happened behind a dialog that's still on screen. `flushPendingDelete`
+  // runs off the dialog's own "closed" and a timer behind it, in case that
+  // event never comes; whichever fires first does it, once.
   const goalToDelete = useRef(null);
-  const flushGoalDelete = useCallback(() => {
-    const id = goalToDelete.current;
+  const entryToDelete = useRef(null);
+  const flushPendingDelete = useCallback(() => {
+    const goalId = goalToDelete.current;
     goalToDelete.current = null;
-    if (id) savings.deleteGoal(id);
+    if (goalId) savings.deleteGoal(goalId);
+    const entryId = entryToDelete.current;
+    entryToDelete.current = null;
+    if (entryId) savings.deleteEntry(entryId);
   }, [savings]);
 
-  const handleConfirm = useCallback(async () => {
-    if (confirmBusy || !confirmData) return;
+  const handleConfirm = useCallback(() => {
+    if (!confirmData) return;
     if (confirmData.kind === 'goal') {
       goalToDelete.current = confirmData.goalId;
       closeConfirm();
-      setTimeout(flushGoalDelete, GOAL_DELETE_BACKSTOP_MS);
+      setTimeout(flushPendingDelete, GOAL_DELETE_BACKSTOP_MS);
       return;
     }
-    setConfirmBusy(true);
-    setConfirmError('');
-    const result = await savings.deleteEntry(confirmData.entryId);
-    setConfirmBusy(false);
-    if (result?.success === false) {
-      // Refused (e.g. later withdrawals depend on it) — stay open and say why.
-      // Offline is different: the app's offline banner says so, so no message here.
-      if (!result.offline) setConfirmError(result.error || 'Something went wrong. Please try again.');
+    // An entry can be refused (a later withdrawal would go negative without
+    // it) — the same check useSavings.deleteEntry itself makes, mirrored
+    // here rather than called, since the actual delete is now deferred past
+    // the point that check needs to happen at. Everything it needs is
+    // already local (this goal's own entries), so it can run and, if
+    // refused, say so before the dialog closes rather than after.
+    const netWithout = confirmGoal.entries.reduce((sum, e) => (
+      e.id === confirmData.entryId ? sum : sum + (e.type === 'add' ? e.amount : -e.amount)
+    ), 0);
+    if (netWithout < 0) {
+      setConfirmError('Remove the withdrawals that depend on this first.');
       return;
     }
+    entryToDelete.current = confirmData.entryId;
     closeConfirm();
-  }, [confirmBusy, confirmData, savings, closeConfirm, flushGoalDelete]);
+    setTimeout(flushPendingDelete, GOAL_DELETE_BACKSTOP_MS);
+  }, [confirmData, confirmGoal, closeConfirm, flushPendingDelete]);
 
   return (
     <>
@@ -223,10 +276,21 @@ export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings'
         title={confirmTitle}
         message={confirmMessage}
         error={confirmError}
-        busy={confirmBusy}
         onConfirm={handleConfirm}
         onCancel={closeConfirm}
-        onClosed={flushGoalDelete}
+        onClosed={flushPendingDelete}
+        light={light}
+      />
+      {/* Asked right after a new EMI payment is logged (see submitMoney
+          above) — the payment itself is already recorded on the loan either
+          way; this only decides whether it also becomes a real expense.
+          Kind-gated at the state level (only debt ever sets
+          pendingEmiConfirm), so this stays inert for Savings. */}
+      <ConfirmPill
+        open={!!pendingEmiConfirm}
+        message={`Add ${money(pendingEmiConfirm?.amount || 0)} for ${pendingEmiConfirm?.name || 'this loan'} as expense`}
+        onConfirm={confirmEmiTransaction}
+        onDecline={declineEmiTransaction}
         light={light}
       />
     </>
@@ -304,26 +368,27 @@ function paymentGrid(entries, createdAt, tenureMonths, emisPaidBefore = 0) {
   return { years, paidCount: emisPaidBefore + payments.length };
 }
 
-// The button at the bottom of the list: a labelled pill rather than a bare "+",
-// since starting a goal is the one thing this page is for and the words say so.
-// The app's primary-CTA treatment (light fill, dark text) — the same as Create,
-// Add and Save — because it is this page's one main action.
-function NewGoalButton({ onPress, label }) {
-  const insets = useSafeAreaInsets();
+// The label + round "+" row above the goal/loan list, same layout as
+// BudgetPlan's own "Plan your next salary" row — a plus icon in a dim
+// circle, not a labelled pill, since it sits right above the cards it adds
+// to rather than floating at the bottom of the page unlabelled by context.
+function ListHeader({ label, onPress, addLabel, light }) {
   return (
-    // The wrapper spans the width only to centre the pill without measuring
-    // it; box-none lets touches beside the pill fall through to the list.
-    <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom + 24, alignItems: 'center' }}>
-      <GlassPressable
-        variant="active"
-        radius={9999}
+    <View className="flex-row items-center justify-between" style={{ marginBottom: 14 }}>
+      {/* marginLeft matches the card's own inner padding below (see
+          GoalCard's `padding: 16`), so this label lines up with the goal
+          name text inside the card rather than sitting flush with the
+          card's bare left edge — same alignment BudgetPlan's own header
+          gives its "Plan your next salary" label. */}
+      <Text style={{ fontSize: 15, color: textColor(light).tertiary, marginLeft: 16 }}>{label}</Text>
+      <Pressable
         onPress={onPress}
         accessibilityRole="button"
-        accessibilityLabel={label}
-        style={{ paddingHorizontal: 28, paddingVertical: 16, alignItems: 'center' }}
+        accessibilityLabel={addLabel}
+        style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: dim(light, 0.08) }}
       >
-        <Text className="text-base font-semibold text-black">{label}</Text>
-      </GlassPressable>
+        <PlusIcon size={16} color={dim(light, 0.5)} />
+      </Pressable>
     </View>
   );
 }
@@ -488,24 +553,32 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings' }) {
         </Pressable>
       </View>
       {!!goal.location && (
-        <Text className="text-xs text-center" numberOfLines={1} style={{ marginTop: 2, color: textColor(light).tertiary }}>{goal.location}</Text>
+        <Text className="text-xs text-center" numberOfLines={1} style={{ marginTop: 4, color: textColor(light).tertiary }}>
+          {kind === 'debt' ? 'from' : 'in'} {goal.location}
+        </Text>
       )}
-
-      {/* The big figure, a plain progress bar (the same one the goal cards
-          use) and its two captions. Debt's headline is `remaining`, not
-          `saved` — see GoalCard's own comment on why. */}
-      <View style={{ marginTop: 16, paddingBottom: 10, marginBottom: 16 }}>
-        <View className="flex-row items-baseline justify-center mb-4" style={{ gap: 6 }}>
-          <Text style={{ color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.80)', fontSize: 32, fontWeight: '600', letterSpacing: -0.5 }}>
-            {money(kind === 'debt' ? goal.remaining : goal.saved)}
-          </Text>
-          <Text style={{ color: dim(light, 0.5), fontSize: 15 }}>{copy.figureSuffix}</Text>
-        </View>
-        <ProgressBar percent={goal.percent} height={8} light={light} />
-        <View className="flex-row items-center justify-between mt-2.5">
-          <Text className="text-xs" style={{ color: textColor(light).disabled }}>{goal.percent}%</Text>
-          <Text className="text-xs" style={{ color: textColor(light).tertiary }}>{money(goal.target)} {copy.targetSuffix}</Text>
-        </View>
+      {/* Same card shape as the Budget section's own status bar (see
+          BudgetStatusBar): the figure and its "of X saved/remaining"
+          caption on the left, the percent on the right, a slim bar
+          underneath. Debt's headline is `remaining`, not `saved` — see
+          GoalCard's own comment on why. */}
+      <View style={{ marginTop: 16, marginBottom: 16 }}>
+        <Card light={light}>
+          <View style={{ padding: 20 }}>
+            <View className="flex-row items-baseline justify-between" style={{ marginBottom: 12 }}>
+              <View className="flex-row items-baseline" style={{ gap: 6 }}>
+                <Text style={{ fontSize: 30, fontWeight: '400', letterSpacing: -1, color: light ? '#111111' : '#ffffff' }}>
+                  {money(kind === 'debt' ? goal.remaining : goal.saved)}
+                </Text>
+                <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 13, color: textColor(light).tertiary }}>
+                  of {money(goal.target)} {copy.figureSuffix}
+                </Text>
+              </View>
+              <Text className="text-[13px] font-medium" style={{ color: POSITIVE }}>{goal.percent}%</Text>
+            </View>
+            <ProgressBar percent={goal.percent} height={5} light={light} />
+          </View>
+        </Card>
       </View>
 
       {goal.completedAt ? (
@@ -539,19 +612,20 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings' }) {
           <Text className="text-[11px] font-medium uppercase tracking-wider px-5 mb-2" style={{ color: textColor(light).disabled }}>{copy.monthlyTitle}</Text>
           <Card light={light}>
             {kind === 'debt' ? (
-              // EMIs paid on the left, EMIs left on the right (only once a
-              // tenure is known) — then the grid itself, one row per year.
+              // EMIs left is now the prominent figure (bold), EMIs paid the
+              // small secondary caption on the right — the reverse of the
+              // two figures' original weighting — then the grid itself, one
+              // row per year.
               <View style={{ paddingVertical: 16, paddingHorizontal: 20 }}>
                 <View className="flex-row items-end justify-between" style={{ marginBottom: 14 }}>
-                  <View className="flex-row items-baseline" style={{ gap: 6 }}>
-                    <Text style={{ color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.90)', fontSize: 26, fontWeight: '600', letterSpacing: -0.5 }}>
-                      {grid.paidCount}{goal.tenureMonths != null ? ` / ${goal.tenureMonths}` : ''}
-                    </Text>
-                    <Text className="text-sm" style={{ color: dim(light, 0.5) }}>{copy.monthlyAvgSuffix}</Text>
-                  </View>
                   {emisLeft != null && (
-                    <Text className="text-xs" style={{ color: textColor(light).tertiary }}>{emisLeft} left</Text>
+                    <Text style={{ fontSize: 20, fontWeight: '700', letterSpacing: -0.3, color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.90)' }}>
+                      {emisLeft} EMI remaining
+                    </Text>
                   )}
+                  <Text className="text-xs" style={{ color: textColor(light).tertiary }}>
+                    {grid.paidCount}{goal.tenureMonths != null ? ` / ${goal.tenureMonths}` : ''} {copy.monthlyAvgSuffix}
+                  </Text>
                 </View>
                 <PaymentGrid years={grid.years} light={light} />
               </View>
@@ -632,6 +706,10 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
     : { goals: savings.goals, completedGoals: savings.completedGoals, allGoals: savings.allGoals, totalSaved: savings.totalSaved };
   const heldViewRef = useRef(liveView);
   if (ui.sheetClosed) heldViewRef.current = liveView;
+  // Already closest-to-done-first — useSavings' own splitByStatus sorts
+  // `active` by the exact saved/target ratio (see its own comment), so
+  // re-sorting here by the rounded `percent` instead would just be redoing
+  // that work with a coarser tie-break.
   const { goals, completedGoals, allGoals, totalSaved } = ui.sheetClosed ? liveView : heldViewRef.current;
   const [showCompleted, setShowCompleted] = useState(false);
 
@@ -679,7 +757,7 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
           // GUTTER (20), not 16 — matches the goal detail page's own
           // paddingHorizontal below, and the app's screen edge everywhere
           // else. Was the one screen still at 16.
-          contentContainerStyle={{ paddingHorizontal: GUTTER, paddingTop: 8, paddingBottom: insets.bottom + 130 }}
+          contentContainerStyle={{ paddingHorizontal: GUTTER, paddingTop: 8, paddingBottom: insets.bottom + 40 }}
         >
           {isEmpty ? (
             <EmptyState onNew={ui.openNewGoal} light={light} kind={kind} />
@@ -696,6 +774,8 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
                   {money(totalSaved)}
                 </Text>
               </View>
+
+              <ListHeader label={copy.listLabel} onPress={() => ui.openNewGoal('')} addLabel={copy.newLabel} light={light} />
 
               {goals.map(g => <GoalCard key={g.id} goal={g} {...cardProps} />)}
 
@@ -723,8 +803,6 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
             </>
           )}
         </ScrollView>
-
-        {!isEmpty && <NewGoalButton onPress={() => ui.openNewGoal('')} label={copy.newLabel} />}
       </Animated.View>
 
       <Animated.View style={[StyleSheet.absoluteFill, detailStyle]} pointerEvents={detailOpen ? 'auto' : 'none'}>

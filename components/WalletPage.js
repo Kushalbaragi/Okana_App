@@ -1,7 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, View, Text, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
+import { BackHandler, InteractionManager, View, Text, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, Easing } from 'react-native-reanimated';
 import BudgetStatusBar from './BudgetStatusBar';
 import BudgetSetupModal from './BudgetSetupModal';
@@ -10,11 +9,13 @@ import { TourHint } from './TourHint';
 import { BackIcon } from './icons';
 import SegmentedSwitch from './SegmentedSwitch';
 import SavingsSection, { SavingsSheetsHost, useSavingsUI } from './SavingsSection';
+import { ConfirmPill } from './ConfirmPill';
+import { InlineConfirm } from './InlineConfirm';
 import SavingsBoundary from './SavingsBoundary';
 import ErrorBoundary from './ErrorBoundary';
 import { useTourStep } from '../hooks/useTourStep';
 import { SETTLE_EASING } from '../utils/motion';
-import { OfflineBanner } from './OfflineBanner';
+import { formatCurrency } from '../utils/format';
 
 // The page has three sections, switched from the header: the budget bar it
 // always was, savings goals, and debt (loans tracked the same way as a
@@ -34,10 +35,19 @@ const SECTION_FADE_MS = 220;
 // right), which is why this was once exported — that turned out to read as
 // juddery rather than synchronized, so Home now stays put and only this
 // page moves.
-const CALENDAR_SLIDE_DURATION = 480;
+const WALLET_SLIDE_DURATION = 480;
 // How long after the budget sheet closes before the tour may point at the budget
 // bar — long enough that the sheet is gone and the new budget has been seen.
 const BUDGET_SHEET_TOUR_DELAY_MS = 2000;
+// How long after a Budget Plan line's delete is confirmed it goes ahead even
+// if the dialog never reports having closed — same value and reasoning as
+// Home's own DELETE_BACKSTOP_MS and SavingsSection's GOAL_DELETE_BACKSTOP_MS.
+const DELETE_ITEM_BACKSTOP_MS = 700;
+// How long after checking a plan line off before the "add to your
+// transactions?" pill appears — same value SavingsSection's own EMI confirm
+// uses, so the two read as one consistent beat rather than two different
+// timings for the same kind of ask.
+const PLAN_CHECK_DELAY_MS = 1500;
 
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard (and the flows it opens) — see the matching comment in
@@ -46,13 +56,12 @@ const BUDGET_SHEET_TOUR_DELAY_MS = 2000;
 // position: full width while closed, 0 once it has slid in. Whoever passes one can
 // read it to move in step with the page — Home uses it for its parallax. It is the
 // page's own value rather than a second animation started elsewhere, so the two
-// can never fall out of step (the page can't begin sliding until the native
-// window is up, which a separate animation had no way to wait for).
+// can never fall out of step.
 // `budget` (or null) carries what the Budget section shows — loading, hasBudget,
 // amount, spent, percent — plus what setting one needs: `onSubmit`, last month's
 // amount and spend, and `onSetupClosed` for the caller's own bookkeeping when the
 // sheet closes. The sheet opens right here on the page, not by closing it first.
-function SpendCalendarModal({ open, onClose, onClosed, budget, savings, budgetPlan, light = false, userId, slideX }) {
+function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, light = false, userId, slideX }) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
@@ -94,20 +103,58 @@ function SpendCalendarModal({ open, onClose, onClosed, budget, savings, budgetPl
   // everything" treatment as the savings/debt sheets below.
   const [addItemOpen, setAddItemOpen] = useState(false);
   const openAddItem = useCallback(() => setAddItemOpen(true), []);
-  const closeAddItem = useCallback(() => setAddItemOpen(false), []);
-  // What a plan line is most often for: something already tracked as a loan
-  // or a savings goal, so its name is one tap away instead of retyped.
-  // Active ones only — a cleared loan or a finished goal isn't something
-  // you're still planning to pay into.
+  // Tapping an existing line opens the same sheet in edit mode — `editingItem`
+  // is that line, or null while adding/closed. Only one of the two can be
+  // open at a time in practice (they're separate taps on a modal sheet), but
+  // closing always clears both so a stray state can't leave the other primed.
+  const [editingItem, setEditingItem] = useState(null);
+  const openEditItem = useCallback((item) => setEditingItem(item), []);
+  const closeItemSheet = useCallback(() => { setAddItemOpen(false); setEditingItem(null); }, []);
+  // What a plan line is most often for: a couple of common fixed bills, plus
+  // anything already tracked as a loan or a savings goal so its name is one
+  // tap away instead of retyped. Active ones only — a cleared loan or a
+  // finished goal isn't something you're still planning to pay into.
   const planSuggestions = useMemo(
-    () => [...(savings?.debts || []), ...(savings?.goals || [])].map(g => g.name),
+    () => [...new Set(['Rent', 'Credit card', ...(savings?.debts || []), ...(savings?.goals || [])].map(g => g.name || g))],
     [savings?.debts, savings?.goals]
   );
 
-  // A small bottom toast confirming a Budget Plan line's checkbox actually
-  // did something to the real ledger (added or removed an expense) — not
-  // the top banner, OfflineBanner already owns that spot. Self-timed:
-  // appears when the text is set, clears itself after a fixed duration.
+  // Deleting a Budget Plan line asks first, same as every other delete in
+  // the app (Home's own transaction delete, Savings/Debt's goal and entry
+  // delete) — the dialog closes the instant "Delete" is tapped, and the
+  // line itself is removed only once that close has actually finished (or
+  // the backstop timer below fires, in case that event never comes), so its
+  // removal is something seen happening rather than something that already
+  // happened behind a dialog still on screen. `budgetPlan` is read through a
+  // ref so `flushDeleteItem` doesn't need to change identity every time the
+  // plan's own items change.
+  const budgetPlanRef = useRef(budgetPlan);
+  budgetPlanRef.current = budgetPlan;
+  const [deleteItemTarget, setDeleteItemTarget] = useState(null);
+  const pendingDeleteItemId = useRef(null);
+  const requestDeleteItem = useCallback((id) => {
+    const item = budgetPlanRef.current?.items.find(i => i.id === id);
+    if (item) setDeleteItemTarget(item);
+  }, []);
+  const closeDeleteItem = useCallback(() => setDeleteItemTarget(null), []);
+  const flushDeleteItem = useCallback(() => {
+    const id = pendingDeleteItemId.current;
+    pendingDeleteItemId.current = null;
+    if (id) budgetPlanRef.current?.deleteItem(id);
+  }, []);
+  const confirmDeleteItem = useCallback(() => {
+    if (!deleteItemTarget) return;
+    pendingDeleteItemId.current = deleteItemTarget.id;
+    setDeleteItemTarget(null);
+    setTimeout(flushDeleteItem, DELETE_ITEM_BACKSTOP_MS);
+  }, [deleteItemTarget, flushDeleteItem]);
+
+  // A small bottom toast confirming a write to the real ledger actually
+  // happened — a Budget Plan checkbox, or a debt payment's own "add to
+  // transactions?" pill (see SavingsSheetsHost, which gets this passed down
+  // as `showToast`) — not the top banner, OfflineBanner already owns that
+  // spot. Self-timed: appears when the text is set, clears itself after a
+  // fixed duration.
   const [planToastText, setPlanToastText] = useState(null);
   const planToastProgress = useSharedValue(0);
   const planToastTimerRef = useRef(null);
@@ -124,11 +171,50 @@ function SpendCalendarModal({ open, onClose, onClosed, budget, savings, budgetPl
   useEffect(() => () => { if (planToastTimerRef.current) clearTimeout(planToastTimerRef.current); }, []);
   const planToastStyle = useAnimatedStyle(() => ({
     opacity: planToastProgress.value,
-    transform: [{ translateY: (1 - planToastProgress.value) * 60 }],
+    // 80, matching ConfirmPill's own SLIDE_DISTANCE — the two slide the
+    // same distance into the same bottom slot, so answering the pill reads
+    // as it handing off to this toast rather than two unrelated slides.
+    transform: [{ translateY: (1 - planToastProgress.value) * 80 }],
   }));
   const handleItemChecked = useCallback((checked, name) => {
     showPlanToast(checked ? `${name} added to your expenses` : `${name} expense removed`);
   }, [showPlanToast]);
+
+  // Checking a Budget Plan line off no longer adds its expense straight
+  // away — this holds the line between that tap and the confirm prompt
+  // answering whether it should (see BudgetPlan's own comment on why). Only
+  // two outcomes, both real (see ConfirmPill's own comment) — no separate
+  // busy/error UI: the write runs in the background and the pill itself has
+  // already closed by the time it settles, same as any other checkbox tap
+  // elsewhere in the app.
+  const [pendingPlanCheck, setPendingPlanCheck] = useState(null);
+  const planCheckDelayRef = useRef(null);
+  // The pill itself doesn't pop up the instant the checkbox is tapped — a
+  // beat first, so it reads as a follow-up prompt rather than a jarring
+  // interruption of the tap. Same reasoning and delay as SavingsSection's
+  // own EMI confirm.
+  const requestPlanCheck = useCallback((item) => {
+    if (planCheckDelayRef.current) clearTimeout(planCheckDelayRef.current);
+    planCheckDelayRef.current = setTimeout(() => setPendingPlanCheck(item), PLAN_CHECK_DELAY_MS);
+  }, []);
+  useEffect(() => () => { if (planCheckDelayRef.current) clearTimeout(planCheckDelayRef.current); }, []);
+  const resolvePlanCheck = useCallback((addTransaction) => {
+    if (!pendingPlanCheck) return;
+    const item = pendingPlanCheck;
+    setPendingPlanCheck(null);
+    (async () => {
+      const result = await budgetPlan.setChecked(item.id, true, { addTransaction });
+      if (!result?.success) return;
+      // A full second after the pill has closed, not right on top of it —
+      // the two popups answering in immediate succession read as one
+      // popup glitching into another rather than two separate beats.
+      setTimeout(() => {
+        showPlanToast(addTransaction ? `${item.name || 'Expense'} added to your expenses` : `${item.name || 'Line'} marked as paid`);
+      }, 1000);
+    })();
+  }, [pendingPlanCheck, budgetPlan, showPlanToast]);
+  const confirmPlanCheck = useCallback(() => resolvePlanCheck(true), [resolvePlanCheck]);
+  const declinePlanCheck = useCallback(() => resolvePlanCheck(false), [resolvePlanCheck]);
 
   const budgetSheetClosedAtRef = useRef(0);
   const closeBudgetSheet = useCallback(() => {
@@ -151,7 +237,9 @@ function SpendCalendarModal({ open, onClose, onClosed, budget, savings, budgetPl
   const { sheetOpen: debtSheetOpen, closeSheet: closeDebtSheet, confirmOpen: debtConfirmOpen, closeConfirm: closeDebtConfirm } = debtUI;
   const handleBack = useCallback(() => {
     if (budgetSheetOpen) { closeBudgetSheet(); return; }
-    if (addItemOpen) { closeAddItem(); return; }
+    if (pendingPlanCheck) { declinePlanCheck(); return; }
+    if (deleteItemTarget) { closeDeleteItem(); return; }
+    if (addItemOpen || editingItem) { closeItemSheet(); return; }
     if (confirmOpen) { closeConfirm(); return; }
     if (debtConfirmOpen) { closeDebtConfirm(); return; }
     if (sheetOpen) { closeSheet(); return; }
@@ -160,7 +248,7 @@ function SpendCalendarModal({ open, onClose, onClosed, budget, savings, budgetPl
     if (section === 'debt' && detailDebtId != null) { setDetailDebtId(null); return; }
     onClose();
   }, [
-    budgetSheetOpen, closeBudgetSheet, addItemOpen, closeAddItem, confirmOpen, closeConfirm, debtConfirmOpen, closeDebtConfirm,
+    budgetSheetOpen, closeBudgetSheet, pendingPlanCheck, declinePlanCheck, deleteItemTarget, closeDeleteItem, addItemOpen, editingItem, closeItemSheet, confirmOpen, closeConfirm, debtConfirmOpen, closeDebtConfirm,
     sheetOpen, closeSheet, debtSheetOpen, closeDebtSheet, section, detailGoalId, detailDebtId, onClose,
   ]);
 
@@ -172,31 +260,38 @@ function SpendCalendarModal({ open, onClose, onClosed, budget, savings, budgetPl
   const budgetTour = useTourStep(userId, 'calendar_budget_left');
   const [budgetTourActive, setBudgetTourActive] = useState(false);
 
-  // Same pattern as AddModal — managed independently of RN's Modal
-  // animationType so `visible` stays mounted through the close animation.
   // Slides in from the right (like a pushed page) rather than up from the
   // bottom — translateX/windowWidth, not translateY/windowHeight. No drag-
   // to-dismiss any more — the back button below is the only way to close
   // this now.
-  const [visible, setVisible] = useState(open);
   const ownPageX = useSharedValue(windowWidth);
   const pageTranslateX = slideX ?? ownPageX;
-  // Guards handleModalShow below so it only ever drives the slide-in for an
-  // actual open, never fires stale from some earlier mount.
-  const openingRef = useRef(false);
+
+  // Savings and Debt are each a full goal list plus their own add/edit
+  // sheets — real native-view work to mount. This page used to be a native
+  // <Modal>, which unmounts its entire child tree the moment it closes and
+  // rebuilds it from scratch on the next open — every time, not just the
+  // first. With three sections (one of them doubled: Savings and Debt are
+  // both a complete goal-list page) that rebuild was heavy enough to
+  // noticeably delay the wallet icon opening, going back out of it, and
+  // switching to a tab for the first time after every single open — and an
+  // earlier attempt to paper over it by deferring the mount to just after
+  // the open animation only moved the collision onto the *close* animation
+  // instead. Being a plain view that never gets torn down (see the switch
+  // away from <Modal> below) fixes the actual cause: this only ever mounts
+  // once, quietly, whenever the JS thread is next idle after Dashboard
+  // itself has settled — not tied to any open/close/switch animation, so it
+  // can no longer collide with one.
+  const [contentReady, setContentReady] = useState(false);
+  useEffect(() => {
+    const handle = InteractionManager.runAfterInteractions(() => setContentReady(true));
+    return () => handle.cancel();
+  }, []);
 
   useEffect(() => {
     if (open) {
-      setVisible(true);
-      openingRef.current = true;
-      // The slide-in itself is kicked off from handleModalShow below, not
-      // here: starting it in the same tick as setVisible(true) races the
-      // native <Modal> window's own presentation, so the first frame or two
-      // of the slide can be dropped. onShow fires once the modal is
-      // actually up, which is the earliest point the transform is
-      // guaranteed to be applied to something on screen.
+      pageTranslateX.value = withTiming(0, { duration: WALLET_SLIDE_DURATION, easing: SETTLE_EASING });
     } else {
-      openingRef.current = false;
       // Back to the list, sheet away — the page reopens fresh, not on
       // whichever goal or sheet it was closed from.
       setDetailGoalId(null);
@@ -209,29 +304,25 @@ function SpendCalendarModal({ open, onClose, onClosed, budget, savings, budgetPl
       debtUI.closeConfirm();
       pageTranslateX.value = withTiming(
         windowWidth,
-        { duration: CALENDAR_SLIDE_DURATION, easing: SETTLE_EASING },
+        { duration: WALLET_SLIDE_DURATION, easing: SETTLE_EASING },
         finished => {
-          if (!finished) return;
-          runOnJS(setVisible)(false);
-          // Signals the native <Modal> is actually gone — callers use this
-          // (rather than a guessed timeout) to know it's safe to present a
-          // different Modal without two being mounted at once, which is
-          // broken on Android.
-          if (onClosed) runOnJS(onClosed)();
+          if (finished && onClosed) runOnJS(onClosed)();
         },
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Fired by the native <Modal> once it has actually finished presenting —
-  // see the comment above the `open` effect for why the slide-in waits for
-  // this instead of starting immediately.
-  const handleModalShow = useCallback(() => {
-    if (!openingRef.current) return;
-    pageTranslateX.value = withTiming(0, { duration: CALENDAR_SLIDE_DURATION, easing: SETTLE_EASING });
-  }, [pageTranslateX]);
-
+  // Replaces the native <Modal>'s own onRequestClose, which used to
+  // intercept the Android hardware back button for free.
+  useEffect(() => {
+    if (!open) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleBack();
+      return true;
+    });
+    return () => sub.remove();
+  }, [open, handleBack]);
 
   const advanceBudgetTour = useCallback(() => {
     budgetTour.markSeen();
@@ -258,7 +349,7 @@ function SpendCalendarModal({ open, onClose, onClosed, budget, savings, budgetPl
     const sinceSheetClosed = Date.now() - budgetSheetClosedAtRef.current;
     // At least the sheet's own opening slide, so the tour doesn't spotlight
     // something that's still animating into place.
-    const settle = CALENDAR_SLIDE_DURATION + 150;
+    const settle = WALLET_SLIDE_DURATION + 150;
     const delay = sinceSheetClosed < BUDGET_SHEET_TOUR_DELAY_MS
       ? Math.max(settle, BUDGET_SHEET_TOUR_DELAY_MS - sinceSheetClosed)
       : settle;
@@ -266,23 +357,21 @@ function SpendCalendarModal({ open, onClose, onClosed, budget, savings, budgetPl
     return () => clearTimeout(t);
   }, [open, section, userId, budgetTourActive, budgetSheetOpen, budgetTour.seen, budget?.hasBudget]);
 
-  if (!visible) return null;
-
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={handleBack} onShow={handleModalShow}>
-      {/* RN's <Modal> stays fully touch-active for its whole lifetime —
-          `visible` only flips to false once the close animation below has
-          actually finished, so without this the calendar icon (and anything
-          else on Dashboard) is unreachable for the ~700ms this is sliding
-          off-screen, even though it's already invisible. `open` (not
-          `visible`) flips to false the instant a close starts, so touches
-          fall through immediately instead of at the end. Same fix as
-          AddModal's — see the comment there. */}
-      {/* A <Modal> is its own native window, which the app's root
-          GestureHandlerRootView doesn't reach — the goal cards' swipe-to-delete
-          needs one in here (see AddModal). */}
-      <GestureHandlerRootView style={{ flex: 1 }}>
-      <Animated.View className="flex-1" style={[{ flex: 1, backgroundColor: light ? '#FAFAF8' : '#000000' }, pageStyle]} pointerEvents={open ? 'auto' : 'none'}>
+    // A plain absolutely-positioned overlay, not a native <Modal> — see
+    // `contentReady`'s own comment above for why. Filling the screen at a
+    // high zIndex over the rest of Dashboard does the same visual job
+    // without a native Modal's forced unmount-on-close, and since this is no
+    // longer its own separate native window, the root GestureHandlerRootView
+    // and OfflineBanner (both in app/_layout.js) already reach it.
+    <Animated.View
+      style={[
+        StyleSheet.absoluteFill,
+        { backgroundColor: light ? '#FAFAF8' : '#000000', zIndex: 200, elevation: 200 },
+        pageStyle,
+      ]}
+      pointerEvents={open ? 'auto' : 'none'}
+    >
         <View style={{ flex: 1 }}>
             {/* Replaces the old drag-handle pill (which read as a
                 bottom-sheet affordance that stopped making sense once this
@@ -331,7 +420,7 @@ function SpendCalendarModal({ open, onClose, onClosed, budget, savings, budgetPl
                     that pays for it lands — see BudgetPlan.js. */}
                 {budgetPlan && (
                   <View style={{ marginTop: 24 }}>
-                    <BudgetPlan plan={budgetPlan} onAddPress={openAddItem} onItemChecked={handleItemChecked} light={light} />
+                    <BudgetPlan plan={budgetPlan} onAddPress={openAddItem} onEditItem={openEditItem} onItemChecked={handleItemChecked} onRequestCheck={requestPlanCheck} onRequestDeleteItem={requestDeleteItem} light={light} />
                   </View>
                 )}
             </ScrollView>
@@ -339,32 +428,43 @@ function SpendCalendarModal({ open, onClose, onClosed, budget, savings, budgetPl
               </Animated.View>
 
               <Animated.View style={[StyleSheet.absoluteFill, savingsLayerStyle]} pointerEvents={section === 'savings' ? 'auto' : 'none'}>
-                <SavingsBoundary light={light} onReset={closeGoal}>
-                  <SavingsSection
-                    savings={savings}
-                    ui={savingsUI}
-                    active={open && section === 'savings'}
-                    light={light}
-                    detailGoalId={detailGoalId}
-                    onOpenGoal={openGoal}
-                    onCloseGoal={closeGoal}
-                  />
-                </SavingsBoundary>
+                {/* Gated on `contentReady` (see its own comment above) — this
+                    and Debt below are the two heaviest things this page
+                    mounts. In the brief window before the background warm-up
+                    finishes (effectively never, in practice, since it fires
+                    on app idle rather than on open), switching here early
+                    would land on an empty pane for a frame rather than
+                    nothing opening at all. */}
+                {contentReady && (
+                  <SavingsBoundary light={light} onReset={closeGoal}>
+                    <SavingsSection
+                      savings={savings}
+                      ui={savingsUI}
+                      active={open && section === 'savings'}
+                      light={light}
+                      detailGoalId={detailGoalId}
+                      onOpenGoal={openGoal}
+                      onCloseGoal={closeGoal}
+                    />
+                  </SavingsBoundary>
+                )}
               </Animated.View>
 
               <Animated.View style={[StyleSheet.absoluteFill, debtLayerStyle]} pointerEvents={section === 'debt' ? 'auto' : 'none'}>
-                <SavingsBoundary light={light} onReset={closeDebt}>
-                  <SavingsSection
-                    kind="debt"
-                    savings={savings}
-                    ui={debtUI}
-                    active={open && section === 'debt'}
-                    light={light}
-                    detailGoalId={detailDebtId}
-                    onOpenGoal={openDebt}
-                    onCloseGoal={closeDebt}
-                  />
-                </SavingsBoundary>
+                {contentReady && (
+                  <SavingsBoundary light={light} onReset={closeDebt}>
+                    <SavingsSection
+                      kind="debt"
+                      savings={savings}
+                      ui={debtUI}
+                      active={open && section === 'debt'}
+                      light={light}
+                      detailGoalId={detailDebtId}
+                      onOpenGoal={openDebt}
+                      onCloseGoal={closeDebt}
+                    />
+                  </SavingsBoundary>
+                )}
               </Animated.View>
             </View>
 
@@ -376,19 +476,25 @@ function SpendCalendarModal({ open, onClose, onClosed, budget, savings, budgetPl
             />
 
             {/* Last child of the page, so its sheets slide up over everything
-                above — header included. */}
-            <ErrorBoundary
-              resetKeys={[savingsUI.sheetData, savingsUI.confirmData]}
-              onError={() => { savingsUI.closeSheet(); savingsUI.closeConfirm(); }}
-            >
-              <SavingsSheetsHost savings={savings} ui={savingsUI} light={light} />
-            </ErrorBoundary>
-            <ErrorBoundary
-              resetKeys={[debtUI.sheetData, debtUI.confirmData]}
-              onError={() => { debtUI.closeSheet(); debtUI.closeConfirm(); }}
-            >
-              <SavingsSheetsHost savings={savings} ui={debtUI} light={light} kind="debt" />
-            </ErrorBoundary>
+                above — header included. Deferred with their sections above:
+                nothing can open one of these sheets before contentReady
+                anyway, since that's gated on the goal row that opens it. */}
+            {contentReady && (
+              <>
+                <ErrorBoundary
+                  resetKeys={[savingsUI.sheetData, savingsUI.confirmData]}
+                  onError={() => { savingsUI.closeSheet(); savingsUI.closeConfirm(); }}
+                >
+                  <SavingsSheetsHost savings={savings} ui={savingsUI} light={light} showToast={showPlanToast} />
+                </ErrorBoundary>
+                <ErrorBoundary
+                  resetKeys={[debtUI.sheetData, debtUI.confirmData]}
+                  onError={() => { debtUI.closeSheet(); debtUI.closeConfirm(); }}
+                >
+                  <SavingsSheetsHost savings={savings} ui={debtUI} light={light} kind="debt" showToast={showPlanToast} />
+                </ErrorBoundary>
+              </>
+            )}
 
             {/* Setting a budget happens here, on the page: this is the same sheet the
                 home screen opens in a window of its own, drawn as an overlay inside
@@ -407,15 +513,54 @@ function SpendCalendarModal({ open, onClose, onClosed, budget, savings, budgetPl
               </ErrorBoundary>
             )}
 
-            {/* Budget Plan's own add popup — same overlay treatment as the
-                budget-setup sheet just above. */}
+            {/* Budget Plan's own add/edit popup — same overlay treatment as
+                the budget-setup sheet just above. One sheet serves both:
+                `editingItem` set means a tap on an existing line, not the +
+                button. */}
             {budgetPlan && (
-              <ErrorBoundary resetKeys={[addItemOpen]} onError={() => setAddItemOpen(false)}>
+              <ErrorBoundary resetKeys={[addItemOpen, editingItem]} onError={closeItemSheet}>
                 <AddBudgetItemSheet
-                  open={addItemOpen}
-                  onClose={closeAddItem}
-                  onSubmit={budgetPlan.addItem}
+                  open={addItemOpen || !!editingItem}
+                  onClose={closeItemSheet}
+                  onAdd={budgetPlan.addItem}
+                  onEdit={budgetPlan.updateItem}
+                  editItem={editingItem}
                   suggestions={planSuggestions}
+                  light={light}
+                />
+              </ErrorBoundary>
+            )}
+
+            {/* Asked the moment a plan line is checked off, before it
+                becomes a real expense — checking it still marks it paid
+                either way, the X just skips the transaction (see
+                BudgetPlan's own comment on why). Rendered inline rather
+                than a real Modal for the same reason the savings/debt
+                confirms are — this page is already one. */}
+            {budgetPlan && (
+              <ErrorBoundary resetKeys={[pendingPlanCheck]} onError={() => setPendingPlanCheck(null)}>
+                <ConfirmPill
+                  open={!!pendingPlanCheck}
+                  message={`Add ${formatCurrency(pendingPlanCheck?.amount || 0)} for ${pendingPlanCheck?.name || 'this'} as expense`}
+                  onConfirm={confirmPlanCheck}
+                  onDecline={declinePlanCheck}
+                  light={light}
+                />
+              </ErrorBoundary>
+            )}
+
+            {/* Asked before a Budget Plan line is actually removed — same
+                delete confirmation as every other list in the app (see
+                requestDeleteItem's own comment on why). */}
+            {budgetPlan && (
+              <ErrorBoundary resetKeys={[deleteItemTarget]} onError={() => setDeleteItemTarget(null)}>
+                <InlineConfirm
+                  open={!!deleteItemTarget}
+                  title="Delete line?"
+                  message={`${deleteItemTarget?.name || 'This line'}${deleteItemTarget?.amount ? ` (${formatCurrency(deleteItemTarget.amount)})` : ''} will be removed from your plan.`}
+                  onConfirm={confirmDeleteItem}
+                  onCancel={closeDeleteItem}
+                  onClosed={flushDeleteItem}
                   light={light}
                 />
               </ErrorBoundary>
@@ -439,16 +584,9 @@ function SpendCalendarModal({ open, onClose, onClosed, budget, savings, budgetPl
               </Animated.View>
             )}
 
-            {/* This page is a native <Modal>, its own window drawn over the root
-                one, so the offline banner rendered at the app root is hidden
-                behind it. This copy shows the same state from inside the window,
-                last so it sits above the page and any open sheet. */}
-            <OfflineBanner />
         </View>
-      </Animated.View>
-      </GestureHandlerRootView>
-    </Modal>
+    </Animated.View>
   );
 }
 
-export default memo(SpendCalendarModal);
+export default memo(WalletPage);

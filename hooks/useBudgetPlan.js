@@ -159,17 +159,37 @@ export function useBudgetPlan(onChecked) {
     }
   }, [user, isOnlineRef, notifyOffline, onChecked])
 
-  // Checking a line off is the point of the whole thing: it's done, so it
-  // becomes a real expense on today's date — not backdated to whenever the
-  // line was planned. Unchecking removes that expense again, the same way an
-  // undo would. `onChecked` lets the caller's own transaction list (Home's
-  // useTransactions, which has no way to know about either write on its own)
-  // refresh once it's done.
-  const setChecked = useCallback(async (id, checked) => {
+  // Checking a line off is the point of the whole thing: it's done. Whether
+  // that also becomes a real expense on today's date (not backdated to
+  // whenever the line was planned) is now the caller's own choice — see
+  // BudgetPlan's confirm prompt — so `addTransaction` (true by default,
+  // every existing caller) can be turned off to just mark the line paid
+  // with no transaction of its own. Unchecking removes that expense again if
+  // there was one, the same way an undo would. `onChecked` lets the caller's
+  // own transaction list (Home's useTransactions, which has no way to know
+  // about either write on its own) refresh once it's done.
+  const setChecked = useCallback(async (id, checked, { addTransaction = true } = {}) => {
     if (!user) return { success: false, error: 'Not signed in' }
     if (!isOnlineRef.current) { notifyOffline(); return { success: false, offline: true } }
     const prev = itemsRef.current.find(i => i.id === id)
     if (!prev) return { success: false, error: 'Something went wrong. Please try again.' }
+
+    if (checked && !addTransaction) {
+      if (!(prev.amount > 0)) return { success: false, error: 'Add an amount before checking this off.' }
+      const checkedAt = new Date().toISOString()
+      setItems(s => s.map(i => i.id === id ? { ...i, checkedAt, transactionId: null } : i))
+      try {
+        const { error } = await supabase.from('budget_plan_items')
+          .update({ checked_at: checkedAt, transaction_id: null }).eq('id', id).eq('user_id', user.id)
+        if (error) { setItems(s => s.map(i => i.id === id ? prev : i)); reportError(error); return { success: false, error: error.message } }
+        return { success: true }
+      } catch (err) {
+        setItems(s => s.map(i => i.id === id ? prev : i))
+        if (isConnectivityError(err, isOnlineRef.current)) { notifyOffline(); return { success: false, offline: true } }
+        reportError(err)
+        return { success: false, error: err.message || 'Something went wrong. Please try again.' }
+      }
+    }
 
     if (checked) {
       if (!(prev.amount > 0)) return { success: false, error: 'Add an amount before checking this off.' }

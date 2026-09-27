@@ -1,121 +1,149 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, Keyboard } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, interpolateColor, FadeIn, FadeOut } from 'react-native-reanimated';
-import { InlineSheet } from './InlineSheet';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, FadeIn, FadeOut } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { InlineSheet, OPEN_MS } from './InlineSheet';
 import { GlassPressable, INPUT_TEXT_STYLE } from './Glass';
 import { useShake } from '../hooks/useShake';
-import AmountRuler, { RulerFigure, GOAL_SCALE } from './AmountRuler';
-import { dim } from './savingsShared';
+import { useAmountEntry } from '../hooks/useAmountEntry';
+import { AmountRow } from './AmountField';
+import { NumericKeypad, DIGIT_ONLY_KEYPAD_ROWS } from './NumericKeypad';
 import { textColor } from '../utils/colors';
+import { SPRING_QUICK, layoutTransition } from '../utils/motion';
+import { CloseIcon } from './icons';
 
-// The one "create something with a name and an amount" sheet — a new savings
-// goal, a new loan, or a new Budget Plan line all used to have their own copy
-// of this shell; now they share it, each supplying only what makes it theirs
-// (its title, its labels, its suggestion chips, its amount scale, and — for
-// debt's tenure/paid fields — an `extraFields` slot).
+// The chips row (below) mounting/unmounting above the amount section is
+// what actually moves it down/up — ordinary layout reflow from a sibling
+// appearing, not a transform of its own. `layout` is what turns that into
+// a slide instead of an instant snap: Reanimated diffs this element's own
+// old and new measured frame across the reflow and tweens between them.
+// SPRING_QUICK, not SPRING_SMOOTH — this fires the instant the name field
+// is tapped (chips appear on focus alone, before anything is typed), so it
+// reads as a direct response to that tap rather than a delayed reflow.
+// SPRING_SMOOTH's calmer, slightly slower settle was left over from
+// treating this like a passive list reflow; it made the amount field's
+// drop feel sluggish off the mark.
+const AMOUNT_POSITION_TRANSITION = layoutTransition(SPRING_QUICK);
 
-// A labelled field row. The one being edited wears a green outline that fades in
-// and out as the focus moves between rows, so it is always clear which one the
-// keypad (or keyboard) is talking to.
-export function FieldRow({ label, active, onPress, shake, light, children }) {
-  const on = useSharedValue(active ? 1 : 0);
-  useEffect(() => {
-    on.value = withTiming(active ? 1 : 0, { duration: 180, easing: Easing.out(Easing.cubic) });
-  }, [active, on]);
-  const outline = useAnimatedStyle(() => ({
-    borderColor: interpolateColor(on.value, [0, 1], [light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)', 'rgba(74,222,128,0.5)']),
-  }));
+const COMPACT_RATIO = 0.72;
+const EXPANDED_RATIO = 0.80;
 
-  return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>
-      <Animated.View
-        style={[
-          {
-            height: 48, borderRadius: 14, borderWidth: 1, paddingHorizontal: 16,
-            flexDirection: 'row', alignItems: 'center', gap: 10,
-            backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.18)',
-          },
-          outline,
-        ]}
-      >
-        <Text style={{ width: 56, fontSize: 13, color: textColor(light).tertiary }}>{label}</Text>
-        <Animated.View style={[{ flex: 1, justifyContent: 'center' }, shake.style]}>{children}</Animated.View>
-      </Animated.View>
-    </Pressable>
-  );
-}
-
-// The primary button above the ruler, running the full width of the sheet.
-function ActionRow({ primaryLabel, onPrimary, disabled }) {
-  return (
-    <View style={{ paddingHorizontal: 20, paddingBottom: 20 }}>
-      <GlassPressable
-        variant="active"
-        radius={9999}
-        disabled={disabled}
-        onPress={onPrimary}
-        style={{ paddingVertical: 16, alignItems: 'center' }}
-      >
-        <Text className="text-black text-base font-semibold">{primaryLabel}</Text>
-      </GlassPressable>
-    </View>
-  );
-}
-
-// `onSubmit` gets `{ name, amount }` once both pass validation — the caller
-// merges in anything else it owns (a loan's tenure fields, say) and does the
-// actual write, returning the usual `{ success, error?, offline? }`.
-// `extraFields` is optional JSX rendered under the name suggestions, still
-// inside the scrollable top section — a loan's Where/Tenure/Paid fields, for
-// instance, built from the exported `FieldRow` above by the caller.
 export default function AmountEntrySheet({
   open, onClose, onClosed, light = false,
-  heightRatio = 0.74,
-  title,
+  heightRatio,
   initialName = '',
-  nameLabel = 'Name',
   namePlaceholder,
   nameSuggestions = [],
   extraFields = null,
-  initialAmount,
+  initialAmount = 0,
   amountLabel = 'Amount',
   amountHint,
-  scale = GOAL_SCALE,
-  minAmount = scale.min,
+  minAmount = 1,
   submitLabel = 'Add',
   onSubmit,
+  // The name field is a plain underline by default. Budget's AddBudgetItemSheet
+  // and Savings' GoalSheet (both goals and loans) ask for a bordered box
+  // instead — kept opt-in since it was added for those two, not as the
+  // sheet's only look.
+  boxedNameField = false,
+  // Optional heading above the name field — no caller passed one before
+  // Budget's own sheet asked for it, so it's opt-in and every other sheet
+  // (Savings included) renders exactly as it did before.
+  title,
 }) {
+  const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
-  const [amount, setAmount] = useState(initialAmount);
   const [nameFocused, setNameFocused] = useState(false);
+  const showChips = nameFocused && !name.trim() && nameSuggestions.length > 0;
+  const ratio = heightRatio ?? (showChips ? EXPANDED_RATIO : COMPACT_RATIO);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  // Bumped each time the sheet opens, which is what tells the ruler to go back
-  // to the amount it is being given rather than wherever it was left.
-  const [session, setSession] = useState(0);
+  const [resetKey, setResetKey] = useState(0);
   const nameRef = useRef(null);
   const nameShake = useShake();
   const amountShake = useShake();
+  const { amount, prevAmountLength, skipDigitAnim, onKeyPress, setProgrammatic } = useAmountEntry();
 
+  // Budget's boxed sheet only (see amountScaleStyle below) — the chips
+  // row appearing between the name field and the amount already pushes
+  // the amount down, which is the wanted behaviour; shrinking it a touch
+  // at the same time is what makes that push read as a deliberate "make
+  // room" gesture rather than the amount just getting shoved out of the
+  // way.
+  //
+  // Easing.inOut, not SETTLE_EASING — SETTLE_EASING is front-loaded (fast
+  // off the mark, then a long gentle tail), which suits something arriving
+  // into place but reads as an abrupt snap on a shrink/grow: most of the
+  // size change happens almost instantly, with a barely-perceptible tail
+  // after. inOut ramps into and out of the motion at both ends, which is
+  // what actually reads as a smooth scale rather than a cut. 180ms, kept
+  // in lockstep with AMOUNT_POSITION_TRANSITION's own SPRING_QUICK settle
+  // above it — the shrink and the slide are one motion, not two.
+  const amountScale = useSharedValue(1);
   useEffect(() => {
-    if (!open) return;
-    setName(initialName);
-    setAmount(initialAmount);
+    if (!boxedNameField) return;
+    amountScale.value = withTiming(showChips ? 0.82 : 1, { duration: 180, easing: Easing.inOut(Easing.cubic) });
+  }, [showChips, boxedNameField, amountScale]);
+  const amountScaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: amountScale.value }] }));
+
+  // Clear state after the close animation finishes (sheet is off-screen).
+  // Next open starts with a clean slate — no old digits to flash.
+  const handleClosed = useCallback(() => {
+    setProgrammatic('');
+    setName('');
     setNameFocused(false);
     setError('');
     setSubmitting(false);
-    setSession(n => n + 1);
+    onClosed?.();
+  }, [onClosed, setProgrammatic]);
+
+  // Set initial values + force-remount AmountRow (via resetKey) so
+  // Reanimated never plays exit animations for stale digits.
+  useLayoutEffect(() => {
+    if (!open) return;
+    setName(initialName);
+    setProgrammatic(initialAmount > 0 ? String(initialAmount) : '');
+    setNameFocused(false);
+    setError('');
+    setSubmitting(false);
+    setResetKey(k => k + 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // No closing mid-request — the result (and any error) would land on a sheet
-  // the user can no longer see.
+  // Gates the amount section's own `layout` transition (AMOUNT_POSITION_
+  // TRANSITION below) off until the sheet's own open slide has actually
+  // finished. Resetting a couple of things above (the amount back to
+  // empty/initial, a fresh resetKey) changes that section's measured
+  // size right as it opens — with the transition live from the very first
+  // frame, that reflow played its own little slide layered on top of the
+  // sheet's real one, reading as the open motion stopping partway and
+  // restarting rather than one continuous slide. Held off for exactly as
+  // long as InlineSheet's own open animation takes, so it's only ever
+  // live for a later, genuine focus/blur while the sheet is already still.
+  const [positionReady, setPositionReady] = useState(false);
+  useEffect(() => {
+    if (!open) { setPositionReady(false); return; }
+    const t = setTimeout(() => setPositionReady(true), OPEN_MS);
+    return () => clearTimeout(t);
+  }, [open]);
+
   const handleClose = useCallback(() => { if (!submitting) onClose(); }, [submitting, onClose]);
+
+  // A tap anywhere else in the sheet (not the name field itself, which
+  // claims its own touch via its own Pressable and never reaches this
+  // one) blurs the name field and drops the keyboard — which also takes
+  // the suggestion chips with it, since they're only ever shown while the
+  // name field is focused (see showChips above).
+  const dismissNameField = useCallback(() => {
+    nameRef.current?.blur();
+    Keyboard.dismiss();
+  }, []);
 
   async function handleSubmit() {
     if (submitting) return;
     const nameInvalid = !name.trim();
-    const amountInvalid = !(amount >= minAmount);
+    const value = parseInt(amount, 10) || 0;
+    const amountInvalid = value < minAmount;
     if (nameInvalid || amountInvalid) {
       if (nameInvalid) nameShake.shake();
       if (amountInvalid) amountShake.shake();
@@ -124,11 +152,9 @@ export default function AmountEntrySheet({
     Keyboard.dismiss();
     setSubmitting(true);
     setError('');
-    const result = await onSubmit({ name: name.trim(), amount });
+    const result = await onSubmit({ name: name.trim(), amount: value });
     if (result?.success === false) {
       setSubmitting(false);
-      // Offline: the app's offline banner has said so, and the sheet stays open
-      // to try again — no red message on top of it.
       if (!result.offline) setError(result.error || 'Something went wrong. Please try again.');
       return;
     }
@@ -136,61 +162,127 @@ export default function AmountEntrySheet({
   }
 
   const muted = textColor(light).tertiary;
-  const surface = light ? '#FAFAF8' : '#161616';
+  const borderIdle = light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)';
+  const borderActive = 'rgba(74,222,128,0.4)';
+
+  const footer = (
+    <View>
+      <NumericKeypad
+        onKeyPress={onKeyPress}
+        rows={DIGIT_ONLY_KEYPAD_ROWS}
+        insetBottom={0}
+        light={light}
+      />
+      <View style={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 10 }}>
+        <GlassPressable
+          variant="active"
+          radius={14}
+          disabled={submitting}
+          onPress={handleSubmit}
+          style={{ paddingVertical: 16, alignItems: 'center' }}
+        >
+          <Text className="text-black text-base font-semibold">{submitLabel}</Text>
+        </GlassPressable>
+      </View>
+    </View>
+  );
 
   return (
-    // Shorter than the sheets that carry a keypad — the ruler replaces it, and
-    // a tall sheet with nothing in the bottom half reads as unfinished.
     <InlineSheet
       open={open}
       onClose={handleClose}
-      onClosed={onClosed}
+      onClosed={handleClosed}
       light={light}
-      heightRatio={heightRatio}
+      heightRatio={ratio}
       dismissible={!submitting}
-      footer={<ActionRow primaryLabel={submitLabel} onPrimary={handleSubmit} disabled={submitting} />}
+      footer={footer}
     >
-      <ScrollView
-        style={{ flexGrow: 0 }}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingHorizontal: 20 }}
-        bounces={false}
-        overScrollMode="never"
-      >
-        <Text
-          className="text-center"
-          style={{ fontSize: 21, fontWeight: '500', letterSpacing: -0.3, marginBottom: 18, color: light ? '#111111' : '#ffffff' }}
-        >
-          {title}
-        </Text>
+      <Pressable style={{ flex: 1 }} onPress={dismissNameField}>
+        {!!title && (
+          <Text
+            className="text-center font-semibold"
+            style={{ fontSize: 17, color: textColor(light).primary, marginBottom: 14 }}
+          >
+            {title}
+          </Text>
+        )}
+        <Pressable onPress={() => nameRef.current?.focus()}>
+          <View style={boxedNameField ? {
+            marginHorizontal: 20,
+            paddingVertical: 10,
+            paddingHorizontal: 14,
+            borderWidth: 1,
+            borderRadius: 12,
+            // Always idle — no green focus ring on this variant, unlike
+            // the underline below. Budget's own box is meant to read as a
+            // plain, static field, not one with its own focus affordance.
+            borderColor: borderIdle,
+            backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.18)',
+            // Row, not the default variant's plain column — makes room for
+            // the clear button beside the text instead of on top of it.
+            flexDirection: 'row',
+            alignItems: 'center',
+          } : {
+            marginHorizontal: 20,
+            paddingVertical: 14,
+            borderBottomWidth: 1,
+            borderBottomColor: nameFocused ? borderActive : borderIdle,
+            alignItems: 'center',
+          }}>
+            <Animated.View style={[boxedNameField ? { flex: 1 } : null, nameShake.style]}>
+              <TextInput
+                ref={nameRef}
+                value={name}
+                onChangeText={setName}
+                onFocus={() => setNameFocused(true)}
+                onBlur={() => setNameFocused(false)}
+                placeholder={namePlaceholder}
+                placeholderTextColor={light ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)'}
+                maxLength={60}
+                autoCapitalize="sentences"
+                returnKeyType="done"
+                onSubmitEditing={Keyboard.dismiss}
+                style={[INPUT_TEXT_STYLE, {
+                  fontSize: boxedNameField ? 16 : 20, fontWeight: '400',
+                  color: light ? '#111111' : '#ffffff',
+                  textAlign: 'center',
+                  paddingVertical: 0, width: '100%',
+                }]}
+              />
+            </Animated.View>
+            {/* Clearing the whole line at once, rather than backspacing it
+                out character by character — only where there's something
+                to clear, and only on Budget's own boxed field (the
+                underline variant never asked for this). */}
+            {boxedNameField && !!name && (
+              <Pressable
+                onPress={() => setName('')}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Clear"
+                style={{
+                  marginLeft: 8,
+                  width: 18,
+                  height: 18,
+                  borderRadius: 9,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: light ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.16)',
+                }}
+              >
+                <CloseIcon size={9} color={light ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.35)'} />
+              </Pressable>
+            )}
+          </View>
+        </Pressable>
 
-        <FieldRow label={nameLabel} active={nameFocused} onPress={() => nameRef.current?.focus()} shake={nameShake} light={light}>
-          <TextInput
-            ref={nameRef}
-            value={name}
-            onChangeText={setName}
-            onFocus={() => setNameFocused(true)}
-            onBlur={() => setNameFocused(false)}
-            placeholder={namePlaceholder}
-            placeholderTextColor={light ? '#b0b0b0' : '#4d4d4d'}
-            maxLength={60}
-            autoCapitalize="sentences"
-            returnKeyType="done"
-            onSubmitEditing={Keyboard.dismiss}
-            style={[INPUT_TEXT_STYLE, { fontSize: 16, color: light ? '#111111' : '#ffffff', height: 48, paddingVertical: 0 }]}
-          />
-        </FieldRow>
-
-        {/* Ideas for the name, only while there isn't one — once something is
-            there they would just take up room. */}
-        {!name.trim() && nameSuggestions.length > 0 && (
+        {nameFocused && !name.trim() && nameSuggestions.length > 0 && (
           <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
-              style={{ marginHorizontal: -20, marginTop: 8, flexGrow: 0 }}
+              style={{ marginTop: 10, flexGrow: 0 }}
               contentContainerStyle={{ paddingHorizontal: 20, gap: 8 }}
             >
               {nameSuggestions.map(suggestion => (
@@ -211,32 +303,54 @@ export default function AmountEntrySheet({
         )}
 
         {extraFields}
-      </ScrollView>
 
-      {!!error && <Text className="text-red-400 text-base text-center mx-5 mb-2">{error}</Text>}
+        {!!error && <Text className="text-red-400 text-sm text-center mx-5 mt-2">{error}</Text>}
 
-      {/* Whatever room is left between the name field and the button goes to
-          the amount, centred in it and nudged a little above true centre (the
-          bottom padding). The ruler runs edge to edge, so only the label and
-          the figure sit inside the sheet's own side padding. */}
-      <View style={{ flex: 1, justifyContent: 'center', paddingBottom: 24 }}>
-        <Text className="text-center text-[13px]" style={{ color: muted }}>{amountLabel}</Text>
-        {!!amountHint && (
-          <Text className="text-center text-[11px]" style={{ color: dim(light, 0.35), marginTop: 2 }}>{amountHint}</Text>
-        )}
-        <Animated.View style={[{ alignItems: 'center', marginTop: 2, marginBottom: 6 }, amountShake.style]}>
-          <RulerFigure value={amount} light={light} />
+        {/* flex:1 + center for every caller but Budget's own boxed sheet —
+            that's what lets the amount vertically centre in whatever room
+            is left below the name field/chips, regardless of how much
+            content sits above it. Budget's sheet instead pins this with a
+            fixed marginTop, same as AddModal's own Add Transaction sheet.
+            Neither wrapper here sets alignItems:'center' for the boxed
+            case (unlike the default branch) — a shrink-wrapped, centered
+            ancestor re-measures and re-centers itself on every keystroke
+            (the row's own width changes as a digit is added), an instant
+            snap that fights the row's own AMOUNT_LAYOUT_TRANSITION spring
+            mid-flight and reads as a jump rather than one continuous
+            slide. Leaving both ancestors at their default stretch instead
+            gives AmountRow's own row a full, stable width to move within,
+            so its own `justify-content:'center'` (see its className) plus
+            its already-present `layout` transition are the only thing
+            animating anything — nothing above it ever needs to react to
+            how wide it currently is. */}
+        <Animated.View
+          layout={boxedNameField && positionReady ? AMOUNT_POSITION_TRANSITION : undefined}
+          style={boxedNameField
+            ? { marginHorizontal: 20, marginTop: 20 }
+            : { flex: 1, justifyContent: 'center', alignItems: 'center' }}
+        >
+          {!!amountLabel && (
+            <Text className="text-center" style={{ fontSize: 13, color: muted }}>{amountLabel}</Text>
+          )}
+          {!!amountHint && (
+            <Text className="text-center" style={{ fontSize: 11, color: muted, opacity: 0.6, marginTop: 2 }}>{amountHint}</Text>
+          )}
+          <Animated.View key={resetKey} style={[{ marginTop: 4 }, boxedNameField ? null : { alignItems: 'center' }, amountShake.style, amountScaleStyle]}>
+            <AmountRow
+              amount={amount}
+              prevAmountLength={prevAmountLength}
+              skipDigitAnim={skipDigitAnim}
+              light={light}
+              digitFontSize={56}
+              lineHeight={64}
+              zeroColor={light ? 'rgba(0,0,0,0.82)' : 'rgba(255,255,255,0.82)'}
+              weight="400"
+              letterSpacing={-2.2}
+              autoShrink={false}
+            />
+          </Animated.View>
         </Animated.View>
-
-        <AmountRuler
-          scale={scale}
-          initialValue={initialAmount}
-          sessionKey={session}
-          onChange={setAmount}
-          light={light}
-          surface={surface}
-        />
-      </View>
+      </Pressable>
     </InlineSheet>
   );
 }

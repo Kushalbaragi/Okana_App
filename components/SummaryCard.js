@@ -194,7 +194,7 @@ function PeriodCaption({ periodLabel, light }) {
   );
 }
 
-// One line under the headline amount — "avg. daily spend · ₹450" and its
+// One line under the headline amount — "avg daily spend – ₹450" and its
 // kind. Dimmer than the period caption above the amount (disabled, not
 // tertiary): this is a secondary reference figure, not something read on
 // every glance the way the period or the amount itself are. fontSize 12,
@@ -203,7 +203,7 @@ function AverageCaption({ info, light }) {
   if (!info) return null;
   return (
     <Text style={{ fontSize: 12, fontWeight: '400', marginTop: 4, color: textColor(light).disabled }}>
-      {info.label} · {formatCurrency(info.value)}
+      {info.label} – {formatCurrency(info.value)}
     </Text>
   );
 }
@@ -300,7 +300,7 @@ function SummaryCard({
     return firstBarWithData({ timeRange, earliestDateStr, year, currYear, currMonth });
   }, [timeRange, earliestDateStr, year, currYear, currMonth, disabledAfterIndex]);
 
-  // The small "avg. X spend/income · ₹Y" line under the headline amount —
+  // The small "avg X spend/income – ₹Y" line under the headline amount —
   // daily in Month, monthly in Year, yearly in All Time. Skipped in
   // Overview: an average of income-minus-expense per period isn't a
   // figure anyone reads at a glance the way "avg daily spend" is, and
@@ -329,7 +329,7 @@ function SummaryCard({
       const total = real.reduce((a, b) => a + b, 0);
       if (total <= 0) return null;
       return {
-        label: timeRange === 'month' ? `Avg. daily ${noun}` : `Avg. monthly ${noun}`,
+        label: timeRange === 'month' ? `Avg daily ${noun}` : `Avg monthly ${noun}`,
         value: total / real.length,
       };
     }
@@ -343,7 +343,7 @@ function SummaryCard({
       if (real.length < 2) return null;
       const total = real.reduce((a, b) => a + b, 0);
       if (total <= 0) return null;
-      return { label: `Avg. yearly ${noun}`, value: total / real.length };
+      return { label: `Avg yearly ${noun}`, value: total / real.length };
     }
 
     return null;
