@@ -16,6 +16,7 @@ import {
   getEarliestDate,
   firstBarWithData,
   currentMonthYear,
+  formatCurrency,
 } from '../utils/format';
 import { textColor } from '../utils/colors';
 import { CAPTION, TABULAR } from '../utils/type';
@@ -193,6 +194,20 @@ function PeriodCaption({ periodLabel, light }) {
   );
 }
 
+// One line under the headline amount — "avg. daily spend · ₹450" and its
+// kind. Dimmer than the period caption above the amount (disabled, not
+// tertiary): this is a secondary reference figure, not something read on
+// every glance the way the period or the amount itself are. fontSize 12,
+// under CAPTION's 13, keeps it reading as the smallest thing on the card.
+function AverageCaption({ info, light }) {
+  if (!info) return null;
+  return (
+    <Text style={{ fontSize: 12, fontWeight: '400', marginTop: 4, color: textColor(light).disabled }}>
+      {info.label} · {formatCurrency(info.value)}
+    </Text>
+  );
+}
+
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard — see the matching comment in Header.js.
 function SummaryCard({
@@ -202,7 +217,6 @@ function SummaryCard({
   mode,
   selectedMonth,
   year,
-  selectedPeriod,
   selectedDay,
   light = false,
 }) {
@@ -235,22 +249,6 @@ function SummaryCard({
     return { income, expense, labels: MONTH_LABELS_SHORT };
   }, [transactions, timeRange, year, currYear, currMonth, lifetimeGranularity, earliestDateStr]);
 
-  // What each "All Time" bar actually represents, as real calendar periods —
-  // {year, month: null} per bar in yearly mode, {year, month} per bar in
-  // monthly mode — so a tap can filter/select by real date either way
-  // instead of needing two divergent code paths.
-  const periodsList = useMemo(() => {
-    if (timeRange !== '5y') return [];
-    if (lifetimeGranularity === 'year') {
-      return (chartData.years ?? chartData.labels.map(Number)).map(y => ({ year: y, month: null }));
-    }
-    return chartData.months ?? [];
-  }, [timeRange, lifetimeGranularity, chartData]);
-
-  const selectedPeriodIndex = useMemo(() => {
-    if (!selectedPeriod) return -1;
-    return periodsList.findIndex(p => p.year === selectedPeriod.year && p.month === selectedPeriod.month);
-  }, [periodsList, selectedPeriod]);
 
   // What the chart plots depends on ModeSwitch above: Expense/Income show
   // that one series' own magnitude (always >= 0, so BarChart's per-bar sign
@@ -302,6 +300,55 @@ function SummaryCard({
     return firstBarWithData({ timeRange, earliestDateStr, year, currYear, currMonth });
   }, [timeRange, earliestDateStr, year, currYear, currMonth, disabledAfterIndex]);
 
+  // The small "avg. X spend/income · ₹Y" line under the headline amount —
+  // daily in Month, monthly in Year, yearly in All Time. Skipped in
+  // Overview: an average of income-minus-expense per period isn't a
+  // figure anyone reads at a glance the way "avg daily spend" is, and
+  // Overview already has no single series to average in the first place.
+  //
+  // Averaged over the same real (non-future, non-before-signup) range as
+  // disabledBeforeIndex/disabledAfterIndex above. All Time always
+  // averages true calendar years via a fresh getLifetimeYearly call, even
+  // when the chart itself is showing monthly bars (a young account, see
+  // lifetimeGranularity) — the bars being monthly there is a display
+  // choice for readability, not what "average yearly spending" should mean.
+  const averageInfo = useMemo(() => {
+    if (mode === 'overview') return null;
+    const noun = mode === 'income' ? 'income' : 'spend';
+
+    if (timeRange === 'month' || timeRange === 'year') {
+      const series = mode === 'income' ? chartData.income : chartData.expense;
+      const startIdx = disabledBeforeIndex ?? 0;
+      const endIdx = disabledAfterIndex ?? (series.length - 1);
+      if (endIdx < startIdx) return null;
+      const real = series.slice(startIdx, endIdx + 1);
+      // Same "nothing to average" guard as BarChart's own hidden average
+      // line: a single real period, or a period with nothing recorded in
+      // it at all, isn't a reference figure worth showing.
+      if (real.length < 2) return null;
+      const total = real.reduce((a, b) => a + b, 0);
+      if (total <= 0) return null;
+      return {
+        label: timeRange === 'month' ? `Avg. daily ${noun}` : `Avg. monthly ${noun}`,
+        value: total / real.length,
+      };
+    }
+
+    if (timeRange === '5y') {
+      const yearly = getLifetimeYearly(transactions, earliestDateStr);
+      const series = mode === 'income' ? yearly.income : yearly.expense;
+      const currIdx = yearly.years.indexOf(currYear);
+      const endIdx = currIdx === -1 ? series.length - 1 : currIdx;
+      const real = series.slice(0, endIdx + 1);
+      if (real.length < 2) return null;
+      const total = real.reduce((a, b) => a + b, 0);
+      if (total <= 0) return null;
+      return { label: `Avg. yearly ${noun}`, value: total / real.length };
+    }
+
+    return null;
+  }, [mode, timeRange, chartData, disabledBeforeIndex, disabledAfterIndex, transactions, earliestDateStr, currYear]);
+
   // The income/expense split for whatever period is currently shown —
   // displayAmount below is just their difference.
   const overviewBreakdown = useMemo(() => {
@@ -314,14 +361,11 @@ function SummaryCard({
         expense: getMonthTotal(transactions, 'expense', selectedMonth, year),
       };
     }
-    if (timeRange === '5y' && selectedPeriodIndex >= 0) {
-      return { income: chartData.income[selectedPeriodIndex] ?? 0, expense: chartData.expense[selectedPeriodIndex] ?? 0 };
-    }
     return {
       income: chartData.income.reduce((a, b) => a + b, 0),
       expense: chartData.expense.reduce((a, b) => a + b, 0),
     };
-  }, [timeRange, chartData, transactions, selectedMonth, year, selectedPeriodIndex, selectedDay]);
+  }, [timeRange, chartData, transactions, selectedMonth, year, selectedDay]);
 
   const displayAmount = overviewBreakdown.income - overviewBreakdown.expense;
 
@@ -344,15 +388,10 @@ function SummaryCard({
       return selectedMonth != null ? MONTH_NAMES[selectedMonth] : String(year);
     }
     if (timeRange === '5y') {
-      if (selectedPeriod != null) {
-        return selectedPeriod.month != null
-          ? `${MONTH_NAMES[selectedPeriod.month]} ${selectedPeriod.year}`
-          : String(selectedPeriod.year);
-      }
       return earliestYear === currYear ? String(currYear) : `${earliestYear} – ${currYear}`;
     }
     return String(currYear);
-  }, [timeRange, selectedMonth, currYear, currMonth, selectedPeriod, earliestYear, selectedDay, year]);
+  }, [timeRange, selectedMonth, currYear, currMonth, earliestYear, selectedDay, year]);
 
 
   const animKey   = `${timeRange}-${year}-${mode}`;
@@ -383,10 +422,11 @@ function SummaryCard({
   const chartInstant = !growFromZero;
   const labelStep = timeRange === 'month' ? 4 : (timeRange === '5y' && lifetimeGranularity === 'month' ? 6 : 1);
 
+  // No per-bar selection in 5y — see the BarChart/LineChart call sites'
+  // own comment on why "All Time" isn't a drill-down at any range.
   const chartActiveIndex =
     timeRange === 'month' && selectedDay != null ? selectedDay - 1 :
     timeRange === 'year' ? (selectedMonth ?? -1) :
-    timeRange === '5y' ? selectedPeriodIndex :
     -1;
 
   // A directional slide on just the chart itself (not the headline amount,
@@ -530,6 +570,12 @@ function SummaryCard({
           <PeriodCaption periodLabel={periodLabel} light={light} />
 
           <AnimatedAmount value={Math.abs(headlineValue)} color={headlineColor} />
+
+          {/* Outside the chart's own sliding Animated.View (see
+              chartAnimStyle below) — this is anchored to the amount, not
+              the chart, so a Month/Year/All swipe doesn't drag it along;
+              it just updates in place, same as AnimatedAmount above it. */}
+          <AverageCaption info={averageInfo} light={light} />
         </View>
 
         {/* Hidden, not removed — Month/Year/All is off for now, so the chart
@@ -606,7 +652,6 @@ function SummaryCard({
                   // nothing that day" — Income's 0 isn't a "no spend" day,
                   // and Year/All's bars are monthly totals, not single days.
                   noSpendDots={mode === 'expense' && timeRange === 'month'}
-                  showAverage={false}
                   instant={chartInstant}
                   light={light}
                 />

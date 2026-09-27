@@ -18,6 +18,18 @@ import { ChevronRight } from './icons';
 // than AmountField's narrow digit sliding, which uses SPRING_QUICK).
 const ROW_LAYOUT_TRANSITION = layoutTransition(SPRING_SMOOTH);
 
+// MonthHeader's label column — every label is the same "MMM-YYYY" shape
+// (see flatData below), but the font is proportional, so "SEP-2026" and
+// "AUG-2026" aren't the same pixel width. Left unconstrained, the dash
+// after it lands at a different x on every row depending on which month's
+// letters happen to be drawn, so a stack of collapsed months reads as a
+// ragged column instead of one straight line of dashes. A fixed-width box
+// around just the label pins the dash to the same x on every row
+// regardless of which month it is. 100, not a tighter guess — a tighter
+// width clipped the widest real labels ("MAR-2026", "MAY-2026", ...) at
+// MonthHeader's fontSize; this is comfortably past even the widest one.
+const MONTH_LABEL_WIDTH = 100;
+
 // Plays once, only for the row TransactionList is told just got added (see
 // justAddedId) — a plain fade + small rise, no stagger, since there's only
 // ever one of these at a time.
@@ -86,22 +98,29 @@ function MonthHeader({ label, amount, light, isOpen, onPress }) {
               same language instead of looking like a different component
               bolted onto the same list. Label/total stay bright, dash dim —
               same hierarchy as before, just without the box around it. */}
-          {/* One Text with nested spans, not three sibling Text boxes in a
-              row — siblings each get their own layout box, and the dash's
-              glyph sits at a different optical height within its box than
-              the label/amount do within theirs, so the row read as
-              misaligned even though every box shared the same line-height.
-              Nesting spans inside a single Text lays them out on one
-              shared baseline instead. */}
-          <Text style={[BODY, { color: textColor(light).primary }]}>
-            {label}
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {/* Fixed width, not flex/auto — see MONTH_LABEL_WIDTH's own
+                comment above: this is what keeps the dash below at the
+                same x on every collapsed month row regardless of which
+                month's label (a different pixel width each time, in this
+                proportional font) is actually drawn inside it. */}
+            <View style={{ width: MONTH_LABEL_WIDTH }}>
+              <Text numberOfLines={1} style={[BODY, { color: textColor(light).primary }]}>{label}</Text>
+            </View>
             {amount != null && (
-              <>
-                <Text style={{ color: textColor(light).disabled }}>{'   —   '}</Text>
-                <Text style={TABULAR}>{formatCurrency(amount)}</Text>
-              </>
+              // One Text with nested spans, not two sibling Text boxes —
+              // siblings each get their own layout box, and the dash's
+              // glyph sits at a different optical height within its box
+              // than the amount does within its own, so the row read as
+              // misaligned even though both boxes shared the same
+              // line-height. Nesting spans inside a single Text lays them
+              // out on one shared baseline instead.
+              <Text style={[BODY, { color: textColor(light).disabled }]}>
+                {'—   '}
+                <Text style={[{ color: textColor(light).primary }, TABULAR]}>{formatCurrency(amount)}</Text>
+              </Text>
             )}
-          </Text>
+          </View>
 
           {/* Rotates between pointing right (collapsed) and down (open) —
               same treatment SavingsSection's own "Completed" toggle already
@@ -126,9 +145,6 @@ function TransactionList({
   // rowEntering (fade + rise) and everything below it pushes down via
   // ROW_LAYOUT_TRANSITION.
   justAddedId,
-  // Handed the element the rows sit inside, for a caller that wants to
-  // point at it (the tour outlines it).
-  cardRef,
   // Same Expense/Income/Overview value the Home chart's slider is on —
   // decides which figure (if any) each month's header shows, see
   // MonthHeader's own comment.
@@ -339,10 +355,7 @@ function TransactionList({
 
   return (
     <Pressable onPress={closeOpenRow} style={{ flex: 1 }}>
-      {/* ref sits on this wrapper, not the FlatList itself — FlatList's own
-          ref isn't a plain measurable host view, and the tour only needs
-          something spanning the same area to outline. */}
-      <View ref={cardRef} style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
         <FlatList
           data={flatData}
           keyExtractor={item => item.key}

@@ -28,7 +28,6 @@ import { UpdateSheet } from '../../components/UpdateSheet';
 import { useAppUpdate } from '../../hooks/useAppUpdate';
 import { AnimatedModal } from '../../components/AnimatedModal';
 import ConfirmDialog from '../../components/ConfirmDialog';
-import { TourHint } from '../../components/TourHint';
 import { useTourStep } from '../../hooks/useTourStep';
 import { PlusIcon } from '../../components/icons';
 import { POPUP_RADIUS, SMOOTH, CTA_COLOR } from '../../components/Glass';
@@ -48,10 +47,9 @@ const HOME_BG = LIGHT_HOME ? '#FAFAF8' : '#000000';
 const PARALLAX_SHIFT = 0.3;
 const PARALLAX_DIM = 0.4;
 
-// The tour's demo swipe: a beat after the hint appears, then again every few
-// seconds while it stays up (the swipe itself holds for about a second).
-const SWIPE_DEMO_DELAY_MS = 700;
-const SWIPE_DEMO_EVERY_MS = 3600;
+// How long after a first transaction lands before the one-off swipe-to-
+// delete demo plays (see the effect near swipeTour below).
+const SWIPE_DEMO_DELAY_MS = 2000;
 
 // How long after a delete is confirmed it goes ahead even if the dialog never
 // reports having closed (see flushDelete): longer than its close animation.
@@ -111,7 +109,7 @@ export default function Dashboard() {
   // without waiting for its own next natural refresh.
   const budgetPlan = useBudgetPlan(refreshTransactions);
   useWidgetSync({ transactions, budget, goals: savings.goals });
-  const { subscription, loading: subLoading, refresh: refreshSubscription } = useSubscription(user);
+  const { subscription, refresh: refreshSubscription } = useSubscription(user);
   const trialInfo = useMemo(() => getSubscriptionDisplayStatus(subscription, today()), [subscription]);
   const posthog = usePostHog();
   // Fires once, exactly on the transition into 'expired' — not on every
@@ -209,9 +207,6 @@ export default function Dashboard() {
   // not a cycle. Always starts on Expense, and nothing persists it, so a
   // fresh load always opens the same way.
   const [mode, setMode] = useState('expense');
-  // { year, month } | null — month is null when the selection is a whole
-  // year (5y-yearly mode) and 0-11 when it's a specific month (5y-monthly).
-  const [selectedPeriod] = useState(null);
   const [selectedDay, setSelectedDay] = useState(null);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -293,52 +288,65 @@ export default function Dashboard() {
     let cancelled = false;
 
     (async () => {
-      const todayStr = today();
-      const { month, year: cy } = currentMonthYear();
-      const prev = prevMonthYear(month, cy);
-      // Deliberately 0-indexed (prev.month straight from prevMonthYear, no
-      // +1) — matches the check-monthly-summary Edge Function's month_id
-      // exactly, which is what lets the client's own "viewed" write and the
-      // cron's "notified" write land on the same monthly_summary_status
-      // row. Don't "fix" this to look like the budget-popup's own (1-indexed)
-      // monthId below — they're unrelated keys for unrelated systems.
-      const recapMonthId = `${prev.year}-${String(prev.month).padStart(2, '0')}`;
+      // Wrapped end to end (unlike the individual helpers below, which each
+      // already swallow their own errors) because a rejection anywhere in
+      // here — a full AsyncStorage, a corrupted native module — would
+      // otherwise throw out of this IIFE before setDailyPopupsResolved(true)
+      // ever runs, permanently wedging it at false for the rest of the
+      // session and, with it, the budget-setup popup effect and the
+      // UpdateSheet gate below, both of which wait on this flag.
+      try {
+        const todayStr = today();
+        const { month, year: cy } = currentMonthYear();
+        const prev = prevMonthYear(month, cy);
+        // Deliberately 0-indexed (prev.month straight from prevMonthYear, no
+        // +1) — matches the check-monthly-summary Edge Function's month_id
+        // exactly, which is what lets the client's own "viewed" write and the
+        // cron's "notified" write land on the same monthly_summary_status
+        // row. Don't "fix" this to look like the budget-popup's own (1-indexed)
+        // monthId below — they're unrelated keys for unrelated systems.
+        const recapMonthId = `${prev.year}-${String(prev.month).padStart(2, '0')}`;
 
-      const shownKey = `okana_insight_shown_${user.id}`;
-      const shownVal = await AsyncStorage.getItem(shownKey);
-      if (shownVal === todayStr) { if (!cancelled) setDailyPopupsResolved(true); return; }
-      await AsyncStorage.setItem(shownKey, todayStr);
+        const shownKey = `okana_insight_shown_${user.id}`;
+        const shownVal = await AsyncStorage.getItem(shownKey);
+        if (shownVal === todayStr) { if (!cancelled) setDailyPopupsResolved(true); return; }
+        await AsyncStorage.setItem(shownKey, todayStr);
 
-      const recapShownKey = `okana_recap_shown_${user.id}`;
-      let alreadyShown = (await AsyncStorage.getItem(recapShownKey)) === recapMonthId;
-      if (!alreadyShown) {
-        alreadyShown = await hasViewedRecapServerSide(user.id, recapMonthId);
-        if (cancelled) return;
-        if (alreadyShown) await AsyncStorage.setItem(recapShownKey, recapMonthId);
-      }
+        const recapShownKey = `okana_recap_shown_${user.id}`;
+        let alreadyShown = (await AsyncStorage.getItem(recapShownKey)) === recapMonthId;
+        if (!alreadyShown) {
+          alreadyShown = await hasViewedRecapServerSide(user.id, recapMonthId);
+          if (cancelled) return;
+          if (alreadyShown) await AsyncStorage.setItem(recapShownKey, recapMonthId);
+        }
 
-      if (!alreadyShown && hasAnyRecapData(transactions, prev.month, prev.year)) {
-        await AsyncStorage.setItem(recapShownKey, recapMonthId);
+        if (!alreadyShown && hasAnyRecapData(transactions, prev.month, prev.year)) {
+          await AsyncStorage.setItem(recapShownKey, recapMonthId);
+          if (cancelled) return;
+          setRecapSlides(getMonthlyRecapSlides(transactions, prev.month, prev.year, {
+            amount: budget.lastMonthAmount,
+            spent: budget.lastMonthSpent,
+          }, budget.hasBudget));
+          // A short buffer before presenting this modal — this effect can fire
+          // in the same tick as AddModal closing (adding a transaction changes
+          // `transactions`, which is this effect's own dependency), and two
+          // native RN <Modal>s open at once is a known broken state on Android
+          // (see the note in WalletPage.js). Let whatever's closing
+          // actually finish first.
+          await new Promise(r => setTimeout(r, 320));
+          if (cancelled) return;
+          setRecapOpen(true);
+          setDailyPopupsResolved(true);
+          markRecapViewedServerSide(user.id, recapMonthId);
+          return;
+        }
+
+        if (!cancelled) setDailyPopupsResolved(true);
+      } catch (err) {
         if (cancelled) return;
-        setRecapSlides(getMonthlyRecapSlides(transactions, prev.month, prev.year, {
-          amount: budget.lastMonthAmount,
-          spent: budget.lastMonthSpent,
-        }, budget.hasBudget));
-        // A short buffer before presenting this modal — this effect can fire
-        // in the same tick as AddModal closing (adding a transaction changes
-        // `transactions`, which is this effect's own dependency), and two
-        // native RN <Modal>s open at once is a known broken state on Android
-        // (see the note in WalletPage.js). Let whatever's closing
-        // actually finish first.
-        await new Promise(r => setTimeout(r, 320));
-        if (cancelled) return;
-        setRecapOpen(true);
+        reportError(err);
         setDailyPopupsResolved(true);
-        markRecapViewedServerSide(user.id, recapMonthId);
-        return;
       }
-
-      if (!cancelled) setDailyPopupsResolved(true);
     })();
 
     return () => { cancelled = true; };
@@ -385,10 +393,16 @@ export default function Dashboard() {
     let cancelled = false;
 
     (async () => {
-      const { month, year: cy } = currentMonthYear();
-      const monthId = `${cy}-${String(month + 1).padStart(2, '0')}`;
-      const shownMonth = await AsyncStorage.getItem(storageKeys.budgetSetupShown(user.id));
-      if (!cancelled && shownMonth !== monthId) setBudgetSetupPending(true);
+      try {
+        const { month, year: cy } = currentMonthYear();
+        const monthId = `${cy}-${String(month + 1).padStart(2, '0')}`;
+        const shownMonth = await AsyncStorage.getItem(storageKeys.budgetSetupShown(user.id));
+        if (!cancelled && shownMonth !== monthId) setBudgetSetupPending(true);
+      } catch (err) {
+        // Best-effort, same as markRecapViewedServerSide above — worst case
+        // the popup just doesn't offer itself this session.
+        if (!cancelled) reportError(err);
+      }
     })();
 
     return () => { cancelled = true; };
@@ -569,16 +583,6 @@ export default function Dashboard() {
     setHoldReveal(true);
   }, [transactions]);
 
-  // First-run product tour for the Home-screen habits, in the order they become
-  // useful. Adding a transaction needs no data, so it runs right after signup.
-  // The other two need a real transaction, so they wait (seen stays false, the
-  // step never becomes reachable) until one has been added: first how to delete
-  // one by sliding it, shown by actually sliding the row, then what the
-  // Expense/Income/Overview tabs are. Nothing forces a brand-new, data-less
-  // account through a step with nothing to show. (The calendar's tap-a-date and
-  // budget hints get their own separate tour, triggered from
-  // WalletPage.js, for the same "only show it once it's real" reason.)
-  const fabRef = useRef(null);
   // The FAB had zero press feedback at all (a plain Pressable) — the most
   // frequently-tapped button on the whole screen deserved better than
   // nothing. A scale-down on press-in, spring back on release, same shape
@@ -587,59 +591,30 @@ export default function Dashboard() {
   const fabAnimStyle = useAnimatedStyle(() => ({ transform: [{ scale: fabScale.value }] }));
   const handleFabPressIn = useCallback(() => { fabScale.value = withTiming(0.92, { duration: 90 }); }, [fabScale]);
   const handleFabPressOut = useCallback(() => { fabScale.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.back(1.6)) }); }, [fabScale]);
-  const addTxTour = useTourStep(user?.id, 'add_transaction');
+
+  // One-off swipe-to-delete demo for a first-time signed-up user — no
+  // tooltip/message any more (there used to be a whole first-run tour
+  // here, with a "tap here to add" coach mark and an explicit "got it" to
+  // advance); just the row itself sliding open and shut once, unprompted,
+  // shortly after their very first transaction lands. `seen` persists via
+  // AsyncStorage (see useTourStep) so this never plays again for this
+  // account after the first time, and `shownRef` blocks a second timer
+  // firing within the same session before that write resolves.
   const swipeTour = useTourStep(user?.id, 'swipe_delete');
-  // Editing is reached by tapping a row, which needs no teaching; the swipe is
-  // only a shortcut to delete, so that is all this step shows.
-  const [homeTourActive, setHomeTourActive] = useState(null); // 'fab' | 'swipe' | null
-  const txCardRef = useRef(null);
-
-  // Whether the list has a row the swipe demo can be shown on — it's the
-  // full running ledger now regardless of the chart's own period, so this
-  // is just "is there anything at all yet". The tour waits for it, or it
-  // would point at an empty list.
-  const hasRowToSwipe = transactions.length > 0;
-
+  const swipeDemoShownRef = useRef(false);
   useEffect(() => {
-    if (!user || homeTourActive) return;
-    // Waits for the daily popup chain to settle, and none of the other
-    // native-Modal popups on this screen to be open — same "never stack
-    // two native Modals" constraint documented throughout this file.
-    if (!dailyPopupsResolved || recapOpen || budgetSetupOpen || proRequired || budgetCrossedOpen || modalOpen) return;
-    // A beat of breathing room before a hint appears — same idea as the
-    // Calendar tour's own delay, so it never fires the instant the screen
-    // lands, before the user has even had a chance to look around on their
-    // own.
-    // Everything after adding a transaction waits for one to be on screen.
-    const next = !addTxTour.seen ? 'fab'
-      : !hasRowToSwipe ? null
-      : !swipeTour.seen ? 'swipe'
-      : null;
-    if (!next) return;
-    const t = setTimeout(() => setHomeTourActive(next), 1200);
+    if (swipeTour.seen || swipeDemoShownRef.current) return;
+    // Waits for the add sheet to have actually finished closing (same
+    // "never overlap with a still-closing sheet" reasoning used elsewhere
+    // in this file) and for there to be a real row to demo on.
+    if (transactions.length === 0 || !addModalClosed) return;
+    swipeDemoShownRef.current = true;
+    const t = setTimeout(() => {
+      transactionListRef.current?.demoSwipe();
+      swipeTour.markSeen();
+    }, SWIPE_DEMO_DELAY_MS);
     return () => clearTimeout(t);
-  }, [user, homeTourActive, dailyPopupsResolved, recapOpen, budgetSetupOpen, proRequired, budgetCrossedOpen, modalOpen, addTxTour.seen, swipeTour.seen, hasRowToSwipe]);
-
-  const advanceHomeTour = useCallback(() => {
-    if (homeTourActive === 'fab') addTxTour.markSeen();
-    else if (homeTourActive === 'swipe') swipeTour.markSeen();
-    setHomeTourActive(null);
-  }, [homeTourActive, addTxTour, swipeTour]);
-
-  // While the swipe hint is up, show the swipe itself: the first row slides open
-  // to its delete button and shuts again, after a beat for the hint to settle and
-  // then every few seconds until it is dismissed. Rows only become swipeable a
-  // moment after a list paints, so an early try may find none; the next one does.
-  useEffect(() => {
-    if (homeTourActive !== 'swipe') return undefined;
-    const first = setTimeout(() => transactionListRef.current?.demoSwipe(), SWIPE_DEMO_DELAY_MS);
-    const repeat = setInterval(() => transactionListRef.current?.demoSwipe(), SWIPE_DEMO_EVERY_MS);
-    return () => {
-      clearTimeout(first);
-      clearInterval(repeat);
-      transactionListRef.current?.closeOpenRow();
-    };
-  }, [homeTourActive]);
+  }, [transactions.length, addModalClosed, swipeTour]);
 
   // Stable no-arg toggles for the modal props below — each was previously
   // an inline arrow function created fresh every render, which defeated
@@ -690,7 +665,6 @@ export default function Dashboard() {
         mode={mode}
         selectedMonth={selectedMonth}
         year={year}
-        selectedPeriod={selectedPeriod}
         selectedDay={selectedDay}
         light={LIGHT_HOME}
       />
@@ -705,13 +679,11 @@ export default function Dashboard() {
         justAddedId={justAddedId}
         onEdit={openEdit}
         onDelete={requestDelete}
-        cardRef={txCardRef}
         light={LIGHT_HOME}
         mode={mode}
       />
 
       <Animated.View
-        ref={fabRef}
         // bottom-12 (48px) is measured from the raw screen edge — this screen
         // applies no safe-area inset — so it can't go much lower without
         // crowding the ~34pt home-indicator area.
@@ -736,19 +708,6 @@ export default function Dashboard() {
         </Pressable>
       </Animated.View>
 
-      <TourHint
-        visible={homeTourActive === 'fab'}
-        targetRef={fabRef}
-        description="Tap here to add an expense or income."
-        onNext={advanceHomeTour}
-      />
-      <TourHint
-        visible={homeTourActive === 'swipe'}
-        targetRef={txCardRef}
-        description="Slide a transaction left to delete it."
-        hideRing
-        onNext={advanceHomeTour}
-      />
       <AddModal
         open={modalOpen}
         onClose={closeAddModal}

@@ -1,13 +1,10 @@
 import { memo, useEffect, useRef, Fragment } from 'react';
 import Svg, { Line, Rect, Circle, Path, Text as SvgText } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedProps, withDelay, withTiming, Easing } from 'react-native-reanimated';
-import { formatCurrency } from '../utils/format';
 import { textColor, EXPENSE, EXPENSE_DIM, INCOME, INCOME_DIM } from '../utils/colors';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-const AnimatedLine = Animated.createAnimatedComponent(Line);
-const AnimatedSvgText = Animated.createAnimatedComponent(SvgText);
 
 // The two bar colours; isIncome picks which one a chart uses. See the data
 // colour block in utils/colors.js for what they mean and why these two are
@@ -34,18 +31,6 @@ const CHART_EDGE_PAD = 6;
 // (like "All Time") from taking forever for the *later* ones to start.
 const BAR_STAGGER_STEP_MS = 55;
 const BAR_STAGGER_CAP_MS  = 450;
-
-// The average line rises into place from slightly below and drops back down
-// on its way out, fading as it goes — so it reads as settling onto the
-// chart rather than being switched on. Small on purpose: it's a reference
-// mark, and a long travel would pull attention off the bars it annotates.
-const AVG_SLIDE_PX = 10;
-const AVG_FADE_MS  = 300;
-// Slightly longer than the fade so the movement is still finishing as the
-// line reaches full opacity, rather than arriving and then continuing to
-// visibly drift.
-const AVG_MOVE_MS  = 360;
-const AVG_EASING   = Easing.out(Easing.cubic);
 
 function Bar({ x, width, rx, targetHeight, delay, fill, maskColor, instant = false }) {
   // Animates the actual pixel height directly (not a 0-1 progress scaled by
@@ -147,52 +132,6 @@ function Bar({ x, width, rx, targetHeight, delay, fill, maskColor, instant = fal
   );
 }
 
-// The average mark is two separate elements because they sit at different
-// depths in the SVG — the line is drawn before the bars so a taller bar
-// covers it, the label after them so text is never obscured. Both read from
-// the SAME two shared values (owned by BarChart below) rather than each
-// running its own copy of the animation, so the label can't drift a frame
-// out of step with the line it belongs to.
-function AverageLineMark({ progress, lineY, endX, color }) {
-  const animatedProps = useAnimatedProps(() => ({
-    y1: lineY.value,
-    y2: lineY.value,
-    opacity: progress.value,
-  }));
-
-  return (
-    <AnimatedLine
-      x1={0}
-      x2={endX}
-      stroke={color}
-      strokeWidth="1"
-      strokeDasharray="3 3"
-      animatedProps={animatedProps}
-    />
-  );
-}
-
-function AverageLineLabel({ progress, lineY, label, color }) {
-  // +3 keeps the text optically centred on the line, matching where the
-  // static version sat.
-  const animatedProps = useAnimatedProps(() => ({
-    y: lineY.value + 3,
-    opacity: progress.value,
-  }));
-
-  return (
-    <AnimatedSvgText
-      x={CHART_W}
-      textAnchor="end"
-      fontSize="8"
-      fill={color}
-      animatedProps={animatedProps}
-    >
-      {label}
-    </AnimatedSvgText>
-  );
-}
-
 // Fades in on the same stagger schedule as the Bar it stands in for, and
 // the same "no special-casing" reasoning as Bar above — see its comment.
 // `instant` mirrors Bar's own: skips the fade-in for a range swipe.
@@ -218,11 +157,6 @@ function NoSpendDot({ cx, cy, r, fill, delay, instant = false }) {
 // don't correspond to a real period at all — those keep their empty slot's
 // spacing but lose the label, since a label there isn't "a day that hasn't
 // happened yet," it's not a period the account will ever have.
-// `topPad` (optional) is room left above the top of the bars, in chart units. The
-// average line sits at the top edge when the average is as tall as the tallest
-// bar, and its label is centred on the line, so with no room above them both are
-// half cut off. Callers that show the average pass it, and pass it for every
-// range so the chart doesn't change height as the line comes and goes.
 // `values` can be signed now — the home chart plots net (income minus
 // expense) per period rather than one type at a time, so a bar's own sign
 // decides its colour: green for a period that came out ahead, red for one
@@ -234,7 +168,7 @@ function toneFor(v, isIncome) {
   return v < 0 ? RED_TONE : (isIncome ? GREEN_TONE : RED_TONE);
 }
 
-function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, showAverage = false, topPad = 0, instant = false }) {
+function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, instant = false }) {
   const n       = values.length;
   const GROUP_W = CHART_W / n;
   const BAR_W   = Math.min(19, Math.max(6, GROUP_W - 8));
@@ -252,121 +186,13 @@ function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAft
   const labelDimColor    = textColor(light).disabled;
   // Same card background the bars themselves sit on (matches the bg/light
   // pair used everywhere else in the app, e.g. TransactionItem) — used as
-  // an opaque mask under each bar so the average line actually disappears
-  // behind a taller bar instead of showing through its semi-transparent
-  // fill. See Bar's own comment.
+  // an opaque mask under each bar so a bar's semi-transparent fill doesn't
+  // show whatever's drawn behind it. See Bar's own comment.
   const bgColor = light ? '#FAFAF8' : '#000000';
-  // A touch more visible than the baseline grid line (0.10) — it needs to
-  // read as an intentional reference mark, not another faint ruled line —
-  // but still clearly secondary to the bars themselves, which is also why
-  // it's drawn before them below: a bar taller than the average visually
-  // covers the line right where that's true, rather than the line cutting
-  // across on top of every bar regardless of whether that bar is the one
-  // the average is even about.
-  const avgLineColor  = light ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.12)';
-  const avgLabelColor = textColor(light).disabled;
-
-  // Only real periods count — the same start/end bounds disabledBefore/
-  // AfterIndex already use to mark "before the account existed" and
-  // "hasn't happened yet" bars. A genuine no-spend day inside that range
-  // still counts as a real 0, same as it does everywhere else in the app;
-  // it's only padding outside the range that's excluded.
-  let avgY = null;
-  let avgLabel = null;
-  let avgLineEndX = CHART_W;
-  if (showAverage) {
-    const startIdx = disabledBeforeIndex ?? 0;
-    const endIdx = disabledAfterIndex ?? (n - 1);
-    const realValues = endIdx >= startIdx ? values.slice(startIdx, endIdx + 1) : [];
-    const total = realValues.reduce((a, b) => a + b, 0);
-    // Nothing recorded in this period at all — an "Avg ₹0" pinned to the
-    // baseline is not a reference line, it's a second axis line sitting on
-    // top of the real one. This also covers the window before the first
-    // load resolves, when every value is still 0.
-    //
-    // And nothing to average over a single period: the first day of a month, the
-    // first month of a year, or the day of the very first transaction. The line
-    // would just be drawn across the one bar it is the average of.
-    if (total > 0 && realValues.length >= 2) {
-      const avg = total / realValues.length;
-      const avgH = Math.round(useSqrtScale ? Math.sqrt(avg / maxVal) * BAR_HEIGHT : (avg / maxVal) * BAR_HEIGHT);
-      avgY = BAR_HEIGHT - avgH;
-      avgLabel = `Avg ${formatCurrency(avg)}`;
-      // Rough per-character estimate at this fontSize (8) — the line stops
-      // short of the label's own width (plus a small gap) instead of
-      // running the dashes straight through the text underneath it.
-      avgLineEndX = CHART_W - avgLabel.length * 4.3 - 6;
-    }
-  }
-
-  // Held so the line/label can animate OUT after avgY has already gone
-  // null — without this the text would blank and the line snap to full
-  // width the instant the data went away, mid-fade.
-  const lastAvgRef = useRef({ label: '', endX: CHART_W });
-  if (avgLabel != null) lastAvgRef.current = { label: avgLabel, endX: avgLineEndX };
-  const shownAvgLabel = avgLabel ?? lastAvgRef.current.label;
-  const shownAvgEndX  = avgLabel != null ? avgLineEndX : lastAvgRef.current.endX;
-
-  const avgProgress = useSharedValue(0);
-  const avgLineY    = useSharedValue(BAR_HEIGHT);
-  const avgShownRef = useRef(false);
-  const prevAnimKeyRef = useRef(animKey);
-  // Waits out the bars' own stagger so the reference line settles on top of
-  // a chart that's already there, instead of racing the data it describes.
-  const avgRevealDelay = Math.min((n - 1) * BAR_STAGGER_STEP_MS, BAR_STAGGER_CAP_MS) + 80;
-
-  useEffect(() => {
-    // A period switch regrows every bar from 0 (see the animKey in the
-    // render loop's key below), so the line re-reveals with them rather
-    // than gliding from the old period's height to the new one — that
-    // glide reads as the line meaning something continuous across two
-    // periods that have nothing to do with each other.
-    if (prevAnimKeyRef.current !== animKey) {
-      prevAnimKeyRef.current = animKey;
-      avgShownRef.current = false;
-      avgProgress.value = 0;
-    }
-
-    if (avgY != null) {
-      if (!avgShownRef.current) {
-        avgShownRef.current = true;
-        // Parked below the target first (instantly, still invisible), then
-        // released so it rises into place as it fades in.
-        avgLineY.value = avgY + AVG_SLIDE_PX;
-        avgLineY.value = withDelay(avgRevealDelay, withTiming(avgY, { duration: AVG_MOVE_MS, easing: AVG_EASING }));
-        avgProgress.value = withDelay(avgRevealDelay, withTiming(1, { duration: AVG_FADE_MS, easing: AVG_EASING }));
-      } else {
-        // Already on screen and the average itself moved — slide straight
-        // to the new height, no re-fade.
-        avgLineY.value = withTiming(avgY, { duration: AVG_MOVE_MS, easing: AVG_EASING });
-        avgProgress.value = withTiming(1, { duration: AVG_FADE_MS, easing: AVG_EASING });
-      }
-    } else if (avgShownRef.current) {
-      // Nothing to average any more — drop away and fade out.
-      avgShownRef.current = false;
-      avgProgress.value = withTiming(0, { duration: AVG_FADE_MS, easing: AVG_EASING });
-      avgLineY.value = withTiming(avgLineY.value + AVG_SLIDE_PX, { duration: AVG_MOVE_MS, easing: AVG_EASING });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [avgY, animKey, avgRevealDelay]);
 
   return (
-    <Svg viewBox={`0 ${-topPad} ${CHART_W} ${svgH + topPad}`} style={{ width: '100%', aspectRatio: CHART_W / (svgH + topPad) }}>
+    <Svg viewBox={`0 0 ${CHART_W} ${svgH}`} style={{ width: '100%', aspectRatio: CHART_W / svgH }}>
       <Line x1={0} y1={BAR_HEIGHT} x2={CHART_W} y2={BAR_HEIGHT} stroke={gridColor} strokeWidth="0.8" strokeDasharray="3.5 3" />
-
-      {/* Just the line here, drawn before the bars below (not after) so it
-          renders behind them — see avgLineColor's comment above and Bar's
-          own mask-rect comment for how a taller bar actually hides it
-          instead of just showing through. The label itself is drawn last,
-          after every bar — see the block at the bottom of this Svg. */}
-      {showAverage && (
-        <AverageLineMark
-          progress={avgProgress}
-          lineY={avgLineY}
-          endX={shownAvgEndX}
-          color={avgLineColor}
-        />
-      )}
 
       {values.map((v, i) => {
         const x = CHART_EDGE_PAD + i * barStep;
@@ -449,19 +275,6 @@ function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAft
           </Fragment>
         );
       })}
-
-      {/* Drawn last, after every bar, so it stays legible even when the
-          last several days' bars are tall enough to reach into its row —
-          only the reference line itself (above) respects bar height, the
-          text is exempt from being covered. */}
-      {showAverage && (
-        <AverageLineLabel
-          progress={avgProgress}
-          lineY={avgLineY}
-          label={shownAvgLabel}
-          color={avgLabelColor}
-        />
-      )}
     </Svg>
   );
 }
