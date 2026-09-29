@@ -3,7 +3,7 @@ import { View, Text } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Animated, { FadeOut, LinearTransition } from 'react-native-reanimated';
 import { GlassPressable } from './Glass';
-import { CheckIcon, ChevronRight } from './icons';
+import { CheckIcon } from './icons';
 import { SwipeDeleteAction, useSwipeDelete } from './SwipeDeleteAction';
 import { Card, ProgressBar, POSITIVE, dim, money } from './savingsShared';
 import { textColor } from '../utils/colors';
@@ -36,7 +36,6 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
     onPress(goal.id);
   }, [goal.id, onPress, onCardPress]);
 
-  const figure = done ? dim(light, 0.6) : light ? '#111111' : '#ffffff';
   const isDebt = goal.kind === 'debt';
 
   // Debt and Savings share the exact same card shape — a name row, then the
@@ -66,24 +65,23 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
         <View className="flex-row items-center justify-between" style={{ gap: 12 }}>
           <View className="flex-row items-center flex-1" style={{ gap: 8 }}>
             {done && <CheckIcon size={14} color={POSITIVE} />}
-            <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 15, color: done ? dim(light, 0.5) : textColor(light).tertiary }}>{goal.name}</Text>
+            <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 17, fontWeight: '400', color: done ? dim(light, 0.5) : textColor(light).primary }}>{goal.name}</Text>
           </View>
-          <View className="flex-row items-center" style={{ gap: 8 }}>
-            {!done && <Text className="text-[13px] font-medium" style={{ color: POSITIVE }}>{goal.percent}%</Text>}
-            <ChevronRight color={textColor(light).disabled} />
-          </View>
+          {!done && <Text className="text-[13px] font-medium" style={{ color: textColor(light).tertiary }}>{goal.percent}% {isDebt ? 'paid' : 'saved'}</Text>}
         </View>
         {!done && (
           <>
-            <View className="flex-row items-baseline" style={{ gap: 8, marginTop: 8, marginBottom: 12 }}>
-              <Text style={{ fontSize: 24, fontWeight: '400', letterSpacing: -0.5, color: figure, ...TABULAR }}>
+            <View style={{ marginTop: 10, marginBottom: 10 }}>
+              <ProgressBar percent={goal.percent} height={8} light={light} trackColor="rgba(74,222,128,0.12)" />
+            </View>
+            <View className="flex-row items-baseline" style={{ gap: 6 }}>
+              <Text style={{ fontSize: 13, fontWeight: '400', color: done ? dim(light, 0.5) : textColor(light).disabled, ...TABULAR }}>
                 {money(headlineAmount)}
               </Text>
-              <Text className="text-[13px]" numberOfLines={1} style={{ flexShrink: 1, color: textColor(light).tertiary }}>
+              <Text style={{ fontSize: 13, flexShrink: 1, color: textColor(light).disabled }} numberOfLines={1}>
                 {caption}
               </Text>
             </View>
-            <ProgressBar percent={goal.percent} height={5} light={light} />
           </>
         )}
       </GlassPressable>

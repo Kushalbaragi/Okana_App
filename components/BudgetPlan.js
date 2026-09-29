@@ -8,6 +8,8 @@ import { Card, cardFill, dim, money } from './savingsShared';
 import { CheckIcon, PlusIcon } from './icons';
 import { textColor } from '../utils/colors';
 import { BODY } from '../utils/type';
+import { currentMonthYear } from '../utils/format';
+import { MONTH_NAMES } from '../utils/monthlyRecap';
 
 // This is the space the calendar's Budget section used to give a heatmap
 // (see WalletPage's own comment on that being cut) — now a plan for
@@ -108,6 +110,13 @@ const ItemRow = memo(function ItemRow({ item, onChangeAmount, onDelete, onToggle
 function BudgetPlan({ plan, onAddPress, onEditItem, onItemChecked, onRequestCheck, onRequestDeleteItem, light = false }) {
   const { items, total, updateItem, setChecked } = plan;
   const swipes = useSwipeGroup();
+  // Ties the total to the actual paycheck it'll come out of. Salary lands at
+  // month-end (effectively early next month) but is still called by the
+  // month it covers — money credited at the end of September, or in the
+  // first days of October, is still "September salary" — so this names the
+  // plan after the CURRENT month, not the month the credit date falls in.
+  const { month: currMonth } = currentMonthYear();
+  const salaryMonth = MONTH_NAMES[currMonth];
 
   // Only tells the caller (for its toast) once the write actually went
   // through — a failed/offline toggle stays silent rather than confirming
@@ -167,14 +176,16 @@ function BudgetPlan({ plan, onAddPress, onEditItem, onItemChecked, onRequestChec
                 isLast={i === items.length - 1}
               />
             ))}
-            {/* The "Total" label itself is gone — just the figure, at the
-                same position/style it always had. */}
+            {/* The bare "Total" label was replaced with a plain-language one
+                naming which salary the figure is coming out of, in the same
+                row as the figure itself rather than a caption underneath it. */}
             <View
               style={[
                 ROW_PAD,
-                { flexDirection: 'row', justifyContent: 'flex-end', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: dim(light, 0.08) },
+                { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: dim(light, 0.08) },
               ]}
             >
+              <Text style={{ fontSize: 13, color: textColor(light).disabled }}>{salaryMonth} salary planning</Text>
               <Text style={{ fontSize: 15, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}>{money(total)}</Text>
             </View>
           </>

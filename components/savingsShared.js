@@ -94,7 +94,7 @@ export const dim = (light, a = 0.4) => (light ? `rgba(0,0,0,${a})` : `rgba(255,2
 // measuring is needed. `color` overrides the usual green, for a caller that
 // wants this same bar in a different state's colour (Budget's own status
 // bar draws its own instead, rather than using this one).
-export function ProgressBar({ percent, height = 6, light, color = FILL_COLOR }) {
+export function ProgressBar({ percent, height = 6, light, color = FILL_COLOR, trackColor }) {
   const progress = useSharedValue(0);
   useEffect(() => {
     progress.value = withTiming(percent / 100, { duration: 420, easing: SETTLE_EASING });
@@ -102,7 +102,7 @@ export function ProgressBar({ percent, height = 6, light, color = FILL_COLOR }) 
   const fillStyle = useAnimatedStyle(() => ({ width: `${progress.value * 100}%` }));
 
   return (
-    <View style={{ height, borderRadius: height / 2, overflow: 'hidden', backgroundColor: dim(light, 0.08) }}>
+    <View style={{ height, borderRadius: height / 2, overflow: 'hidden', backgroundColor: trackColor ?? dim(light, 0.08) }}>
       <Animated.View style={[{ height: '100%', borderRadius: height / 2, backgroundColor: color }, fillStyle]} />
     </View>
   );

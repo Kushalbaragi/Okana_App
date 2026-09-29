@@ -98,7 +98,7 @@ export default function Dashboard() {
   const params = useLocalSearchParams();
   const isFocused = useIsFocused();
   const { user } = useAuth();
-  const { transactions, loading: txLoading, addTransaction, editTransaction, deleteTransaction, refresh: refreshTransactions } = useTransactions();
+  const { transactions, loading: txLoading, initialLoading: txInitialLoading, addTransaction, editTransaction, deleteTransaction, refresh: refreshTransactions } = useTransactions();
   const budget = useBudget(user, transactions);
   // Lives here (not inside the calendar page) so goals are already loaded the
   // first time it opens, same as the budget above. `refreshTransactions` so
@@ -149,13 +149,22 @@ export default function Dashboard() {
   // sure this only ever fires once: txLoading also flips true→false on a
   // later refresh() (e.g. regaining focus after Settings), which must not
   // replay the entrance.
+  //
+  // Gated on `txInitialLoading` (the cache check), not `txLoading` (the full
+  // network round trip) — waiting on the network held this at opacity 0 for
+  // the whole fetch, which also meant LineChart/BarChart's own grow-in
+  // animation (which starts the moment they mount, invisible or not) had
+  // already finished playing behind the still-hidden screen by the time it
+  // faded in, so the chart never looked like it was drawing itself. Starting
+  // as soon as the (near-instant) cache is checked means the fade and the
+  // chart's reveal now play together.
   const entranceProgress = useSharedValue(0);
   const entranceStartedRef = useRef(false);
   useEffect(() => {
-    if (entranceStartedRef.current || txLoading) return;
+    if (entranceStartedRef.current || txInitialLoading) return;
     entranceStartedRef.current = true;
     entranceProgress.value = withTiming(1, { duration: 1100, easing: SETTLE_EASING });
-  }, [txLoading]);
+  }, [txInitialLoading]);
 
   // The Calendar page slides in over Home, and Home eases back and dims beneath
   // it (a parallax). It is driven by the page's own position, `calendarSlideX`,

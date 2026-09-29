@@ -22,7 +22,7 @@ function dismissKeyboard() {
   Keyboard.dismiss();
 }
 
-export function InlineSheet({ open, onClose, onClosed, heightRatio = 0.86, light = false, dismissible = true, footer = null, children }) {
+export function InlineSheet({ open, onClose, onClosed, heightRatio = 0.86, light = false, dismissible = true, footer = null, extraLift = null, children }) {
   const { height: windowHeight } = useWindowDimensions();
   const targetHeight = windowHeight * heightRatio;
   const sheetH = useSharedValue(targetHeight);
@@ -30,6 +30,16 @@ export function InlineSheet({ open, onClose, onClosed, heightRatio = 0.86, light
   const progress = useSharedValue(0);
   const drag = useSharedValue(0);
   const dragStart = useSharedValue(0);
+
+  // The sheet deliberately does NOT move by the keyboard's own full height
+  // when it appears — an earlier version did exactly that, and on a tall
+  // sheet it shoved the card up off the top of the screen even when nothing
+  // being typed into was actually covered. `extraLift`, if a caller passes
+  // one, is the opposite of that: a shared value the CALLER computes as the
+  // exact overlap between whichever field is focused and the keyboard (see
+  // GoalSheet's own use of it for debt's Tenure/EMIs rows, which sit low
+  // enough in that sheet to need it) — 0 whenever nothing needs lifting, so
+  // every other caller is unaffected by this prop existing at all.
 
   useEffect(() => {
     if (open) {
@@ -57,7 +67,7 @@ export function InlineSheet({ open, onClose, onClosed, heightRatio = 0.86, light
   }));
   const sheetStyle = useAnimatedStyle(() => ({
     height: sheetH.value,
-    transform: [{ translateY: (1 - progress.value) * sheetH.value + drag.value }],
+    transform: [{ translateY: (1 - progress.value) * sheetH.value + drag.value - (extraLift?.value ?? 0) }],
   }));
 
   const pan = Gesture.Pan()

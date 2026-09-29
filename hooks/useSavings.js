@@ -34,13 +34,14 @@ function goalFromRow(row) {
 
 function entryFromRow(row) {
   return {
-    id:        row.id,
-    goalId:    row.goal_id,
-    type:      row.type,
-    amount:    parseFloat(row.amount),
-    date:      row.date,
-    note:      row.note,
-    createdAt: row.created_at,
+    id:            row.id,
+    goalId:        row.goal_id,
+    type:          row.type,
+    amount:        parseFloat(row.amount),
+    date:          row.date,
+    note:          row.note,
+    createdAt:     row.created_at,
+    transactionId: row.transaction_id,
   }
 }
 
@@ -318,7 +319,7 @@ export function useSavings(onEntryLogged) {
     const goal = storeRef.current.goals.find(g => g.id === goalId)
     const saved = netFor(storeRef.current.entries, goalId)
     const id = Crypto.randomUUID()
-    const entry = { id, goalId, type, amount: value, date: date || today(), note: (note || '').trim(), createdAt: new Date().toISOString() }
+    const entry = { id, goalId, type, amount: value, date: date || today(), note: (note || '').trim(), createdAt: new Date().toISOString(), transactionId: null }
     const result = await write({
       apply: () => setStore(s => ({ ...s, entries: [...s.entries, entry] })),
       request: () => supabase.from('savings_entries').insert({
@@ -330,6 +331,7 @@ export function useSavings(onEntryLogged) {
       hapticAdded()
       posthog?.capture('savings_money_moved', { type })
       if (goal) trackReached(goal, saved, saved + (type === 'add' ? value : -value))
+      return { ...result, id }
     }
     return result
   }, [write, user, posthog, trackReached])
@@ -338,13 +340,14 @@ export function useSavings(onEntryLogged) {
   // asked about after the payment is logged here (see SavingsSheetsHost's
   // own confirm prompt), never automatic: paying down a loan isn't itself a
   // home-screen expense unless the user says it should be counted as one.
-  // Unlike Budget's own checked lines (see useBudgetPlan.setChecked) this
-  // isn't linked back to the entry that prompted it — declining just means
-  // nothing more happens, so there's nothing to undo if the entry is later
-  // edited or deleted.
+  // The caller (SavingsSheetsHost's resolveEmiConfirm) links the returned id
+  // back onto the entry via linkEntryTransaction below, the same way Budget's
+  // own checked lines link theirs (see useBudgetPlan.setChecked) — so
+  // deleting the entry later takes this expense with it instead of leaving
+  // it behind (see deleteEntry).
   const logEntryAsExpense = useCallback(async ({ amount, date, description }) => {
     const id = Crypto.randomUUID()
-    return write({
+    const result = await write({
       apply: () => {},
       rollback: () => {},
       request: () => supabase.from('transactions').insert({
@@ -352,7 +355,21 @@ export function useSavings(onEntryLogged) {
       }),
       onSuccess: () => onEntryLogged?.(),
     })
+    return result.success ? { ...result, id } : result
   }, [write, user, onEntryLogged])
+
+  // Only writes the link — the entry itself already exists (logEntryAsExpense
+  // is offered only after the payment's own entry is saved), so this is a
+  // plain column update, not a new row.
+  const linkEntryTransaction = useCallback(async (entryId, transactionId) => {
+    const prev = storeRef.current.entries.find(e => e.id === entryId)
+    if (!prev) return { success: false, error: FALLBACK_MESSAGE }
+    return write({
+      apply: () => setStore(s => ({ ...s, entries: s.entries.map(e => e.id === entryId ? { ...e, transactionId } : e) })),
+      request: () => supabase.from('savings_entries').update({ transaction_id: transactionId }).eq('id', entryId).eq('user_id', user.id),
+      rollback: () => setStore(s => ({ ...s, entries: s.entries.map(e => e.id === entryId ? prev : e) })),
+    })
+  }, [write, user])
 
   const updateEntry = useCallback(async (id, { type, amount, note, date }) => {
     const prev = storeRef.current.entries.find(e => e.id === id)
@@ -390,9 +407,20 @@ export function useSavings(onEntryLogged) {
       request: () => supabase.from('savings_entries').delete().eq('id', id).eq('user_id', user.id),
       rollback: () => setStore(s => ({ ...s, entries: [...s.entries, prev] })),
     })
-    if (result.success) hapticDeleted()
+    if (!result.success) return result
+    hapticDeleted()
+    // The expense this payment was mirrored into (if the user said yes to
+    // that prompt) goes with it — left behind, it would show on Home with
+    // nothing in the loan's own history left to explain it. Mirrors Budget's
+    // own checked-line delete (see useBudgetPlan.deleteItem).
+    if (prev.transactionId) {
+      const { error: txError } = await supabase.from('transactions').delete().eq('id', prev.transactionId).eq('user_id', user.id)
+      if (txError) { reportError(txError); return result }
+      onEntryLogged?.()
+      return { ...result, removedTransaction: true }
+    }
     return result
-  }, [write, user])
+  }, [write, user, onEntryLogged])
 
   // Brings in goals and entries from a spreadsheet: `goals` are { name, target,
   // completed } and `entries` are { goalName, type, amount, date, note }. An entry
@@ -519,8 +547,9 @@ export function useSavings(onEntryLogged) {
     setGoalCompleted,
     addEntry,
     logEntryAsExpense,
+    linkEntryTransaction,
     updateEntry,
     deleteEntry,
     importSavings,
-  }), [derived, loading, refresh, addGoal, editGoal, deleteGoal, setGoalCompleted, addEntry, logEntryAsExpense, updateEntry, deleteEntry, importSavings])
+  }), [derived, loading, refresh, addGoal, editGoal, deleteGoal, setGoalCompleted, addEntry, logEntryAsExpense, linkEntryTransaction, updateEntry, deleteEntry, importSavings])
 }

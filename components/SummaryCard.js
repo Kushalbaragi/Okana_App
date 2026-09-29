@@ -405,20 +405,39 @@ function SummaryCard({
   // context change (Overview can even swap chart types entirely, bars to a
   // line) and keeps the full reveal.
   //
-  // The very first paint is instant too, not a grow-from-zero reveal — the
-  // whole home screen already plays its own single fade-in on app open (see
-  // Dashboard's entranceProgress), and a staggered bar-by-bar grow-in
-  // underneath that read as the chart loading in a second, separate wave
-  // after the header. Snapping straight to full height here means the
-  // chart rides the same one fade as everything else around it.
+  // The very first paint DOES get the grow-from-zero reveal, same as a mode
+  // switch — this used to snap straight to full height instead, back when
+  // the whole home screen's fade-in waited on the network round trip (see
+  // Dashboard's entranceProgress/txInitialLoading); a staggered bar reveal
+  // underneath that slow fade read as the chart loading in a second,
+  // separate wave after the header. Now that the fade starts as soon as
+  // the (near-instant) cache is checked, the bars growing in happens as
+  // part of that same first paint instead of trailing it.
+  //
+  // "First paint" isn't just "first render", though: on a cold launch this
+  // component renders once with `transactions` still empty (before the
+  // cache/network fetch resolves), and every bar is a zero-height `Rect`
+  // placeholder, not a `Bar` (see BarChart's hasData check) — nothing to
+  // reveal yet. The *next* render, once real data lands, is what actually
+  // flips those placeholders into real `Bar`s for the first time — a
+  // different element type at the same Fragment key, so React mounts a
+  // genuinely fresh Bar instance right then. `hadDataRef` is what catches
+  // that moment specifically, in addition to a real mode switch — without
+  // it, `mode` hadn't changed between the empty and the loaded render, so
+  // the reveal looked already "used up" by the earlier, data-less paint,
+  // and this fresh Bar mounted straight at `instant=true`, silently
+  // skipping the grow-in on exactly the render that needed it.
   //
   // Writing to a ref during render like this — not in an effect — is what
   // lets `chartInstant` reflect *this* render's change rather than
   // lagging a render behind; see React's own "adjusting state as you
   // render" pattern for why that's safe here (no setState involved).
-  const prevModeForRevealRef = useRef(mode);
-  const growFromZero = prevModeForRevealRef.current !== mode;
+  const prevModeForRevealRef = useRef(null);
+  const hadDataRef = useRef(false);
+  const hasAnyData = transactions.length > 0;
+  const growFromZero = prevModeForRevealRef.current !== mode || (hasAnyData && !hadDataRef.current);
   prevModeForRevealRef.current = mode;
+  if (hasAnyData) hadDataRef.current = true;
   const chartInstant = !growFromZero;
   const labelStep = timeRange === 'month' ? 4 : (timeRange === '5y' && lifetimeGranularity === 'month' ? 6 : 1);
 

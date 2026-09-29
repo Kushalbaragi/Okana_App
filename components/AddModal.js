@@ -464,7 +464,7 @@ function AddModal({
               <ReelSlider modes={modes} labels={labels} value={type} onSelect={setType} light={light} slot={sliderSlot} />
             )}
             {!!subtitle && (
-              <Text numberOfLines={1} style={{ marginTop: modes.length > 1 ? 10 : 0, fontSize: 13, color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>
+              <Text numberOfLines={1} style={{ marginTop: modes.length > 1 ? 10 : 0, fontSize: 17, fontWeight: '600', color: light ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)' }}>
                 {subtitle}
               </Text>
             )}

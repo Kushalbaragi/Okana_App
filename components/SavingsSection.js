@@ -16,8 +16,8 @@ import { SwipeDeleteAction, useSwipeDelete, useSwipeGroup } from './SwipeDeleteA
 import { Card, ProgressBar, POSITIVE, cardFill, dim, money, KIND_COPY, DEBT_SUGGESTIONS } from './savingsShared';
 import { textColor } from '../utils/colors';
 import { TABULAR } from '../utils/type';
-import { CheckIcon, ChevronRight, EditIcon, PlusIcon } from './icons';
-import { currentMonthYear, dateBoxParts } from '../utils/format';
+import { CheckIcon, ChevronRight, PlusIcon } from './icons';
+import { currentMonthYear, dateBoxParts, today } from '../utils/format';
 import { hapticAdded } from '../utils/haptics';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { GUTTER } from '../utils/spacing';
@@ -133,11 +133,18 @@ export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings'
   const goal = goalId ? goalList.find(g => g.id === goalId) : null;
   const entry = sheetData?.entryId && goal ? goal.entries.find(e => e.id === sheetData.entryId) : null;
 
-  const submitGoal = useCallback(({ name, target, location, tenureMonths, emisPaidBefore }) => (
-    goalId
-      ? savings.editGoal(goalId, { name, target, location, tenureMonths, emisPaidBefore })
-      : savings.addGoal({ name, target, location, kind, tenureMonths, emisPaidBefore })
-  ), [savings, goalId, kind]);
+  // `startingAmount` only ever arrives for a brand-new savings goal (see
+  // GoalSheet's own step 2) — logged as that goal's first entry right after
+  // it's created, dated today, so "I already had ₹50,000 saved for this"
+  // shows up as real progress instead of a separate field nothing else reads.
+  const submitGoal = useCallback(async ({ name, target, location, tenureMonths, emisPaidBefore, startingAmount }) => {
+    if (goalId) return savings.editGoal(goalId, { name, target, location, tenureMonths, emisPaidBefore });
+    const result = await savings.addGoal({ name, target, location, kind, tenureMonths, emisPaidBefore });
+    if (result?.success && startingAmount > 0) {
+      await savings.addEntry(result.id, { type: 'add', amount: startingAmount, date: today(), note: 'Already saved' });
+    }
+    return result;
+  }, [savings, goalId, kind]);
 
   // Logging an EMI payment doesn't touch the main transaction list on its
   // own — asked about afterward instead (see below), same reasoning as
@@ -156,7 +163,7 @@ export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings'
       // The pill doesn't pop up the instant the payment is logged — a beat
       // first, so it reads as a follow-up prompt rather than a jarring
       // interruption right on top of the sheet closing.
-      const pending = { amount: payload.amount, date: payload.date, name: goal?.name || 'this loan' };
+      const pending = { entryId: result.id, amount: payload.amount, date: payload.date, name: goal?.name || 'this loan' };
       if (emiConfirmDelayRef.current) clearTimeout(emiConfirmDelayRef.current);
       emiConfirmDelayRef.current = setTimeout(() => setPendingEmiConfirm(pending), EMI_CONFIRM_DELAY_MS);
     }
@@ -172,6 +179,10 @@ export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings'
         amount: pending.amount, date: pending.date, description: pending.name,
       });
       if (!result?.success) return;
+      // Links the new expense back onto the payment entry that prompted it,
+      // so deleting the entry later takes this expense with it (see
+      // useSavings.deleteEntry) instead of leaving it orphaned on Home.
+      if (pending.entryId) savings.linkEntryTransaction(pending.entryId, result.id);
       // A full second after the pill has closed, not right on top of it —
       // see WalletPage's own comment on the same delay for its plan-check
       // confirm.
@@ -211,14 +222,21 @@ export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings'
   // event never comes; whichever fires first does it, once.
   const goalToDelete = useRef(null);
   const entryToDelete = useRef(null);
-  const flushPendingDelete = useCallback(() => {
+  const flushPendingDelete = useCallback(async () => {
     const goalId = goalToDelete.current;
     goalToDelete.current = null;
     if (goalId) savings.deleteGoal(goalId);
     const entryId = entryToDelete.current;
     entryToDelete.current = null;
-    if (entryId) savings.deleteEntry(entryId);
-  }, [savings]);
+    if (entryId) {
+      const result = await savings.deleteEntry(entryId);
+      // The entry's own payment might have been mirrored into Home's
+      // expense list (see resolveEmiConfirm above) — deleteEntry takes that
+      // expense with it, and this is the only place that actually happened,
+      // so it's the only place that can tell the user about it.
+      if (result?.removedTransaction) showToast?.('Also removed from your expenses');
+    }
+  }, [savings, showToast]);
 
   const handleConfirm = useCallback(() => {
     if (!confirmData) return;
@@ -537,46 +555,46 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings' }) {
     {/* Everything down to the History label stays put; only the history below
         it scrolls, the way the transaction list does on the home screen. */}
     <View style={{ paddingHorizontal: GUTTER, paddingTop: 8 }}>
-      {/* The name is centred on the row's own width; the pencil is pinned to
-          the right edge instead of riding beside the text, so it doesn't
-          pull the name off centre. Deleting a goal is done by swiping its
-          card on the list. */}
-      <View style={{ minHeight: 32, justifyContent: 'center' }}>
-        <Text className="text-base text-center" numberOfLines={1} style={{ paddingHorizontal: 40, color: dim(light, 0.5) }}>{goal.name}</Text>
-        <Pressable
-          onPress={() => ui.openEditGoal(goal.id)}
-          style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 32, alignItems: 'center', justifyContent: 'center' }}
-          accessibilityRole="button"
-          accessibilityLabel={copy.editGoalLabel}
-        >
-          <EditIcon color={textColor(light).disabled} />
-        </Pressable>
-      </View>
+      {/* The name lives up here now, larger and bolder than the card below
+          it — the card itself no longer repeats it. Tapping it still opens
+          the edit sheet, just without the pencil glyph in front any more. */}
+      <Pressable
+        onPress={() => ui.openEditGoal(goal.id)}
+        className="items-center justify-center"
+        style={{ marginTop: 4 }}
+        accessibilityRole="button"
+        accessibilityLabel={copy.editGoalLabel}
+      >
+        <Text numberOfLines={1} style={{ fontSize: 22, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}>{goal.name}</Text>
+      </Pressable>
       {!!goal.location && (
         <Text className="text-xs text-center" numberOfLines={1} style={{ marginTop: 4, color: textColor(light).tertiary }}>
           {kind === 'debt' ? 'from' : 'in'} {goal.location}
         </Text>
       )}
-      {/* Same card shape as the Budget section's own status bar (see
-          BudgetStatusBar): the figure and its "of X saved/remaining"
-          caption on the left, the percent on the right, a slim bar
-          underneath. Debt's headline is `remaining`, not `saved` — see
-          GoalCard's own comment on why. */}
+
+      {/* Same card shape as GoalCard's own list row and BudgetStatusBar,
+          headline-first: the figure and its "of X" caption on one baseline
+          (location now sits under the name above instead of repeating
+          here) sharing a row with the percent, then the bar underneath.
+          Only the percent says "saved"/"paid" — the figure's own caption
+          doesn't repeat it. Debt's headline is `remaining`, not `saved` —
+          see GoalCard's own comment on why. */}
       <View style={{ marginTop: 16, marginBottom: 16 }}>
         <Card light={light}>
           <View style={{ padding: 20 }}>
-            <View className="flex-row items-baseline justify-between" style={{ marginBottom: 12 }}>
-              <View className="flex-row items-baseline" style={{ gap: 6 }}>
-                <Text style={{ fontSize: 30, fontWeight: '400', letterSpacing: -1, color: light ? '#111111' : '#ffffff' }}>
+            <View className="flex-row items-baseline justify-between" style={{ gap: 12, marginBottom: 12 }}>
+              <View className="flex-row items-baseline flex-1" style={{ gap: 6 }}>
+                <Text style={{ fontSize: 24, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}>
                   {money(kind === 'debt' ? goal.remaining : goal.saved)}
                 </Text>
-                <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 13, color: textColor(light).tertiary }}>
-                  of {money(goal.target)} {copy.figureSuffix}
+                <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 13, color: light ? '#111111' : '#ffffff' }}>
+                  of {money(goal.target)}
                 </Text>
               </View>
-              <Text className="text-[13px] font-medium" style={{ color: POSITIVE }}>{goal.percent}%</Text>
+              <Text className="text-[13px]" numberOfLines={1} style={{ color: light ? '#111111' : '#ffffff' }}>{goal.percent}% {kind === 'debt' ? 'paid' : 'saved'}</Text>
             </View>
-            <ProgressBar percent={goal.percent} height={5} light={light} />
+            <ProgressBar percent={goal.percent} height={8} light={light} trackColor="rgba(74,222,128,0.12)" />
           </View>
         </Card>
       </View>
@@ -603,10 +621,26 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings' }) {
         </Animated.View>
       ) : null}
 
+    </View>
+
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      style={{ flex: 1 }}
+      onScrollBeginDrag={swipes.closeOpen}
+      // Clears the round button that floats over the bottom of the page.
+      contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: insets.bottom + 120 }}
+    >
       {/* Net per month from the first entry on, as a row that slides under a
           fixed centre — the month in the middle is the one read out. Not shown
           until there is something to plot. `key` reopens it on the current
-          month when another goal's page takes over this one. */}
+          month when another goal's page takes over this one.
+
+          Scrolls with the history below it rather than sitting in the fixed
+          header above — a debt with a long tenure (120+ months) draws one
+          full row per year (see PaymentGrid's own comment), and a fixed-
+          height card that tall was squeezing the actual payment history
+          below it down to almost nothing on long loans. Nothing about the
+          card itself changed, only where it lives. */}
       {showChart && (
         <View style={{ marginTop: 12 }}>
           <Text className="text-[11px] font-medium uppercase tracking-wider px-5 mb-2" style={{ color: textColor(light).disabled }}>{copy.monthlyTitle}</Text>
@@ -619,8 +653,13 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings' }) {
               <View style={{ paddingVertical: 16, paddingHorizontal: 20 }}>
                 <View className="flex-row items-end justify-between" style={{ marginBottom: 14 }}>
                   {emisLeft != null && (
-                    <Text style={{ fontSize: 20, fontWeight: '700', letterSpacing: -0.3, color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.90)' }}>
-                      {emisLeft} EMI remaining
+                    <Text>
+                      <Text style={{ fontSize: 26, fontWeight: '600', letterSpacing: -0.5, color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.90)' }}>
+                        {emisLeft}
+                      </Text>
+                      <Text style={{ fontSize: 13, fontWeight: '400', color: textColor(light).tertiary }}>
+                        {' '}EMI remaining
+                      </Text>
                     </Text>
                   )}
                   <Text className="text-xs" style={{ color: textColor(light).tertiary }}>
@@ -646,18 +685,10 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings' }) {
         </View>
       )}
 
-      <Text className="text-[11px] font-medium uppercase tracking-wider px-4 mb-2" style={{ color: textColor(light).disabled, marginTop: 28 }}>
+      <Text className="text-[11px] font-medium uppercase tracking-wider px-4 mb-2" style={{ color: textColor(light).disabled, marginTop: showChart ? 28 : 12 }}>
         {copy.historyTitle}
       </Text>
-    </View>
 
-    <ScrollView
-      showsVerticalScrollIndicator={false}
-      style={{ flex: 1 }}
-      onScrollBeginDrag={swipes.closeOpen}
-      // Clears the round button that floats over the bottom of the page.
-      contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: insets.bottom + 120 }}
-    >
       {goal.entries.length === 0 ? (
         <Text className="text-base px-1" style={{ color: textColor(light).tertiary }}>{copy.historyEmpty}</Text>
       ) : (
@@ -763,8 +794,8 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
             <EmptyState onNew={ui.openNewGoal} light={light} kind={kind} />
           ) : (
             <>
-              <View className="items-center" style={{ paddingBottom: 22 }}>
-                <Text className="text-sm" style={{ color: textColor(light).tertiary }}>{copy.sectionTotal}</Text>
+              <View className="items-center" style={{ paddingTop: 16, paddingBottom: 22 }}>
+                <Text className="text-sm" style={{ color: textColor(light).tertiary, marginBottom: 6 }}>{copy.sectionTotal}</Text>
                 {/* Same size/weight as Home's own headline figure
                     (SummaryCard's HEADLINE_TEXT_STYLE) — this is the same
                     kind of number, just on a different screen. */}

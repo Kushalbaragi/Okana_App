@@ -68,8 +68,7 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
   // Which section is showing. Deliberately survives closing and reopening
   // (this component stays mounted between opens), so it comes back where it
   // was left. Both sections stay mounted and crossfade rather than swapping,
-  // so switching costs nothing and keeps each one's own state — the selected
-  // day, the open goal.
+  // so switching costs nothing.
   const [section, setSection] = useState('budget');
   const [detailGoalId, setDetailGoalId] = useState(null);
   const savingsUI = useSavingsUI();
@@ -78,6 +77,20 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
   // opening a loan's detail page has nothing to do with a savings goal's.
   const debtUI = useSavingsUI();
   const [detailDebtId, setDetailDebtId] = useState(null);
+
+  // Switching Budget/Savings/Debt via the segmented control always lands on
+  // that section's own goal/debt list, not wherever it was last left mid-
+  // detail — landing back inside whichever goal happened to be open before
+  // meant the switch itself no longer showed "all your goals," which is the
+  // point of switching there in the first place. Reset both unconditionally
+  // rather than only the section being left: it's just as wrong to land back
+  // inside a goal's detail page when returning to a section as it is to
+  // leave one open while away from it.
+  const changeSection = useCallback((next) => {
+    setDetailGoalId(null);
+    setDetailDebtId(null);
+    setSection(next);
+  }, []);
 
   // One opacity per section rather than a single 0..1 slider (that only
   // ever worked for exactly two) — each animates toward 1 when it's the
@@ -393,7 +406,7 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
                 {/* Narrower than the old 2-option width (92) — a third
                     option at that width would run right up against the
                     header's own side margins on a narrower phone. */}
-                <SegmentedSwitch options={SECTIONS} value={section} onChange={setSection} buttonWidth={78} light={light} />
+                <SegmentedSwitch options={SECTIONS} value={section} onChange={changeSection} buttonWidth={78} light={light} />
               </View>
               <View style={{ width: 36 }} />
             </View>
