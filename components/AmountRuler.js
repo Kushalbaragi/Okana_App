@@ -293,18 +293,27 @@ export default memo(AmountRuler);
 export const MONTHS_MIN = 0;
 export const MONTHS_MAX = 300;
 
-// A plain 1-tick-per-month scale for a duration ruler (EMI tenure, in
-// GoalSheet) — shaped exactly like `createScale`'s own output above, so it
-// drops straight into `AmountRuler`'s `scale` prop and gets its drag,
-// haptic-per-tick and edge-fade behaviour for free. A major tick, labelled
-// with its own month count, every 12 months — same "dense ticks, sparser
-// labels" split `createScale` uses, just on a flat 1-month step instead of
-// widening bands (300 ticks is cheap enough on its own to need no banding).
-// Labelled in months rather than years throughout: the number being picked
-// IS a count of EMIs, and showing the axis in years meant reading a year
-// off the ruler and a month count off the figure above it.
-function buildMonthsScale() {
-  const count = MONTHS_MAX - MONTHS_MIN + 1;
+// A plain 1-tick-per-month scale for a duration ruler (EMI tenure, and EMIs
+// already paid, in GoalSheet) — shaped exactly like `createScale`'s own
+// output above, so it drops straight into `AmountRuler`'s `scale` prop and
+// gets its drag, haptic-per-tick and edge-fade behaviour for free. A major
+// tick, labelled with its own month count, every 12 months — same "dense
+// ticks, sparser labels" split `createScale` uses, just on a flat 1-month
+// step instead of widening bands (300 ticks, at most, is cheap enough on
+// its own to need no banding). Labelled in months rather than years
+// throughout: the number being picked IS a count of EMIs, and showing the
+// axis in years meant reading a year off the ruler and a month count off
+// the figure above it.
+//
+// Takes its own top end rather than always running to MONTHS_MAX — EMIs
+// already paid is built on this with `max` set to whatever the tenure
+// ruler currently holds, so there's no tick past "every EMI this loan
+// actually has" to drag onto and no way to claim more paid than the loan
+// is long. GoalSheet rebuilds this (via `monthsScale` below) whenever the
+// tenure changes; everything past that point in the string-building loop
+// is just never generated, not generated-then-hidden.
+function buildMonthsScale(max) {
+  const count = max - MONTHS_MIN + 1;
   let minor = '';
   let major = '';
   const labels = [];
@@ -319,7 +328,7 @@ function buildMonthsScale() {
     }
   }
   function nearestTickIndex(value) {
-    const clamped = Math.max(MONTHS_MIN, Math.min(MONTHS_MAX, Math.round(value) || MONTHS_MIN));
+    const clamped = Math.max(MONTHS_MIN, Math.min(max, Math.round(value) || MONTHS_MIN));
     return clamped - MONTHS_MIN;
   }
   return {
@@ -332,7 +341,16 @@ function buildMonthsScale() {
   };
 }
 
-export const MONTHS_SCALE = { ticks: Array.from({ length: MONTHS_MAX - MONTHS_MIN + 1 }, (_, i) => MONTHS_MIN + i), ...buildMonthsScale() };
+// `max` defaults to the full MONTHS_MAX range (Total EMIs' own usage);
+// EMIs already paid passes the current tenure instead (clamped into range,
+// and never below MONTHS_MIN) so its own ruler only ever offers ticks the
+// loan actually has.
+export function monthsScale(max = MONTHS_MAX) {
+  const clampedMax = Math.max(MONTHS_MIN, Math.min(MONTHS_MAX, Math.round(max) || MONTHS_MAX));
+  return { ticks: Array.from({ length: clampedMax - MONTHS_MIN + 1 }, (_, i) => MONTHS_MIN + i), ...buildMonthsScale(clampedMax) };
+}
+
+export const MONTHS_SCALE = monthsScale(MONTHS_MAX);
 
 const figureFormat = new Intl.NumberFormat('en-IN');
 

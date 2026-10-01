@@ -14,7 +14,7 @@ import { getDaysInMonth, parseISO } from 'date-fns';
 import { GlassPressable, INPUT_TEXT_STYLE, CARD_RADIUS, SMOOTH } from './Glass';
 import { InlineSheet, OPEN_MS } from './InlineSheet';
 import AddModal from './AddModal';
-import AmountRuler, { MONTHS_SCALE } from './AmountRuler';
+import AmountRuler, { monthsScale } from './AmountRuler';
 import { formatCurrency, formatDateFull, today, toDateStr } from '../utils/format';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { ChevronRight } from './icons';
@@ -719,17 +719,17 @@ function LoanSummaryCard({ target, emiAmount, tenureMonths, light }) {
 }
 
 // A count of months, dialled in on the same ruler BudgetSetupModal's own
-// amount field uses (AmountRuler, just handed MONTHS_SCALE instead of a
-// currency scale) with the same big figure above it, but closed behind a
+// amount field uses (AmountRuler, just handed a months scale instead of a
+// currency one) with the same big figure above it, but closed behind a
 // tap like every other row on this sheet rather than sitting open: picking
 // "EMI / Loan" should land on a form of quiet rows, not on an already-open
 // picker for whichever field happens to come first.
 //
 // Used for both month fields a loan has — the tenure and how many of those
-// EMIs are already behind you. The second one passes `tintCompleted`, which
-// greens the stretch of ruler left of the line (see AmountRuler's own
-// comment) so dragging it reads as marking months done rather than just
-// picking a number.
+// EMIs are already behind you. The second one passes `tintCompleted` (greens
+// the stretch of ruler left of the line, see AmountRuler's own comment) and
+// its own `maxMonths` — GoalSheet hands it the current tenure, so dragging
+// it can never claim more EMIs paid than the loan is actually long.
 //
 // Collapsing it is safe to do now in a way it wasn't before — a closed
 // ruler used to be the only thing keeping the sheet's swipe-to-dismiss from
@@ -737,42 +737,42 @@ function LoanSummaryCard({ target, emiAmount, tenureMonths, light }) {
 // comment on using gesture-handler's ScrollView), so `open` here is purely
 // about what the form looks like, not about making the drag work.
 //
-// `marginHorizontal: -20` cancels GoalSheet's own horizontal padding so the
-// ticks reach true screen edges the way Budget's ruler does for free in an
-// unpadded container — which is also why this row's wrapper below is the
-// one that omits `overflow: 'hidden'`.
-function MonthsRulerRow({ label, value, onChange, session, light, open, onOpen, onClose, tintCompleted = false }) {
+// The ruler stays INSIDE the same card its header sits in, same as every
+// other row's own expanding content (OptionsRow's wheel, DateRow's wheel) —
+// it used to break out to true screen edges the way BudgetSetupModal's
+// does, but that read as the control spilling out of its own section
+// rather than opening within it, so there's no bleed margin here any more
+// and the row's wrapper (GoalSheet's own return, below) is back to the
+// plain `overflow: 'hidden'` every other row's wrapper already has.
+function MonthsRulerRow({ label, value, onChange, session, light, open, onOpen, onClose, maxMonths, tintCompleted = false }) {
   const months = parseInt(value, 10) || 0;
   const unit = months === 1 ? 'month' : 'months';
+  const scale = useMemo(() => monthsScale(maxMonths), [maxMonths]);
   return (
-    <View>
-      <FieldCard light={light}>
-        <RowHeader label={label} light={light} onPress={open ? onClose : onOpen}>
-          <RowValueText value={`${months} ${unit}`} light={light} />
-        </RowHeader>
-      </FieldCard>
+    <FieldCard light={light}>
+      <RowHeader label={label} light={light} onPress={open ? onClose : onOpen}>
+        <RowValueText value={`${months} ${unit}`} light={light} />
+      </RowHeader>
       {!!open && (
-        <View style={{ paddingTop: 12 }}>
+        <View style={{ paddingBottom: 14 }}>
           <View className="items-center mb-2">
             <Text style={{ fontSize: 42, lineHeight: 50, fontWeight: '300', letterSpacing: -1, color: light ? '#111111' : '#ffffff', ...TABULAR }}>
               {months}
               <Text style={{ fontSize: 20, fontWeight: '400', color: textColor(light).disabled }}> {unit}</Text>
             </Text>
           </View>
-          <View style={{ marginHorizontal: -20 }}>
-            <AmountRuler
-              scale={MONTHS_SCALE}
-              initialValue={months}
-              sessionKey={session}
-              onChange={onChange}
-              light={light}
-              surface={light ? '#FAFAF8' : '#161616'}
-              tintCompleted={tintCompleted}
-            />
-          </View>
+          <AmountRuler
+            scale={scale}
+            initialValue={months}
+            sessionKey={session}
+            onChange={onChange}
+            light={light}
+            surface={light ? '#FAFAF8' : '#161616'}
+            tintCompleted={tintCompleted}
+          />
         </View>
       )}
-    </View>
+    </FieldCard>
   );
 }
 
@@ -808,6 +808,17 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
   // reset together, at the moment the sheet opens.
   const [rulerSession, setRulerSession] = useState(0);
   const [emisPaidBefore, setEmisPaidBefore] = useState('');
+  // Dragging the tenure ruler down below however many EMIs were already
+  // marked paid would otherwise leave that field pointing at a month the
+  // loan no longer has (its own ruler, built off this same tenure, would
+  // simply have no tick there any more) — pulled back down to the new
+  // tenure the instant it drops below it, same direction a shrinking
+  // dropdown would clamp a stale selection.
+  useEffect(() => {
+    const tenure = parseInt(tenureMonths, 10) || 0;
+    const paid = parseInt(emisPaidBefore, 10) || 0;
+    if (tenure > 0 && paid > tenure) setEmisPaidBefore(String(tenure));
+  }, [tenureMonths, emisPaidBefore]);
   const [firstEmiDate, setFirstEmiDate] = useState('');
   const [emiAmount, setEmiAmount] = useState(0);
   const [startingAmount, setStartingAmount] = useState(0);
@@ -1080,12 +1091,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
           )}
           {isEmiType ? (
             <>
-              {/* No `overflow: 'hidden'` here, unlike every other row's own
-                  wrapper above — see MonthsRulerRow's own comment on why:
-                  its ruler is deliberately wider than its own box, and a
-                  clipping ancestor cuts off the very touches that bleed is
-                  there to reach, not just its paint. */}
-              <ReanimatedView.View layout={rowsReady ? FIELD_LAYOUT_TRANSITION : undefined}>
+              <ReanimatedView.View layout={rowsReady ? FIELD_LAYOUT_TRANSITION : undefined} style={{ overflow: 'hidden' }}>
                 <MonthsRulerRow
                   label="Total EMIs"
                   value={tenureMonths}
@@ -1109,9 +1115,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
                 />
               </FieldCard>
               </ReanimatedView.View>
-              {/* Same "no overflow: hidden" reasoning as the tenure row
-                  above — this one's ruler bleeds past the row too. */}
-              <ReanimatedView.View layout={rowsReady ? FIELD_LAYOUT_TRANSITION : undefined}>
+              <ReanimatedView.View layout={rowsReady ? FIELD_LAYOUT_TRANSITION : undefined} style={{ overflow: 'hidden' }}>
                 <MonthsRulerRow
                   label="EMIs already paid"
                   value={emisPaidBefore}
@@ -1121,6 +1125,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
                   open={openField === 'emisPaid'}
                   onOpen={() => openRow('emisPaid')}
                   onClose={closeRow}
+                  maxMonths={parseInt(tenureMonths, 10) || undefined}
                   tintCompleted
                 />
               </ReanimatedView.View>

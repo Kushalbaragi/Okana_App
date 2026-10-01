@@ -44,10 +44,13 @@ const BUDGET_SHEET_TOUR_DELAY_MS = 2000;
 // Home's own DELETE_BACKSTOP_MS and SavingsSection's GOAL_DELETE_BACKSTOP_MS.
 const DELETE_ITEM_BACKSTOP_MS = 700;
 // How long after checking a plan line off before the "add to your
-// transactions?" pill appears — same value SavingsSection's own EMI confirm
-// uses, so the two read as one consistent beat rather than two different
-// timings for the same kind of ask.
-const PLAN_CHECK_DELAY_MS = 1500;
+// transactions?" pill appears — still a beat, not an instant popup over the
+// tap (same reasoning SavingsSection's own EMI confirm has), but short
+// enough that it reads as a quick follow-up rather than the checkbox taking
+// a moment to actually respond. Was 1500 (matching that EMI confirm
+// exactly); dropped on its own since this specific wait read as sluggish
+// and the two prompts don't need to share a number, just the same idea.
+const PLAN_CHECK_DELAY_MS = 350;
 
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard (and the flows it opens) — see the matching comment in
