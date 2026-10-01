@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useRef } from 'react';
 import { View, Text, useWindowDimensions } from 'react-native';
-import Animated, { useSharedValue, useAnimatedScrollHandler, runOnJS } from 'react-native-reanimated';
+import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
+import Animated, { useSharedValue, useAnimatedScrollHandler, useAnimatedStyle, runOnJS } from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient, Stop, Path, Rect, Text as SvgText } from 'react-native-svg';
 import { hapticTick } from '../utils/haptics';
 import { textColor } from '../utils/colors';
@@ -16,6 +17,19 @@ import { TABULAR } from '../utils/type';
 // Reanimated's scroll handler then reads the offset on the UI thread, so the
 // only JS work per tick is updating one number and firing a haptic.
 
+// gesture-handler's own ScrollView, not react-native's — this is what
+// actually made the ruler draggable inside a sheet, and it is worth being
+// precise about why. A sheet (InlineSheet) arbitrates its swipe-to-dismiss
+// against horizontal gestures inside it with `failOffsetX`, which only
+// works between handlers that share gesture-handler's arena: react-native's
+// own ScrollView is invisible to that arena, so while the sheet's pan sat
+// there deciding whether the sideways movement was big enough to fail on,
+// it held the touch and the native scroll never started at all — the ruler
+// read as completely dead to the touch. gesture-handler's ScrollView is the
+// same component wrapped in a native handler, so it negotiates with the
+// sheet's pan properly and wins a horizontal drag outright. BudgetSetupModal's
+// copy of this ruler worked only because that sheet's pan has no
+// `failOffsetX` to evaluate in the first place.
 const SPACING = 9;
 // Breathing room at both ends so the first and last labels aren't half-clipped
 // by the SVG's own bounds.
@@ -26,6 +40,13 @@ const MINOR_H = 14;
 const MAJOR_H = 26;
 const LABEL_Y = 48;
 const FADE_W = 44;
+
+// The same green the centre line is drawn in, so a completed tick reads as
+// "this one is behind the line" rather than as its own separate colour.
+// Strong enough to actually register as green over the grey tick it covers,
+// not so strong that half the ruler turns into a solid block.
+const DONE_TICK = 'rgba(74,222,128,0.70)';
+const DONE_MAJOR = 'rgba(74,222,128,0.90)';
 
 // The step between ticks grows with the amount. A flat step can't serve both
 // ends: fine enough for a ₹20,000 goal means thousands of ticks to reach ₹20
@@ -113,6 +134,8 @@ export function createScale(bands) {
   };
 }
 
+const AnimatedScrollView = Animated.createAnimatedComponent(GestureScrollView);
+
 const AMOUNT_SCALE = createScale(AMOUNT_BANDS);
 // Kept as two names for the call sites that already import them (a savings
 // goal vs. a budget line) — both now point at the identical scale.
@@ -146,13 +169,17 @@ function EdgeFade({ side, color }) {
 // `sessionKey` changing means "start again from initialValue" — the sheet
 // reopening, say. The scroll position is the source of truth the rest of the
 // time, so the value is reported out rather than pushed in.
-function AmountRuler({ initialValue, sessionKey, onChange, light = false, surface, scale = GOAL_SCALE }) {
+function AmountRuler({ initialValue, sessionKey, onChange, light = false, surface, scale = GOAL_SCALE, tintCompleted = false }) {
   const { width } = useWindowDimensions();
   // Pulled out as plain values: the scroll handler below is a worklet, and
   // capturing the whole scale would copy every tick across to the UI thread.
   const { ticks, count, trackWidth, minorPath, majorPath, labels, nearestTickIndex } = scale;
   const scrollRef = useRef(null);
   const lastIndex = useSharedValue(nearestTickIndex(initialValue));
+  // Only read by the `tintCompleted` overlay below, and only on the UI
+  // thread — the tint has to follow the finger frame for frame, so it can't
+  // go through the JS-side value `onChange` reports.
+  const scrollX = useSharedValue(nearestTickIndex(initialValue) * SPACING);
   const lastHapticRef = useRef(0);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -180,6 +207,7 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (e) => {
+      scrollX.value = e.contentOffset.x;
       const raw = Math.round(e.contentOffset.x / SPACING);
       const index = raw < 0 ? 0 : raw > count - 1 ? count - 1 : raw;
       if (index !== lastIndex.value) {
@@ -189,13 +217,28 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
     },
   });
 
+  // The "already done" tint: a green copy of the same ticks, laid exactly
+  // over the grey ones and clipped to the half of the ruler left of the
+  // centre line — so every tick that has passed under the line reads as
+  // completed and the ones still to come stay grey.
+  //
+  // Clipping at the centre rather than at the selected tick's own position
+  // is what makes this cost nothing per frame: "left of centre" IS "lower
+  // than the current value", so there's no width to recompute as the value
+  // changes. The only thing that moves is this copy's own offset, which
+  // tracks the scroll on the UI thread, so the colour boundary stays glued
+  // to the line through a slow drag and a fast fling alike.
+  const tintStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: width / 2 - PAD - scrollX.value }],
+  }));
+
   const tickColor = light ? 'rgba(0,0,0,0.22)' : 'rgba(255,255,255,0.20)';
   const majorColor = light ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.38)';
   const labelColor = textColor(light).disabled;
 
   return (
     <View style={{ height: HEIGHT }}>
-      <Animated.ScrollView
+      <AnimatedScrollView
         ref={scrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -217,7 +260,18 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
             </SvgText>
           ))}
         </Svg>
-      </Animated.ScrollView>
+      </AnimatedScrollView>
+
+      {tintCompleted && (
+        <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: '50%', height: HEIGHT, overflow: 'hidden' }}>
+          <Animated.View style={tintStyle}>
+            <Svg width={trackWidth} height={HEIGHT}>
+              <Path d={minorPath} stroke={DONE_TICK} strokeWidth="1.5" strokeLinecap="round" />
+              <Path d={majorPath} stroke={DONE_MAJOR} strokeWidth="2" strokeLinecap="round" />
+            </Svg>
+          </Animated.View>
+        </View>
+      )}
 
       <EdgeFade side="left" color={surface} />
       <EdgeFade side="right" color={surface} />
@@ -235,6 +289,50 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
 }
 
 export default memo(AmountRuler);
+
+export const MONTHS_MIN = 0;
+export const MONTHS_MAX = 300;
+
+// A plain 1-tick-per-month scale for a duration ruler (EMI tenure, in
+// GoalSheet) — shaped exactly like `createScale`'s own output above, so it
+// drops straight into `AmountRuler`'s `scale` prop and gets its drag,
+// haptic-per-tick and edge-fade behaviour for free. A major tick, labelled
+// with its own month count, every 12 months — same "dense ticks, sparser
+// labels" split `createScale` uses, just on a flat 1-month step instead of
+// widening bands (300 ticks is cheap enough on its own to need no banding).
+// Labelled in months rather than years throughout: the number being picked
+// IS a count of EMIs, and showing the axis in years meant reading a year
+// off the ruler and a month count off the figure above it.
+function buildMonthsScale() {
+  const count = MONTHS_MAX - MONTHS_MIN + 1;
+  let minor = '';
+  let major = '';
+  const labels = [];
+  for (let i = 0; i < count; i++) {
+    const x = PAD + i * SPACING;
+    const months = MONTHS_MIN + i;
+    if (months % 12 === 0) {
+      major += `M${x} ${TICK_TOP}V${TICK_TOP + MAJOR_H}`;
+      labels.push({ x, text: `${months}` });
+    } else {
+      minor += `M${x} ${TICK_TOP}V${TICK_TOP + MINOR_H}`;
+    }
+  }
+  function nearestTickIndex(value) {
+    const clamped = Math.max(MONTHS_MIN, Math.min(MONTHS_MAX, Math.round(value) || MONTHS_MIN));
+    return clamped - MONTHS_MIN;
+  }
+  return {
+    count,
+    trackWidth: (count - 1) * SPACING + PAD * 2,
+    minorPath: minor,
+    majorPath: major,
+    labels,
+    nearestTickIndex,
+  };
+}
+
+export const MONTHS_SCALE = { ticks: Array.from({ length: MONTHS_MAX - MONTHS_MIN + 1 }, (_, i) => MONTHS_MIN + i), ...buildMonthsScale() };
 
 const figureFormat = new Intl.NumberFormat('en-IN');
 
