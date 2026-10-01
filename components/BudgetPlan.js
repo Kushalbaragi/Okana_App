@@ -107,7 +107,7 @@ const ItemRow = memo(function ItemRow({ item, onChangeAmount, onDelete, onToggle
   );
 });
 
-function BudgetPlan({ plan, onAddPress, onEditItem, onItemChecked, onRequestCheck, onRequestDeleteItem, light = false }) {
+function BudgetPlan({ plan, onAddPress, onEditItem, onItemChecked, onRequestCheck, onRequestDeleteItem, onRequestClear, light = false }) {
   const { items, total, updateItem, setChecked } = plan;
   const swipes = useSwipeGroup();
   // Ties the total to the actual paycheck it'll come out of. Salary lands at
@@ -146,14 +146,24 @@ function BudgetPlan({ plan, onAddPress, onEditItem, onItemChecked, onRequestChec
         <Text style={[BODY, { color: textColor(light).tertiary, marginLeft: ROW_PAD.paddingHorizontal }]}>
           Plan your next salary
         </Text>
-        <Pressable
-          onPress={onAddPress}
-          accessibilityRole="button"
-          accessibilityLabel="Plan an expense"
-          style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: dim(light, 0.08) }}
-        >
-          <PlusIcon size={16} color={dim(light, 0.5)} />
-        </Pressable>
+        <View className="flex-row items-center" style={{ gap: 14 }}>
+          {/* Only once there's something TO clear — an empty list already
+              says "Nothing planned yet" below, so a clear action next to
+              that would just be asking to clear nothing. */}
+          {items.length > 0 && (
+            <Pressable onPress={onRequestClear} accessibilityRole="button" accessibilityLabel="Clear plan list" hitSlop={8}>
+              <Text style={{ fontSize: 13, color: textColor(light).tertiary }}>Clear list</Text>
+            </Pressable>
+          )}
+          <Pressable
+            onPress={onAddPress}
+            accessibilityRole="button"
+            accessibilityLabel="Plan an expense"
+            style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: dim(light, 0.08) }}
+          >
+            <PlusIcon size={16} color={dim(light, 0.5)} />
+          </Pressable>
+        </View>
       </View>
 
       <Card light={light}>

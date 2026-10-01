@@ -193,6 +193,26 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
     showPlanToast(checked ? `${name} added to your expenses` : `${name} expense removed`);
   }, [showPlanToast]);
 
+  // Clearing the whole plan — the list's own reset now that nothing does
+  // that automatically any more (see useBudgetPlan's own top comment). Asked
+  // first, same as removing a single line above, but with no backstop timer
+  // to delay it behind: a single line's own removal is watched happening (an
+  // animated row sliding out from a list still on screen), so the dialog has
+  // to actually be gone first or the two read as one jarring cut. Clearing
+  // everything swaps the whole card over to "Nothing planned yet" in one go
+  // — there's no row-by-row motion for the dialog's own close to step on, so
+  // it can just run the moment "Clear" is tapped.
+  const [clearListConfirmOpen, setClearListConfirmOpen] = useState(false);
+  const requestClearList = useCallback(() => setClearListConfirmOpen(true), []);
+  const closeClearListConfirm = useCallback(() => setClearListConfirmOpen(false), []);
+  const confirmClearList = useCallback(() => {
+    setClearListConfirmOpen(false);
+    (async () => {
+      const result = await budgetPlanRef.current?.clearList();
+      if (result?.success) showPlanToast('Plan list cleared');
+    })();
+  }, [showPlanToast]);
+
   // Checking a Budget Plan line off no longer adds its expense straight
   // away — this holds the line between that tap and the confirm prompt
   // answering whether it should (see BudgetPlan's own comment on why). Only
@@ -252,6 +272,7 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
     if (budgetSheetOpen) { closeBudgetSheet(); return; }
     if (pendingPlanCheck) { declinePlanCheck(); return; }
     if (deleteItemTarget) { closeDeleteItem(); return; }
+    if (clearListConfirmOpen) { closeClearListConfirm(); return; }
     if (addItemOpen || editingItem) { closeItemSheet(); return; }
     if (confirmOpen) { closeConfirm(); return; }
     if (debtConfirmOpen) { closeDebtConfirm(); return; }
@@ -261,7 +282,7 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
     if (section === 'debt' && detailDebtId != null) { setDetailDebtId(null); return; }
     onClose();
   }, [
-    budgetSheetOpen, closeBudgetSheet, pendingPlanCheck, declinePlanCheck, deleteItemTarget, closeDeleteItem, addItemOpen, editingItem, closeItemSheet, confirmOpen, closeConfirm, debtConfirmOpen, closeDebtConfirm,
+    budgetSheetOpen, closeBudgetSheet, pendingPlanCheck, declinePlanCheck, deleteItemTarget, closeDeleteItem, clearListConfirmOpen, closeClearListConfirm, addItemOpen, editingItem, closeItemSheet, confirmOpen, closeConfirm, debtConfirmOpen, closeDebtConfirm,
     sheetOpen, closeSheet, debtSheetOpen, closeDebtSheet, section, detailGoalId, detailDebtId, onClose,
   ]);
 
@@ -433,7 +454,7 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
                     that pays for it lands — see BudgetPlan.js. */}
                 {budgetPlan && (
                   <View style={{ marginTop: 24 }}>
-                    <BudgetPlan plan={budgetPlan} onAddPress={openAddItem} onEditItem={openEditItem} onItemChecked={handleItemChecked} onRequestCheck={requestPlanCheck} onRequestDeleteItem={requestDeleteItem} light={light} />
+                    <BudgetPlan plan={budgetPlan} onAddPress={openAddItem} onEditItem={openEditItem} onItemChecked={handleItemChecked} onRequestCheck={requestPlanCheck} onRequestDeleteItem={requestDeleteItem} onRequestClear={requestClearList} light={light} />
                   </View>
                 )}
             </ScrollView>
@@ -574,6 +595,23 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
                   onConfirm={confirmDeleteItem}
                   onCancel={closeDeleteItem}
                   onClosed={flushDeleteItem}
+                  light={light}
+                />
+              </ErrorBoundary>
+            )}
+
+            {/* "Clear list" asks before wiping the whole plan — same
+                destructive-action confirm as a single line's own delete just
+                above, just for everything at once. */}
+            {budgetPlan && (
+              <ErrorBoundary resetKeys={[clearListConfirmOpen]} onError={() => setClearListConfirmOpen(false)}>
+                <InlineConfirm
+                  open={clearListConfirmOpen}
+                  title="Clear plan list?"
+                  message="Every line will be removed, including any already marked paid. This can't be undone."
+                  confirmLabel="Clear"
+                  onConfirm={confirmClearList}
+                  onCancel={closeClearListConfirm}
                   light={light}
                 />
               </ErrorBoundary>

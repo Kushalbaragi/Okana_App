@@ -238,7 +238,21 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
     ],
   }));
 
-  if (!visible) return null;
+  // `inline` (WalletPage's own usage, drawn as a plain overlay rather than a
+  // native Modal) stays mounted for good once it's been opened once, instead
+  // of unmounting itself the moment `visible` goes false — unmounting (which
+  // this did unconditionally before) tore the whole ruler down with it, and
+  // `rulerOn`'s minor/major tick Paths cover roughly 2,300 ticks across the
+  // full AMOUNT_BANDS range: cheap to keep around, but expensive for the
+  // native SVG renderer to parse fresh, which is exactly what remounting
+  // forced on every single open after the first. Already fully inert while
+  // closed regardless (both layers below are `pointerEvents: 'none'`, the
+  // backdrop fades to 0 opacity, and the sheet itself sits translated off
+  // the bottom of the screen) — this just stops throwing that work away. A
+  // real native <Modal> (the non-inline path) still has to unmount: its
+  // window is an actual OS-level surface, not a view we can just park
+  // off-screen.
+  if (!visible && !inline) return null;
 
   const confirmRGB = confirmDelta?.up ? '248,113,113' : '74,222,128';
   const confirmColor = `rgba(${confirmRGB},0.9)`;
