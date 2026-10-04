@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, Platform, StyleSheet, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -35,8 +35,6 @@ import { AnimatedModal } from '../../components/AnimatedModal';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { ActionOverlay } from '../../components/ActionOverlay';
 import * as SettingsUI from '../../components/SettingsUI';
-import { TourHint, TOUR_HINT_BORDER_WIDTH, TOUR_HINT_BORDER_COLOR } from '../../components/TourHint';
-import { useTourStep } from '../../hooks/useTourStep';
 import { CARD_RADIUS, POPUP_RADIUS, SMOOTH } from '../../components/Glass';
 import { SETTLE_EASING } from '../../utils/motion';
 import { GUTTER } from '../../utils/spacing';
@@ -136,11 +134,7 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 // new photo by the time 'success' fires, what gets revealed is the new
 // photo, reading as it "fading in" even though the image itself never
 // moved — the check disappearing is what does the work.
-// forwardRef so the Settings screen can measure this exact 80x80 circle for
-// the "add your profile photo" tour hint — the wrapping layout View around
-// it also has vertical padding and stretches to the row's full width, which
-// would highlight a wide rectangle instead of hugging the actual circle.
-const AvatarPhoto = forwardRef(function AvatarPhoto({ uri, phase, onPress }, ref) {
+function AvatarPhoto({ uri, phase, onPress }) {
   const ringOpacity = useSharedValue(0);
   const ringProgress = useSharedValue(0); // 0 → 1
   const checkOpacity = useSharedValue(0);
@@ -206,7 +200,6 @@ const AvatarPhoto = forwardRef(function AvatarPhoto({ uri, phase, onPress }, ref
 
   return (
     <Pressable
-      ref={ref}
       onPress={onPress}
       disabled={phase === 'uploading'}
       style={{ width: 80, height: 80 }}
@@ -278,7 +271,7 @@ const AvatarPhoto = forwardRef(function AvatarPhoto({ uri, phase, onPress }, ref
       </Animated.View>
     </Pressable>
   );
-});
+}
 
 // The shared confirm dialog, with this screen's theme.
 function ConfirmModal(props) {
@@ -996,29 +989,8 @@ export default function AccountPage() {
 
   const isFocused = useIsFocused();
 
-  // One-time nudge to set a profile photo — only for accounts that don't
-  // have one yet, and deferred until the screen is actually focused (not
-  // fired the instant it mounts underneath something else, same "wait for
-  // focus" reasoning as refreshSubscription above).
-  const rootRef = useRef(null);
-  const avatarRef = useRef(null);
-  const avatarTour = useTourStep(user?.id, 'settings_add_photo');
-  const [avatarTourActive, setAvatarTourActive] = useState(false);
-
-  useEffect(() => {
-    if (!isFocused) { setAvatarTourActive(false); return; }
-    if (!user || avatarTour.seen || profile?.avatar) return;
-    const t = setTimeout(() => setAvatarTourActive(true), 900);
-    return () => clearTimeout(t);
-  }, [isFocused, user, avatarTour.seen, profile?.avatar]);
-
-  const advanceAvatarTour = useCallback(() => {
-    avatarTour.markSeen();
-    setAvatarTourActive(false);
-  }, [avatarTour]);
-
   return (
-    <View ref={rootRef} className="flex-1" style={{ backgroundColor: SETTINGS_BG }}>
+    <View className="flex-1" style={{ backgroundColor: SETTINGS_BG }}>
       {/* Only forces a dark status bar while this (experimentally light)
           screen is actually focused — see the same pattern in
           app/(app)/index.js for why this doesn't leak into other screens. */}
@@ -1053,24 +1025,7 @@ export default function AccountPage() {
 
         <View className="items-center pt-6 pb-8">
           <View style={{ position: 'relative' }}>
-            <AvatarPhoto ref={avatarRef} uri={profile?.avatar} phase={avatarPhase} onPress={pickAndUploadAvatar} />
-            {/* Drawn as a plain sibling of the avatar itself, not measured
-                across the tree (TourHint's `hideRing` below) — this pushed
-                native-stack screen still read a few px off with
-                measureLayout, and a ring positioned this way physically
-                cannot misalign, since it shares the avatar's own parent. */}
-            {avatarTourActive && (
-              <View
-                pointerEvents="none"
-                style={{
-                  position: 'absolute', top: -3, left: -3, right: -3, bottom: -3,
-                  borderRadius: 43,
-                  borderWidth: TOUR_HINT_BORDER_WIDTH,
-                  borderColor: TOUR_HINT_BORDER_COLOR,
-                  transform: [{ translateX: -5 }, { translateY: -4 }],
-                }}
-              />
-            )}
+            <AvatarPhoto uri={profile?.avatar} phase={avatarPhase} onPress={pickAndUploadAvatar} />
           </View>
 
           {/* Name/email used to be two editable-looking rows inside the
@@ -1222,19 +1177,6 @@ export default function AccountPage() {
           <Text className="text-xs text-center mt-4 mb-8" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>v{APP_VERSION}</Text>
         </View>
       </ScrollView>
-
-      {/* Fixed — not inside the ScrollView, so it never scrolls away from
-          the avatar it's measuring, same as WalletPage's tour hints. */}
-      <TourHint
-        visible={avatarTourActive}
-        targetRef={avatarRef}
-        relativeTo={rootRef}
-        description="Tap here to add your profile photo."
-        onNext={advanceAvatarTour}
-        circular
-        padding={3}
-        hideRing
-      />
 
       <InfoModal
         open={importOptionsOpen}

@@ -5,7 +5,6 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, Easing
 import BudgetStatusBar from './BudgetStatusBar';
 import BudgetSetupModal from './BudgetSetupModal';
 import BudgetPlan, { AddBudgetItemSheet } from './BudgetPlan';
-import { TourHint } from './TourHint';
 import { BackIcon } from './icons';
 import SegmentedSwitch from './SegmentedSwitch';
 import SavingsSection, { SavingsSheetsHost, useSavingsUI } from './SavingsSection';
@@ -13,7 +12,6 @@ import { ConfirmPill } from './ConfirmPill';
 import { InlineConfirm } from './InlineConfirm';
 import SavingsBoundary from './SavingsBoundary';
 import ErrorBoundary from './ErrorBoundary';
-import { useTourStep } from '../hooks/useTourStep';
 import { SETTLE_EASING } from '../utils/motion';
 import { formatCurrency } from '../utils/format';
 
@@ -36,9 +34,6 @@ const SECTION_FADE_MS = 220;
 // juddery rather than synchronized, so Home now stays put and only this
 // page moves.
 const WALLET_SLIDE_DURATION = 480;
-// How long after the budget sheet closes before the tour may point at the budget
-// bar — long enough that the sheet is gone and the new budget has been seen.
-const BUDGET_SHEET_TOUR_DELAY_MS = 2000;
 // How long after a Budget Plan line's delete is confirmed it goes ahead even
 // if the dialog never reports having closed — same value and reasoning as
 // Home's own DELETE_BACKSTOP_MS and SavingsSection's GOAL_DELETE_BACKSTOP_MS.
@@ -243,9 +238,7 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
   const confirmPlanCheck = useCallback(() => resolvePlanCheck(true), [resolvePlanCheck]);
   const declinePlanCheck = useCallback(() => resolvePlanCheck(false), [resolvePlanCheck]);
 
-  const budgetSheetClosedAtRef = useRef(0);
   const closeBudgetSheet = useCallback(() => {
-    budgetSheetClosedAtRef.current = Date.now();
     setBudgetSheetOpen(false);
     onSetupClosed?.();
   }, [onSetupClosed]);
@@ -279,14 +272,6 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
     budgetSheetOpen, closeBudgetSheet, pendingPlanCheck, declinePlanCheck, deleteItemTarget, closeDeleteItem, clearListConfirmOpen, closeClearListConfirm, addItemOpen, editingItem, closeItemSheet, confirmOpen, closeConfirm, debtConfirmOpen, closeDebtConfirm,
     sheetOpen, closeSheet, debtSheetOpen, closeDebtSheet, section, detailGoalId, detailDebtId, onClose,
   ]);
-
-  // First-run tour for this page: once a budget actually exists, what the
-  // budget bar shows. Separate from the Home-screen tour in app/(app)/index.js
-  // — this one only makes sense once the user has actually opened the
-  // calendar, not forced on them right after signup.
-  const budgetSectionRef = useRef(null);
-  const budgetTour = useTourStep(userId, 'calendar_budget_left');
-  const [budgetTourActive, setBudgetTourActive] = useState(false);
 
   // Slides in from the right (like a pushed page) rather than up from the
   // bottom — translateX/windowWidth, not translateY/windowHeight. No drag-
@@ -352,38 +337,9 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
     return () => sub.remove();
   }, [open, handleBack]);
 
-  const advanceBudgetTour = useCallback(() => {
-    budgetTour.markSeen();
-    setBudgetTourActive(false);
-  }, [budgetTour]);
-
   const pageStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: pageTranslateX.value }],
   }));
-
-  useEffect(() => {
-    // Resets immediately on close so a tour hint mid-flow doesn't linger
-    // pointing at a row that's now sliding off-screen with the sheet.
-    // Only the Budget section has anything for the tour to point at.
-    if (!open || section !== 'budget') { setBudgetTourActive(false); return; }
-    // Not while the budget sheet is up: setting a budget makes `hasBudget` true
-    // before the sheet has finished, and the tour must not appear over it.
-    if (!userId || budgetTourActive || budgetSheetOpen) return;
-    // Budget-left only makes sense once a budget actually exists — deferred
-    // (not skipped outright) until one does.
-    if (budgetTour.seen || !budget?.hasBudget) return;
-    // Just after the budget sheet closed, the step waits a further beat so
-    // the tour doesn't land the instant the sheet goes.
-    const sinceSheetClosed = Date.now() - budgetSheetClosedAtRef.current;
-    // At least the sheet's own opening slide, so the tour doesn't spotlight
-    // something that's still animating into place.
-    const settle = WALLET_SLIDE_DURATION + 150;
-    const delay = sinceSheetClosed < BUDGET_SHEET_TOUR_DELAY_MS
-      ? Math.max(settle, BUDGET_SHEET_TOUR_DELAY_MS - sinceSheetClosed)
-      : settle;
-    const t = setTimeout(() => setBudgetTourActive(true), delay);
-    return () => clearTimeout(t);
-  }, [open, section, userId, budgetTourActive, budgetSheetOpen, budgetTour.seen, budget?.hasBudget]);
 
   return (
     // A plain absolutely-positioned overlay, not a native <Modal> — see
@@ -441,7 +397,7 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
                     The calendar heatmap that used to fill this block (month
                     nav, day-of-week header, the shaded grid) was cut
                     entirely, not just visually trimmed. */}
-                {budget && <View ref={budgetSectionRef}><BudgetStatusBar {...budgetBar} onSetup={openBudgetSheet} light={light} /></View>}
+                {budget && <BudgetStatusBar {...budgetBar} onSetup={openBudgetSheet} light={light} />}
 
                 {/* The space that heatmap left behind, now a plan for where
                     next month's money is going, written before the salary
@@ -497,13 +453,6 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
                 )}
               </Animated.View>
             </View>
-
-            <TourHint
-              visible={budgetTourActive}
-              targetRef={budgetSectionRef}
-              description="This shows what's left in your budget this month."
-              onNext={advanceBudgetTour}
-            />
 
             {/* Last child of the page, so its sheets slide up over everything
                 above — header included. Deferred with their sections above:
