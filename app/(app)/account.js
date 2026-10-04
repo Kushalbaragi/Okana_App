@@ -20,7 +20,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
 import { isConnectivityError, reportError } from '../../utils/errors';
 import { clearAllUserData, clearDataCaches } from '../../utils/localData';
-import { openLink } from '../../utils/links';
+import { openLink, openStoreListing } from '../../utils/links';
 import { useSubscription } from '../../hooks/useSubscription';
 import { useTransactions } from '../../hooks/useTransactions';
 import { openManageSubscription } from '../../hooks/usePurchases';
@@ -1180,6 +1180,14 @@ export default function AccountPage() {
               icon={<Feather name="life-buoy" size={18} color={textColor(LIGHT_SETTINGS).tertiary} />}
               label="Support"
               onPress={() => setModal('feedback')}
+            />
+
+            <Divider />
+
+            <Row
+              icon={<Feather name="star" size={18} color={textColor(LIGHT_SETTINGS).tertiary} />}
+              label="Rate Okana"
+              onPress={() => openStoreListing({ review: true })}
             />
 
             <Divider />

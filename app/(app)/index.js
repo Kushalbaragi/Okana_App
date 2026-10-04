@@ -24,6 +24,7 @@ import AddModal from '../../components/AddModal';
 import WalletPage from '../../components/WalletPage';
 import MonthlyRecapModal from '../../components/MonthlyRecapModal';
 import BudgetSetupModal from '../../components/BudgetSetupModal';
+import { askForReviewIfDue } from '../../utils/reviewPrompt';
 import { UpdateSheet } from '../../components/UpdateSheet';
 import { useAppUpdate } from '../../hooks/useAppUpdate';
 import { AnimatedModal } from '../../components/AnimatedModal';
@@ -462,6 +463,26 @@ export default function Dashboard() {
     markBudgetSetupShown();
   }, [markBudgetSetupShown]);
 
+  // The one moment the app asks for a store rating: someone has finished their
+  // first month, read its recap, and set the next month's budget. Asked only
+  // once the budget sheet has fully closed (a native Modal, like the system
+  // rating sheet — presenting one while the other is still going is dropped
+  // silently on iOS) and a beat after, and only ever once.
+  const recapSeenRef = useRef(false);
+  const budgetSetRef = useRef(false);
+  useEffect(() => { if (recapOpen) recapSeenRef.current = true; }, [recapOpen]);
+  const submitSetupBudget = useCallback(async (amount) => {
+    const result = await budget.setBudget(amount);
+    if (result?.success) budgetSetRef.current = true;
+    return result;
+  }, [budget.setBudget]);
+  const handleBudgetSetupClosed = useCallback(() => {
+    if (!(recapSeenRef.current && budgetSetRef.current)) return;
+    recapSeenRef.current = false;
+    budgetSetRef.current = false;
+    setTimeout(() => { askForReviewIfDue(user?.id, { maxAsks: 1 }); }, 900);
+  }, [user?.id]);
+
   const budgetForCalendar = useMemo(() => ({
     loading: budget.loading,
     hasBudget: budget.hasBudget,
@@ -740,7 +761,8 @@ export default function Dashboard() {
       <BudgetSetupModal
         open={budgetSetupOpen}
         onClose={closeBudgetSetup}
-        onSubmit={budget.setBudget}
+        onClosed={handleBudgetSetupClosed}
+        onSubmit={submitSetupBudget}
         lastMonthAmount={budget.lastMonthAmount}
         lastMonthSpent={budget.lastMonthSpent}
       />
