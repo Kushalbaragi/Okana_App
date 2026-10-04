@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { usePostHog } from 'posthog-react-native';
-import { supabase } from '../lib/supabase';
+import { supabase, fetchWithTimeout } from '../lib/supabase';
 import { EMPTY_WIDGET_SNAPSHOT } from '../utils/widgetSnapshot';
 import { pushWidgetSnapshot } from '../utils/widgetBridge';
 
@@ -88,7 +88,7 @@ export function AuthProvider({ children }) {
   // form (which used to collect it alongside a password) no longer exists.
   async function verifyOtp({ email, token }) {
     if (email.trim().toLowerCase() === REVIEW_EMAIL) {
-      const res = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/review-login`, {
+      const res = await fetchWithTimeout(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/review-login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code: token }),

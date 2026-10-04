@@ -3,9 +3,10 @@ import * as Sentry from '@sentry/react-native';
 // A raw fetch/network failure ("Network request failed", "Failed to
 // fetch", etc.) doesn't mean the same thing as a genuine server-side
 // rejection (validation, RLS, business logic) — the first one means "you
-// have no signal", the second means "the server said no". Callers use
+// have no signal" (or a request cut off for taking too long — see
+// lib/supabase.js), the second means "the server said no". Callers use
 // this to decide banner-and-abort vs. show-the-real-error-inline.
-const NETWORK_ERROR_PATTERN = /network request failed|failed to fetch|network error|fetch failed|load failed/i;
+const NETWORK_ERROR_PATTERN = /network request failed|failed to fetch|network error|fetch failed|load failed|aborted/i;
 
 // `isOnline` (from useNetwork()) is checked first and wins outright — a
 // request can fail in a network-shaped way even while NetInfo still
