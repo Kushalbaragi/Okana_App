@@ -10,7 +10,7 @@ bumped by hand:
 1. Supabase dashboard → **Okana_Expense_Tracker** project → **Table Editor** → `app_config`.
 2. Two rows: `id = ios` and `id = android`.
 3. Set `latest_version` on each row you released to the version you just
-   shipped (must match `expo.version` in `app.json` exactly, e.g. `2.0.1`).
+   shipped (must match `expo.version` in `app.json` exactly, e.g. `3.0.0`).
 4. Save.
 
 No rebuild or redeploy needed — the app reads this table live on every cold

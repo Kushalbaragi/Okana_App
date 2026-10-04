@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { View, Text, Platform, Keyboard, Pressable } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
+import { View, Text, Keyboard, Pressable } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
 import { isConnectivityError, reportError } from '../../utils/errors';
-import { GlassTextInput, GlassPressable } from '../../components/Glass';
-import { Spinner } from '../../components/icons';
+import { AuthBackground, AuthTitle, AuthField, MailIcon, PillButton, useKeyboardLift, useTitleTop } from '../../components/AuthKit';
+import { GUTTER } from '../../utils/spacing';
+import { FONT } from '../../utils/type';
 
 // Deliberately loose (no full RFC 5322 validation) — just enough to catch
 // an obvious typo (missing @, no domain) before spending a network round
@@ -23,31 +24,8 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-
-  // Tracked manually rather than via KeyboardAvoidingView — see AnimatedModal.js
-  // for why: its own internal animation was re-triggering (visibly) every
-  // time focus moved between fields, even though the keyboard's actual
-  // height never changed. React state naturally no-ops on an identical value.
-  // The raw state value only drives an animated shared value (smoothly
-  // interpolated via withTiming) rather than being used directly in a style —
-  // used directly, a genuine height change (open/close) would still snap
-  // instead of transitioning.
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const keyboardOffset = useSharedValue(0);
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, e => setKeyboardHeight(e.endCoordinates.height));
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
-    return () => { showSub.remove(); hideSub.remove(); };
-  }, []);
-  useEffect(() => {
-    keyboardOffset.value = withTiming(keyboardHeight, { duration: 250, easing: Easing.out(Easing.cubic) });
-  }, [keyboardHeight, keyboardOffset]);
-  // Stays centered always — paddingBottom growing smoothly as the keyboard
-  // rises naturally shifts the centered midpoint upward, without needing a
-  // discrete (and therefore non-animatable) justifyContent switch.
-  const containerStyle = useAnimatedStyle(() => ({ paddingBottom: keyboardOffset.value }));
+  const top = useTitleTop();
+  const lift = useKeyboardLift();
 
   async function handleSubmit() {
     // Belt-and-suspenders alongside the button's own `disabled` prop — the
@@ -73,56 +51,33 @@ export default function LoginScreen() {
   }
 
   return (
-    <Pressable onPress={Keyboard.dismiss} style={{ flex: 1 }}>
-      <Animated.View className="flex-1 bg-bg justify-center px-6" style={containerStyle}>
-        <View className="w-full max-w-[400px] self-center">
-          <View className="items-center mb-10">
-            <Text className="text-white text-[22px] font-semibold mb-1">Okana</Text>
-            <Text className="text-white/48 text-base">Your money, beautifully tracked.</Text>
-          </View>
-
-          <View className="gap-4">
-            <View>
-              <Text className="text-white text-[15px] font-medium mb-2">Email</Text>
-              <GlassTextInput
-                value={email}
-                onChangeText={t => { setEmail(t); setError(''); }}
-                placeholder="you@example.com"
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoComplete="email"
-                textContentType="emailAddress"
-                maxLength={254}
-                onSubmitEditing={handleSubmit}
-              />
-            </View>
-
-            <Text className="text-red-400 text-sm text-center" style={{ minHeight: 18 }} numberOfLines={1}>
-              {error}
-            </Text>
-
-            <GlassPressable
-              variant="active"
-              radius={9999}
-              onPress={handleSubmit}
-              disabled={loading}
-              className="w-full py-4 flex-row items-center justify-center gap-2"
-            >
-              {loading ? (
-                <>
-                  <Spinner color="#000000" trackColor="rgba(0,0,0,0.25)" />
-                  <Text className="text-black text-base font-semibold">Sending code…</Text>
-                </>
-              ) : (
-                <Text className="text-black text-base font-semibold">Continue</Text>
-              )}
-            </GlassPressable>
-          </View>
-
-          <Text className="text-white/48 text-sm text-center mt-4">
-            We'll email you a code — no password needed.
+    <Pressable onPress={Keyboard.dismiss} style={{ flex: 1, backgroundColor: '#000000' }}>
+      <AuthBackground />
+      <Animated.View style={[{ flex: 1, paddingTop: top }, lift]}>
+        <AuthTitle title="Enter your email" sub={"We'll email you a code. No password needed."} />
+        <View style={{ marginTop: 40 }}>
+          <AuthField
+            icon={<MailIcon />}
+            value={email}
+            onChangeText={t => { setEmail(t); setError(''); }}
+            onClear={() => { setEmail(''); setError(''); }}
+            placeholder="you@example.com"
+            autoFocus
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            autoComplete="email"
+            textContentType="emailAddress"
+            maxLength={254}
+            returnKeyType="go"
+            onSubmitEditing={handleSubmit}
+          />
+          <Text numberOfLines={1} style={{ fontSize: FONT.caption, color: 'rgba(248,113,113,0.9)', textAlign: 'center', marginTop: 14, minHeight: 18, paddingHorizontal: GUTTER }}>
+            {error}
           </Text>
         </View>
+        <View style={{ flex: 1 }} />
+        <PillButton label="Continue" onPress={handleSubmit} loading={loading} loadingLabel="Sending code…" dim={!email.trim()} />
       </Animated.View>
     </Pressable>
   );

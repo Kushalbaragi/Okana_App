@@ -3,17 +3,16 @@ import { MONTH_NAMES } from './monthlyRecap'
 
 export const PRICE_PER_YEAR = 499
 
-// Shared "why subscribe" pitch content — used by both welcome.js's
-// onboarding carousel and subscription.js's pre-conversion pitch. Lives
-// here (not in either screen file) specifically so neither route file has
-// to import from the other — Expo Router treats every file under app/ as a
-// route, and a route-to-route import broke the Subscription page.
-export const WHY_ITEMS = [
-  { title: 'Keeping it simple', description: 'No distractions, unnecessary features, or colourful clutter. Just what you need to track your money.' },
-  { title: 'Built for consistency', description: 'I removed as much friction as possible, so you can keep tracking without giving up after a week.' },
-  { title: 'Make tracking a habit', description: 'Just add your income and expenses every day. Okana takes care of the rest.' },
-  { title: 'Track every rupee', description: 'Every rupee matters. The more you track, the better you understand your money.' },
-  { title: 'Spend with awareness', description: 'Set a budget, watch your spending calendar, and try to create more green days.' },
+// What Okana Plus gives, as the short lines the subscription page shows beside
+// a tick. Lives here (not in the route file) so nothing under app/ has to
+// import from another route — Expo Router treats every file under app/ as one.
+export const PLUS_BENEFITS = [
+  'Add unlimited transactions',
+  'In a graph, watch your money grow or shrink',
+  'Plan your budget and save toward goals',
+  'Track and pay off loans',
+  'Monthly recap summary',
+  'Made for a common salary person',
 ]
 
 export function formatChargeDate(dateStr) {

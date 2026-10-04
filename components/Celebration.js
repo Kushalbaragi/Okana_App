@@ -4,6 +4,7 @@ import { reportError } from '../utils/errors';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { darkText } from '../utils/colors';
+import { FONT } from '../utils/type';
 
 // How long the message stays up. A tap anywhere ends it sooner.
 const TOTAL_MS = 9000;
@@ -118,9 +119,9 @@ export default function Celebration({ title, subtitle, note, onDone }) {
               <Circle cx={46} cy={46} r={46} fill="#4ade80" />
               <Path d="M27 47l13 13 25-27" stroke="#000000" strokeWidth={8} strokeLinecap="round" strokeLinejoin="round" />
             </Svg>
-            <Text style={{ fontSize: 24, fontWeight: '600', letterSpacing: -0.3, color: '#ffffff', textAlign: 'center', marginTop: 14 }}>{title}</Text>
-            {!!subtitle && <Text numberOfLines={1} style={{ fontSize: 15, color: 'rgba(255,255,255,0.65)', marginTop: 6 }}>{subtitle}</Text>}
-            {!!note && <Text style={{ fontSize: 12, color: darkText.tertiary, marginTop: 10, textAlign: 'center' }}>{note}</Text>}
+            <Text style={{ fontSize: FONT.amount, fontWeight: '600', letterSpacing: -0.3, color: '#ffffff', textAlign: 'center', marginTop: 14 }}>{title}</Text>
+            {!!subtitle && <Text numberOfLines={1} style={{ fontSize: FONT.body, color: 'rgba(255,255,255,0.65)', marginTop: 6 }}>{subtitle}</Text>}
+            {!!note && <Text style={{ fontSize: FONT.caption, color: darkText.tertiary, marginTop: 10, textAlign: 'center' }}>{note}</Text>}
           </Animated.View>
         </View>
       </View>

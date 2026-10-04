@@ -7,20 +7,20 @@ import { Gesture, GestureDetector, ScrollView as GestureScrollView } from 'react
 // imported alongside it rather than off this default import.
 import ReanimatedView, {
   useSharedValue, useAnimatedStyle, useAnimatedReaction,
-  withSpring, runOnJS, interpolate, Extrapolation, FadeIn,
+  withSpring, runOnJS, FadeIn,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getDaysInMonth, parseISO } from 'date-fns';
+import { addMonths, parseISO } from 'date-fns';
 import { GlassPressable, INPUT_TEXT_STYLE, CARD_RADIUS, SMOOTH } from './Glass';
 import { InlineSheet, OPEN_MS } from './InlineSheet';
 import AddModal from './AddModal';
 import AmountRuler, { monthsScale } from './AmountRuler';
 import { formatCurrency, formatDateFull, today, toDateStr } from '../utils/format';
-import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { ChevronRight } from './icons';
 import { hapticTick } from '../utils/haptics';
+import { WHEEL_ITEM_H, WHEEL_H, WHEEL_PAD, WHEEL_OVERSCROLL, WheelRow, DateWheelPicker } from './wheel';
 import { textColor } from '../utils/colors';
-import { TABULAR } from '../utils/type';
+import { TABULAR, FONT } from '../utils/type';
 import { SPRING_QUICK, layoutTransition } from '../utils/motion';
 import { KIND_COPY, dim, money } from './savingsShared';
 
@@ -58,7 +58,7 @@ const FIELD_LAYOUT_TRANSITION = layoutTransition(SPRING_QUICK);
 // alpha) and kept in sync with the overlay colours just below; a mismatch
 // here is exactly what used to show up as a dark seam under the ruler,
 // cutting the card in two instead of the fade actually blending into it.
-export const FIELD_CARD_SURFACE = { light: '#efefed', dark: '#262626' };
+const FIELD_CARD_SURFACE = { light: '#efefed', dark: '#262626' };
 const FieldCard = memo(function FieldCard({ light, children }) {
   return (
     <View style={{ backgroundColor: light ? 'rgba(0,0,0,0.045)' : 'rgba(255,255,255,0.07)', borderRadius: CARD_RADIUS, ...SMOOTH, overflow: 'hidden' }}>
@@ -66,10 +66,6 @@ const FieldCard = memo(function FieldCard({ light, children }) {
     </View>
   );
 });
-
-// Ideas for a goal's name, offered under the name field and on the empty
-// state. Tapping one just fills the name in; it can still be edited.
-export const GOAL_SUGGESTIONS = ['Emergency fund', 'Vacation', 'Bike', 'Home', 'New phone', 'Wedding'];
 
 // Ideas for where a savings goal's money sits — not an exhaustive list or
 // enum, just a fast path for the common cases (see the "Other" option every
@@ -79,9 +75,9 @@ export const GOAL_SUGGESTIONS = ['Emergency fund', 'Vacation', 'Bike', 'Home', '
 // asking twice for the same fact.
 const LOCATION_SUGGESTIONS = ['Bank', 'Liquid Fund', 'Chit Fund', 'Cash'];
 
-// Add/Withdraw modes handed to AddModal (see MoneySheet below) — the same
-// ReelSlider toggle design Home's own Expense/Income uses, since this really
-// is that same sheet now, not a separately-built lookalike.
+// Add/Withdraw modes handed to AddModal (see MoneySheet below) — shown with the
+// same sliding-pill switch as Home's own Expense/Income, since this really is
+// that same sheet now, not a separately-built lookalike.
 const MONEY_MODES = ['add', 'withdraw'];
 const MONEY_LABELS = { add: 'Add', withdraw: 'Withdraw' };
 
@@ -116,7 +112,7 @@ function RowHeader({ label, light, onPress, children }) {
       onPress={onPress}
       style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: ROW_V_PAD, paddingHorizontal: ROW_H_PAD }}
     >
-      <Text style={{ fontSize: 16, color: textColor(light).primary }}>{label}</Text>
+      <Text style={{ fontSize: FONT.body, color: textColor(light).primary }}>{label}</Text>
       {children}
     </Pressable>
   );
@@ -124,7 +120,7 @@ function RowHeader({ label, light, onPress, children }) {
 
 function RowValueText({ value, placeholder, light }) {
   return (
-    <Text numberOfLines={1} style={{ fontSize: 16, maxWidth: 190, color: value ? textColor(light).secondary : textColor(light).tertiary }}>
+    <Text numberOfLines={1} style={{ fontSize: FONT.body, maxWidth: 190, color: value ? textColor(light).secondary : textColor(light).tertiary }}>
       {value || placeholder}
     </Text>
   );
@@ -166,7 +162,7 @@ const TextRow = memo(function TextRow({ label, value, onChangeText, placeholder,
           returnKeyType="done"
           onSubmitEditing={() => { Keyboard.dismiss(); setEditing(false); onBlurRow?.(); }}
           onBlur={() => { setEditing(false); onBlurRow?.(); }}
-          style={[INPUT_TEXT_STYLE, { fontSize: 16, textAlign: 'right', color: textColor(light).primary, minWidth: 120, paddingVertical: 0 }]}
+          style={[INPUT_TEXT_STYLE, { fontSize: FONT.body, textAlign: 'right', color: textColor(light).primary, minWidth: 120, paddingVertical: 0 }]}
         />
       ) : (
         <RowValueText value={value} placeholder={placeholder} light={light} />
@@ -191,48 +187,6 @@ const TextRow = memo(function TextRow({ label, value, onChangeText, placeholder,
 // PanResponder did (see the row list's own comment further down on why that
 // still matters here).
 // ---------------------------------------------------------------------------
-
-const WHEEL_ITEM_H = 40;
-// 3, not 5 — a peek row above and below the centre is enough to read as a
-// wheel; a 5-row window left a couple of rows' worth of dead space above the
-// first option (and below the last) whenever the wheel opened on either end
-// of a short list, which is most of the time here.
-const WHEEL_VISIBLE = 3;
-const WHEEL_H = WHEEL_ITEM_H * WHEEL_VISIBLE;
-const WHEEL_PAD = (WHEEL_H - WHEEL_ITEM_H) / 2; // centres item 0 at offset 0
-const WHEEL_OVERSCROLL = WHEEL_ITEM_H * 0.6;
-// Distance (in item-heights) either side of centre the barrel tilt/scale/
-// opacity ramps are solved over.
-const WHEEL_TILT_RANGE = [-2 * WHEEL_ITEM_H, -WHEEL_ITEM_H, 0, WHEEL_ITEM_H, 2 * WHEEL_ITEM_H];
-
-// One row of the wheel. Its own component (not a style built in the parent
-// and handed down) because each needs its own `useAnimatedStyle` worklet
-// reading the shared `offset` — hooks can't be called in a loop, so the loop
-// has to be a list of components instead.
-function WheelRow({ offset, index, label, primaryColor }) {
-  const style = useAnimatedStyle(() => {
-    const d = offset.value - index * WHEEL_ITEM_H;
-    return {
-      opacity: interpolate(d, WHEEL_TILT_RANGE, [0.2, 0.45, 1, 0.45, 0.2], Extrapolation.CLAMP),
-      transform: [
-        // perspective first — it has to precede rotateX in the transform
-        // array for the 3D tilt to actually read as depth instead of a flat
-        // vertical squash.
-        { perspective: 500 },
-        { rotateX: `${interpolate(d, WHEEL_TILT_RANGE, [-42, -21, 0, 21, 42], Extrapolation.CLAMP)}deg` },
-        { scale: interpolate(d, WHEEL_TILT_RANGE, [0.82, 0.92, 1, 0.92, 0.82], Extrapolation.CLAMP) },
-      ],
-    };
-  });
-
-  return (
-    <ReanimatedView.View style={[{ height: WHEEL_ITEM_H, alignItems: 'center', justifyContent: 'center' }, style]}>
-      <Text numberOfLines={1} style={{ fontSize: 19, color: primaryColor }}>
-        {label}
-      </Text>
-    </ReanimatedView.View>
-  );
-}
 
 function WheelPicker({ items, value, onSelect, light }) {
   const itemCount = items.length;
@@ -376,7 +330,7 @@ const OptionsRow = memo(function OptionsRow({ label, value, onChangeText, option
             returnKeyType="done"
             onSubmitEditing={() => { Keyboard.dismiss(); setEditingCustom(false); onClose(); }}
             onBlur={() => { setEditingCustom(false); onClose(); }}
-            style={[INPUT_TEXT_STYLE, { fontSize: 16, textAlign: 'right', color: textColor(light).primary, minWidth: 120, paddingVertical: 0 }]}
+            style={[INPUT_TEXT_STYLE, { fontSize: FONT.body, textAlign: 'right', color: textColor(light).primary, minWidth: 120, paddingVertical: 0 }]}
           />
         ) : (
           <RowValueText value={value} placeholder={placeholder} light={light} />
@@ -390,146 +344,6 @@ const OptionsRow = memo(function OptionsRow({ label, value, onChangeText, option
     </View>
   );
 });
-
-// One column of the date wheel below — WheelPicker's own physics (drag,
-// flick, tap-a-row, the haptic tick as each option crosses centre), just
-// sized to a column's width instead of the full row and without its own
-// pill, since the three columns below share one continuous pill drawn once
-// by their parent rather than each drawing a separate one.
-// A softer, heavier settle than the suggestion wheel's own snap (below) —
-// this one spins several items on a flick rather than just the next one or
-// two, which is what actually reads as a physical wheel with momentum
-// rather than a list that snaps to the nearest row.
-const DATE_WHEEL_SPRING = { damping: 26, stiffness: 170, mass: 0.9 };
-
-function WheelColumn({ items, index: selectedIndex, onSelect, light, width, visibleRows = WHEEL_VISIBLE }) {
-  const itemCount = items.length;
-  const height = WHEEL_ITEM_H * visibleRows;
-  const pad = (height - WHEEL_ITEM_H) / 2;
-  const limit = (itemCount - 1) * WHEEL_ITEM_H;
-  const offset = useSharedValue(selectedIndex * WHEEL_ITEM_H);
-  const grabOffset = useSharedValue(selectedIndex * WHEEL_ITEM_H);
-
-  // The day column's own item count changes as the month/year columns
-  // move (31 March -> April has only 30 days) — when the caller clamps
-  // `index` in response, follow it here rather than leaving the wheel
-  // pointing at a row that's no longer under it.
-  useEffect(() => {
-    offset.value = withSpring(selectedIndex * WHEEL_ITEM_H, DATE_WHEEL_SPRING);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedIndex]);
-
-  const onSelectRef = useRef(onSelect);
-  onSelectRef.current = onSelect;
-
-  const commit = useCallback(index => onSelectRef.current(index), []);
-  const tick = useCallback(() => hapticTick(), []);
-
-  useAnimatedReaction(
-    () => Math.round(offset.value / WHEEL_ITEM_H),
-    (idx, prevIdx) => {
-      if (prevIdx !== null && idx !== prevIdx) runOnJS(tick)();
-    },
-  );
-
-  function snapTo(index) {
-    'worklet';
-    const clamped = Math.max(0, Math.min(itemCount - 1, index));
-    offset.value = withSpring(clamped * WHEEL_ITEM_H, DATE_WHEEL_SPRING, finished => {
-      if (finished) runOnJS(commit)(clamped);
-    });
-  }
-
-  const pan = Gesture.Pan()
-    .onStart(() => {
-      grabOffset.value = offset.value;
-    })
-    .onUpdate(e => {
-      const next = grabOffset.value - e.translationY;
-      offset.value = Math.max(-WHEEL_OVERSCROLL, Math.min(limit + WHEEL_OVERSCROLL, next));
-    })
-    .onEnd(e => {
-      const movedFar = Math.abs(e.translationY) > 5 || Math.abs(e.translationX) > 5;
-      if (!movedFar) {
-        const rows = Math.round((e.y - height / 2) / WHEEL_ITEM_H);
-        snapTo(Math.round(offset.value / WHEEL_ITEM_H) + rows);
-        return;
-      }
-      // A longer throw than the suggestion wheel's own 0.12 — the wheel
-      // keeps spinning past where the finger let go, proportional to how
-      // fast it was moving, instead of stopping almost where it was
-      // released.
-      const projected = offset.value - e.velocityY * 0.3;
-      snapTo(Math.round(projected / WHEEL_ITEM_H));
-    })
-    .onFinalize((_e, success) => {
-      if (!success) snapTo(Math.round(offset.value / WHEEL_ITEM_H));
-    });
-
-  const columnStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -offset.value }] }));
-  const primaryColor = textColor(light).primary;
-
-  return (
-    <GestureDetector gesture={pan}>
-      <View style={{ width, height, overflow: 'hidden' }}>
-        <ReanimatedView.View style={[{ paddingTop: pad }, columnStyle]}>
-          {items.map((item, i) => (
-            <WheelRow key={i} offset={offset} index={i} label={item} primaryColor={primaryColor} />
-          ))}
-        </ReanimatedView.View>
-      </View>
-    </GestureDetector>
-  );
-}
-
-const DATE_WHEEL_MAX_YEAR = new Date().getFullYear();
-const DATE_WHEEL_MIN_YEAR = DATE_WHEEL_MAX_YEAR - 15;
-const DATE_WHEEL_YEARS = Array.from({ length: DATE_WHEEL_MAX_YEAR - DATE_WHEEL_MIN_YEAR + 1 }, (_, i) => DATE_WHEEL_MIN_YEAR + i);
-// Taller than the suggestion wheel's 3-row window (WHEEL_VISIBLE) — a date
-// wheel is scrolled through fast and far (16 years, 31 days), so more of
-// the barrel showing above and below centre reads as an actual wheel curving
-// away rather than a short list peeking at its neighbours.
-const DATE_WHEEL_VISIBLE = 5;
-const DATE_WHEEL_PAD = (WHEEL_ITEM_H * DATE_WHEEL_VISIBLE - WHEEL_ITEM_H) / 2;
-
-// The three-column Day / Month / Year wheel iOS's own date picker uses,
-// built out of WheelColumn above rather than a month-grid: a decade-plus of
-// year navigation is a handful of flicks here instead of dozens of taps on
-// a grid's prev/next arrows, and it matches the suggestion wheel every
-// other row on this sheet already opens into, instead of looking like a
-// second, unrelated kind of input.
-function DateWheelPicker({ value, onChange, light }) {
-  const selected = parseISO(value);
-  const [year, setYear] = useState(selected.getFullYear());
-  const [month, setMonth] = useState(selected.getMonth());
-  const daysInMonth = getDaysInMonth(new Date(year, month, 1));
-  const [day, setDay] = useState(Math.min(selected.getDate(), daysInMonth));
-
-  const dayItems = useMemo(() => Array.from({ length: daysInMonth }, (_, i) => String(i + 1)), [daysInMonth]);
-  const yearItems = useMemo(() => DATE_WHEEL_YEARS.map(String), []);
-
-  useEffect(() => {
-    if (day > daysInMonth) setDay(daysInMonth);
-  }, [daysInMonth, day]);
-
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
-  useEffect(() => {
-    onChangeRef.current(toDateStr(new Date(year, month, Math.min(day, daysInMonth))));
-  }, [year, month, day, daysInMonth]);
-
-  return (
-    <View style={{ flexDirection: 'row', justifyContent: 'center' }}>
-      <View
-        pointerEvents="none"
-        style={{ position: 'absolute', left: 8, right: 8, top: DATE_WHEEL_PAD, height: WHEEL_ITEM_H, borderRadius: WHEEL_ITEM_H / 2, backgroundColor: dim(light, 0.10) }}
-      />
-      <WheelColumn items={dayItems} index={day - 1} onSelect={i => setDay(i + 1)} light={light} width={56} visibleRows={DATE_WHEEL_VISIBLE} />
-      <WheelColumn items={MONTH_NAMES} index={month} onSelect={setMonth} light={light} width={140} visibleRows={DATE_WHEEL_VISIBLE} />
-      <WheelColumn items={yearItems} index={year - DATE_WHEEL_MIN_YEAR} onSelect={i => setYear(DATE_WHEEL_MIN_YEAR + i)} light={light} width={80} visibleRows={DATE_WHEEL_VISIBLE} />
-    </View>
-  );
-}
 
 // A date, picked from an Apple-style Day/Month/Year wheel dropped inline
 // below the row — the same "expands in place, inside the same card" shape
@@ -600,7 +414,7 @@ const AmountTextRow = memo(function AmountTextRow({ label, value, onChangeValue,
           returnKeyType="done"
           onSubmitEditing={() => { Keyboard.dismiss(); setEditing(false); onBlurRow?.(); }}
           onBlur={() => { setEditing(false); onBlurRow?.(); }}
-          style={[INPUT_TEXT_STYLE, { fontSize: 16, textAlign: 'right', color: textColor(light).primary, minWidth: 100, paddingVertical: 0 }]}
+          style={[INPUT_TEXT_STYLE, { fontSize: FONT.body, textAlign: 'right', color: textColor(light).primary, minWidth: 100, paddingVertical: 0 }]}
         />
       ) : (
         <RowValueText value={display} placeholder={placeholder} light={light} />
@@ -666,8 +480,8 @@ function DebtTypeOption({ label, description, onPress, light }) {
   return (
     <FieldCard light={light}>
       <GlassPressable variant="field" pressScale={false} onPress={onPress} style={{ padding: 16 }} accessibilityRole="button" accessibilityLabel={label}>
-        <Text style={{ fontSize: 15, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}>{label}</Text>
-        <Text style={{ fontSize: 12, marginTop: 6, color: textColor(light).tertiary }}>{description}</Text>
+        <Text style={{ fontSize: FONT.body, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}>{label}</Text>
+        <Text style={{ fontSize: FONT.caption, marginTop: 6, color: textColor(light).tertiary }}>{description}</Text>
       </GlassPressable>
     </FieldCard>
   );
@@ -679,7 +493,7 @@ function DebtTypeStep({ onSelect, light }) {
     // comment): this step's own height is what the sheet is sized to, so
     // there is no gap above or below the two tiles to begin with.
     <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
-      <Text style={{ fontSize: 15, color: textColor(light).secondary, marginBottom: 12 }}>What kind of debt is this?</Text>
+      <Text style={{ fontSize: FONT.body, color: textColor(light).secondary, marginBottom: 12 }}>What kind of debt is this?</Text>
       <View style={{ gap: 12 }}>
         <DebtTypeOption
           label="EMI / Loan"
@@ -718,20 +532,20 @@ function LoanSummaryCard({ target, emiAmount, tenureMonths, light }) {
     <ReanimatedView.View layout={FIELD_LAYOUT_TRANSITION} entering={FadeIn} style={{ overflow: 'hidden' }}>
       <FieldCard light={light}>
         <View style={{ padding: 16 }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', color: textColor(light).disabled, marginBottom: 12 }}>
+          <Text style={{ fontSize: FONT.label, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', color: textColor(light).disabled, marginBottom: 12 }}>
             Loan summary
           </Text>
           <View className="flex-row items-baseline justify-between" style={{ marginBottom: 8 }}>
-            <Text style={{ fontSize: 13, color: textColor(light).tertiary }}>You borrowed</Text>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: primary, ...TABULAR }}>{money(target)}</Text>
+            <Text style={{ fontSize: FONT.caption, color: textColor(light).tertiary }}>You borrowed</Text>
+            <Text style={{ fontSize: FONT.caption, fontWeight: '600', color: primary, ...TABULAR }}>{money(target)}</Text>
           </View>
           <View className="flex-row items-baseline justify-between" style={{ marginBottom: 8 }}>
-            <Text style={{ fontSize: 13, color: textColor(light).tertiary }}>You'll repay</Text>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: primary, ...TABULAR }}>{money(totalRepayment)}</Text>
+            <Text style={{ fontSize: FONT.caption, color: textColor(light).tertiary }}>You'll repay</Text>
+            <Text style={{ fontSize: FONT.caption, fontWeight: '600', color: primary, ...TABULAR }}>{money(totalRepayment)}</Text>
           </View>
           <View className="flex-row items-baseline justify-between">
-            <Text style={{ fontSize: 13, color: textColor(light).tertiary }}>Extra you'll pay</Text>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: primary, ...TABULAR }}>{money(extra)}</Text>
+            <Text style={{ fontSize: FONT.caption, color: textColor(light).tertiary }}>Extra you'll pay</Text>
+            <Text style={{ fontSize: FONT.caption, fontWeight: '600', color: primary, ...TABULAR }}>{money(extra)}</Text>
           </View>
         </View>
       </FieldCard>
@@ -792,9 +606,9 @@ function MonthsRulerRow({ label, value, onChange, session, light, open, onOpen, 
       {!!open && (
         <View style={{ paddingBottom: 14 }}>
           <View className="items-center mb-2">
-            <Text style={{ fontSize: 42, lineHeight: 50, fontWeight: '300', letterSpacing: -1, color: light ? '#111111' : '#ffffff', ...TABULAR }}>
+            <Text style={{ fontSize: FONT.display, lineHeight: 50, fontWeight: '300', letterSpacing: -1, color: light ? '#111111' : '#ffffff', ...TABULAR }}>
               {months}
-              <Text style={{ fontSize: 20, fontWeight: '400', color: textColor(light).disabled }}> {unit}</Text>
+              <Text style={{ fontSize: FONT.title, fontWeight: '400', color: textColor(light).disabled }}> {unit}</Text>
             </Text>
           </View>
           <AmountRuler
@@ -859,7 +673,13 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
   // in its state). A fresh function each render defeated that memo, so the
   // ruler rebuilt its whole SVG on every month it crossed.
   const handleTenureChange = useCallback(v => setTenureMonths(String(v)), []);
-  const handleEmisPaidChange = useCallback(v => setEmisPaidBefore(String(v)), []);
+  // EMIs already paid can never be more than the loan's total EMIs — including
+  // when the total is still zero (nothing set yet, so nothing can have been
+  // paid). Enforced at every way it can change: the ruler, the tenure moving
+  // under it, and the save itself.
+  const tenureRef = useRef(0);
+  tenureRef.current = parseInt(tenureMonths, 10) || 0;
+  const handleEmisPaidChange = useCallback(v => setEmisPaidBefore(String(Math.min(Number(v) || 0, tenureRef.current))), []);
   // Dragging the tenure ruler down below however many EMIs were already
   // marked paid would otherwise leave that field pointing at a month the
   // loan no longer has (its own ruler, built off this same tenure, would
@@ -869,7 +689,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
   useEffect(() => {
     const tenure = parseInt(tenureMonths, 10) || 0;
     const paid = parseInt(emisPaidBefore, 10) || 0;
-    if (tenure > 0 && paid > tenure) setEmisPaidBefore(String(tenure));
+    if (paid > tenure) setEmisPaidBefore(String(tenure));
   }, [tenureMonths, emisPaidBefore]);
   const [firstEmiDate, setFirstEmiDate] = useState('');
   const [emiAmount, setEmiAmount] = useState(0);
@@ -974,20 +794,22 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
     // own comment on inferring one) — null only for a genuinely new debt
     // goal, which is exactly when the type-selector step below needs to ask.
     setDebtType(goal?.debtType ?? null);
-    // '12', not '' — a slider always sits on some value (there's no "blank"
+    // '0', not '' — a slider always sits on some value (there's no "blank"
     // position to drag to), so the ruler and the field it drives have to
     // agree on a starting point from the first frame, rather than the ruler
-    // showing one thing until the user happens to drag it.
-    setTenureMonths(goal?.tenureMonths ? String(goal.tenureMonths) : '12');
+    // showing one thing until the user happens to drag it. Zero until the user
+    // sets it: the monthly EMI below stays at zero with it.
+    setTenureMonths(goal?.tenureMonths ? String(goal.tenureMonths) : '0');
     setRulerSession(n => n + 1);
     setEmisPaidBefore(goal?.emisPaidBefore ? String(goal.emisPaidBefore) : '');
-    // Today, not blank, for a new loan. Left unset this field reads as
-    // optional, but nothing downstream works without it: no first EMI means
-    // no schedule to hang dates off, so the circle tracker doesn't render at
-    // all and "Next payment" stays hidden. Most loans are added around the
-    // time they start, so today is both the likeliest answer and one less
-    // field to go and fill in; it is still a plain editable row.
-    setFirstEmiDate(goal?.firstEmiDate || today());
+    // The same day next month, not blank, for a new loan. Left unset this field
+    // reads as optional, but nothing downstream works without it: no first EMI
+    // means no schedule to hang dates off, so the circle tracker doesn't render
+    // at all and "Next payment" stays hidden. A loan added around the time it
+    // starts has its first EMI due a month on (a 31st lands on the month's last
+    // day), so that is the likeliest answer and one less field to go and fill
+    // in; it is still a plain editable row.
+    setFirstEmiDate(goal?.firstEmiDate || toDateStr(addMonths(parseISO(today()), 1)));
     setEmiAmount(goal?.emiAmount ?? 0);
     // An existing loan's EMI is its own — never recomputed under the user.
     // A new one's follows the borrowed amount and tenure until it is typed
@@ -1034,7 +856,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
     setSubmitting(true);
     setError('');
     const tenure = isEmiType && parseInt(tenureMonths, 10) > 0 ? parseInt(tenureMonths, 10) : null;
-    const paidBefore = isEmiType && parseInt(emisPaidBefore, 10) > 0 ? parseInt(emisPaidBefore, 10) : 0;
+    const paidBefore = isEmiType && parseInt(emisPaidBefore, 10) > 0 ? Math.min(parseInt(emisPaidBefore, 10), tenure || 0) : 0;
     const emiDate = isEmiType && firstEmiDate ? firstEmiDate : null;
     const emi = isEmiType && emiAmount > 0 ? emiAmount : null;
     const starting = !isEdit && kind === 'savings' && startingAmount > 0 ? startingAmount : 0;
@@ -1057,7 +879,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
   const insets = useSafeAreaInsets();
   const footer = (
     <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 10 }}>
-      {!!error && <Text className="text-red-400 text-sm text-center mb-2">{error}</Text>}
+      {!!error && <Text className="text-red-400 text-[13px] text-center mb-2">{error}</Text>}
       <GlassPressable
         variant="active"
         radius={14}
@@ -1095,7 +917,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
     >
       <View style={{ flex: 1 }}>
       <View onLayout={onTitleLayout} style={{ minHeight: 22, justifyContent: 'center', marginBottom: 12, paddingHorizontal: 20 }}>
-        <Text className="text-center font-semibold" style={{ fontSize: 17, color: textColor(light).primary }}>
+        <Text className="text-center font-semibold" style={{ fontSize: FONT.body, color: textColor(light).primary }}>
           {isEdit ? copy.sheetTitleEdit : copy.sheetTitleNew}
         </Text>
         {/* Only reachable past the type-selector step, for a brand-new debt
@@ -1186,7 +1008,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
           <ReanimatedView.View layout={rowsReady ? FIELD_LAYOUT_TRANSITION : undefined} style={{ overflow: 'hidden' }}>
           <FieldCard light={light}>
             <AmountTextRow
-              label={isEmiType ? 'Original amount' : kind === 'debt' ? 'Amount owed' : 'Target amount'}
+              label={isEmiType ? 'Total loan amount' : kind === 'debt' ? 'Amount owed' : 'Target amount'}
               value={amount}
               onChangeValue={setAmount}
               placeholder="Set amount"
@@ -1250,7 +1072,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
                   open={openField === 'emisPaid'}
                   onOpen={() => openRow('emisPaid')}
                   onClose={closeRow}
-                  maxMonths={parseInt(tenureMonths, 10) || undefined}
+                  maxMonths={parseInt(tenureMonths, 10) || 0}
                   tintCompleted
                 />
               </ReanimatedView.View>
@@ -1369,10 +1191,6 @@ export function MoneySheet({ open, onClose, onClosed, goalName, goal, entry, ini
       prefill={prefill}
       modes={kind === 'debt' ? DEBT_MONEY_MODES : MONEY_MODES}
       labels={MONEY_LABELS}
-      // Just wide enough to fit "Withdraw" in full without the reel's own
-      // overflow:hidden clipping it (66 clipped, 80 read as too roomy — see
-      // ReelSlider's own comment on what this spacing does).
-      sliderSlot={74}
       initialMode={initialType}
       subtitle={goalName}
       fieldPlaceholder="Note (optional)"

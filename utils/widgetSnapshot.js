@@ -16,7 +16,7 @@ import { MONTH_NAMES } from './monthlyRecap'
 //   days       expenses per day, oldest first, the last WIDGET_DAYS days
 //   goals      active goals, closest to done first
 export const WIDGET_DAYS = 30
-export const WIDGET_MAX_GOALS = 8
+const WIDGET_MAX_GOALS = 8
 
 const monthKeyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 

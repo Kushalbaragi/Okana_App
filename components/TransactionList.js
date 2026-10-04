@@ -1,13 +1,14 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { View, Text, FlatList, Pressable, InteractionManager, StyleSheet } from 'react-native';
+import { View, Text, FlatList, Pressable, InteractionManager } from 'react-native';
 import Animated, {
+  FadeIn,
   withTiming,
 } from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
 import TransactionItem from './TransactionItem';
-import { formatCurrency } from '../utils/format';
-import { textColor } from '../utils/colors';
-import { BODY, TABULAR } from '../utils/type';
+import { formatCurrency, shiftDate, today } from '../utils/format';
+import { textColor, INCOME_TEXT } from '../utils/colors';
+import { BODY, TABULAR, FONT } from '../utils/type';
 import { GUTTER, LEDGER_PILL_INSET } from '../utils/spacing';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { SETTLE_EASING, SPRING_SMOOTH, layoutTransition } from '../utils/motion';
@@ -17,18 +18,6 @@ import { ChevronRight } from './icons';
 // (a taller list row settling into place reads better a bit more gently
 // than AmountField's narrow digit sliding, which uses SPRING_QUICK).
 const ROW_LAYOUT_TRANSITION = layoutTransition(SPRING_SMOOTH);
-
-// MonthHeader's label column — every label is the same "MMM-YYYY" shape
-// (see flatData below), but the font is proportional, so "SEP-2026" and
-// "AUG-2026" aren't the same pixel width. Left unconstrained, the dash
-// after it lands at a different x on every row depending on which month's
-// letters happen to be drawn, so a stack of collapsed months reads as a
-// ragged column instead of one straight line of dashes. A fixed-width box
-// around just the label pins the dash to the same x on every row
-// regardless of which month it is. 100, not a tighter guess — a tighter
-// width clipped the widest real labels ("MAR-2026", "MAY-2026", ...) at
-// MonthHeader's fontSize; this is comfortably past even the widest one.
-const MONTH_LABEL_WIDTH = 100;
 
 // Plays once, only for the row TransactionList is told just got added (see
 // justAddedId) — a plain fade + small rise, no stagger, since there's only
@@ -44,8 +33,13 @@ function rowEntering() {
   };
 }
 
-// How long the tour's demo swipe holds the delete button in view before closing.
+// The space between the last row of an open month and the next month's header.
+const MONTH_GAP = 32;
+
+// How long the tour's demo swipe holds the delete button in view before closing,
+// and how long the row rests shut before it swipes again.
 const DEMO_SWIPE_HOLD_MS = 1300;
+const DEMO_SWIPE_PAUSE_MS = 1100;
 
 // One running ledger — every month that has anything in it, newest first,
 // each with a total; every transaction under its own month, newest first.
@@ -61,76 +55,66 @@ const DEMO_SWIPE_HOLD_MS = 1300;
 // month's expense total, Income its income total, Overview shows nothing
 // (see TransactionList's own comment on why Overview has no single figure
 // that means anything here) — `amount == null` is what skips it below.
-function MonthHeader({ label, amount, light, isOpen, onPress }) {
+function MonthHeader({ label, amount, light, isOpen, isIncome, onPress }) {
   return (
-    <>
-      {/* A true hairline (device pixel, not a logical point) above every
-          header — the same divider convention SettingsUI/SavingsSection
-          already use elsewhere, just inset to the ledger's own margin
-          rather than theirs. Sits outside the Pressable so it's just a
-          line, not part of the tappable row's own visual feedback.
-          No margin of its own on purpose — the row below carries equal
-          padding top and bottom (see paddingVertical there), which is what
-          actually centres its content between this line and the next one;
-          if this divider added its own extra margin on one side, the text
-          would sit closer to whichever line that margin was next to. */}
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${label}, ${isOpen ? 'expanded' : 'collapsed'}`}>
+      {/* Laid out like a transaction row: the month at the same left edge as a
+          row's date chip, the total at the same right edge as a row's amount
+          (both rows and headers pad LEDGER_PILL_INSET each side), so the
+          amounts run down one straight column across this month and the
+          collapsed ones. A plain row, no card behind it. */}
       <View
         style={{
-          height: StyleSheet.hairlineWidth,
-          marginHorizontal: LEDGER_PILL_INSET,
-          backgroundColor: light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: LEDGER_PILL_INSET,
+          paddingVertical: 14,
         }}
-      />
-      <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${label}, ${isOpen ? 'expanded' : 'collapsed'}`}>
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingHorizontal: LEDGER_PILL_INSET,
-            paddingVertical: 14,
-          }}
-        >
-          {/* No card background any more — several of these stacked back to
-              back (a few consecutive collapsed months) read as a wall of
-              identical dark blocks, clashing with how plain the current
-              month's own rows are just above them. A plain row matches that
-              same language instead of looking like a different component
-              bolted onto the same list. Label/total stay bright, dash dim —
-              same hierarchy as before, just without the box around it. */}
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {/* Fixed width, not flex/auto — see MONTH_LABEL_WIDTH's own
-                comment above: this is what keeps the dash below at the
-                same x on every collapsed month row regardless of which
-                month's label (a different pixel width each time, in this
-                proportional font) is actually drawn inside it. */}
-            <View style={{ width: MONTH_LABEL_WIDTH }}>
-              <Text numberOfLines={1} style={[BODY, { color: textColor(light).primary }]}>{label}</Text>
-            </View>
-            {amount != null && (
-              // One Text with nested spans, not two sibling Text boxes —
-              // siblings each get their own layout box, and the dash's
-              // glyph sits at a different optical height within its box
-              // than the amount does within its own, so the row read as
-              // misaligned even though both boxes shared the same
-              // line-height. Nesting spans inside a single Text lays them
-              // out on one shared baseline instead.
-              <Text style={[BODY, { color: textColor(light).disabled }]}>
-                {'—   '}
-                <Text style={[{ color: textColor(light).primary }, TABULAR]}>{formatCurrency(amount)}</Text>
-              </Text>
-            )}
-          </View>
-
-          {/* Rotates between pointing right (collapsed) and down (open) —
-              same treatment SavingsSection's own "Completed" toggle already
-              uses. */}
-          <View style={{ transform: [{ rotate: isOpen ? '90deg' : '0deg' }] }}>
-            <ChevronRight color={light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)'} />
-          </View>
+      >
+        <Text numberOfLines={1} style={[BODY, { color: textColor(light).primary }]}>{label}</Text>
+        {amount != null && (
+          <Text style={[BODY, TABULAR, { color: isIncome ? INCOME_TEXT : textColor(light).primary }]}>{formatCurrency(amount)}</Text>
+        )}
+        {/* At the far right, out past the amount rather than taking room from it
+            (into the list's side margin), so the amounts still end where a row's
+            amount does, with a little space before the chevron.
+            Points right when collapsed, down when open — same treatment
+            SavingsSection's own "Completed" toggle uses. */}
+        <View pointerEvents="none" style={{ position: 'absolute', right: -8, top: 0, bottom: 0, justifyContent: 'center', transform: [{ rotate: isOpen ? '90deg' : '0deg' }] }}>
+          <ChevronRight color={light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)'} />
         </View>
-      </Pressable>
-    </>
+      </View>
+    </Pressable>
+  );
+}
+
+// "Today", "Yesterday", or "2 Oct".
+function dayLabel(dateStr, todayStr, yesterdayStr) {
+  if (dateStr === todayStr) return 'Today';
+  if (dateStr === yesterdayStr) return 'Yesterday';
+  const d = parseISO(dateStr);
+  return `${d.getDate()} ${MONTH_NAMES[d.getMonth()].slice(0, 3)}`;
+}
+
+// The small muted label above a run of rows from the same day.
+function DayLabel({ label, light }) {
+  return (
+    <Text style={{ fontSize: FONT.label, color: textColor(light).disabled, paddingHorizontal: LEDGER_PILL_INSET, marginTop: 14, marginBottom: 2 }}>
+      {label}
+    </Text>
+  );
+}
+
+// The line under the first transaction while the swipe demo is playing.
+function DemoHint({ light }) {
+  return (
+    <Animated.Text
+      entering={FadeIn.duration(500)}
+      style={{ fontSize: FONT.caption, color: textColor(light).tertiary, textAlign: 'center', marginTop: 8, marginBottom: 4 }}
+    >
+      Try swiping left to delete
+    </Animated.Text>
   );
 }
 
@@ -167,11 +151,26 @@ function TransactionList({
     else swipeRefs.current.delete(id);
   }, []);
 
+  // The swipe demo (see demoSwipe below) repeats until the user touches the
+  // screen; `demoOn` is what shows the line under the first transaction.
+  const [demoOn, setDemoOn] = useState(false);
+  const demoOnRef = useRef(false);
+  const demoTimerRef = useRef(null);
+  const endDemo = useCallback(() => {
+    if (!demoOnRef.current) return;
+    demoOnRef.current = false;
+    clearTimeout(demoTimerRef.current);
+    setDemoOn(false);
+  }, []);
+
+  // Any touch anywhere reaches this (see the capture handler on Home), so it is
+  // also what stops the demo.
   const closeOpenRow = useCallback(() => {
+    endDemo();
     const id = openIdRef.current;
     if (id) swipeRefs.current.get(id)?.close();
     openIdRef.current = null;
-  }, []);
+  }, [endDemo]);
 
   const onSwipeOpen = useCallback(id => {
     const prevId = openIdRef.current;
@@ -190,25 +189,33 @@ function TransactionList({
     return true;
   }, [closeOpenRow]);
 
-  // Slides the first row open to show its delete button, holds a moment, and
-  // slides it shut — the tour uses it to show what swiping a transaction does.
+  // Slides the first row open to show its delete button, holds a moment, slides
+  // it shut, rests, and does it again — over and over until a touch ends it (see
+  // closeOpenRow). The tour uses it to show what swiping a transaction does.
   // Says whether there was a row to do it on (rows only become swipeable a moment
   // after a list paints, so the first try can find none).
-  const demoTimerRef = useRef(null);
   useEffect(() => () => clearTimeout(demoTimerRef.current), []);
+  const firstTxIdRef = useRef(null);
   const demoSwipe = useCallback(() => {
-    const first = swipeRefs.current.entries().next();
-    if (first.done) return false;
-    const [id, swipeable] = first.value;
-    swipeable.openRight();
-    openIdRef.current = id;
-    clearTimeout(demoTimerRef.current);
-    demoTimerRef.current = setTimeout(() => {
-      swipeable.close();
-      if (openIdRef.current === id) openIdRef.current = null;
-    }, DEMO_SWIPE_HOLD_MS);
+    if (demoOnRef.current) return true;
+    if (!firstTxIdRef.current || !swipeRefs.current.get(firstTxIdRef.current)) return false;
+    demoOnRef.current = true;
+    setDemoOn(true);
+    const run = () => {
+      const id = firstTxIdRef.current;
+      const swipeable = id && swipeRefs.current.get(id);
+      if (!swipeable) { endDemo(); return; }
+      swipeable.openRight();
+      openIdRef.current = id;
+      demoTimerRef.current = setTimeout(() => {
+        swipeable.close();
+        if (openIdRef.current === id) openIdRef.current = null;
+        demoTimerRef.current = setTimeout(run, DEMO_SWIPE_PAUSE_MS);
+      }, DEMO_SWIPE_HOLD_MS);
+    };
+    run();
     return true;
-  }, []);
+  }, [endDemo]);
 
   useImperativeHandle(ref, () => ({ closeOpenRow, demoSwipe }), [closeOpenRow, demoSwipe]);
 
@@ -262,8 +269,17 @@ function TransactionList({
   //
   const flatData = useMemo(() => {
     const out = [];
+    const todayStr = today();
+    const yesterdayStr = shiftDate(todayStr, -1);
+    let hintPlaced = false;
     for (const g of groups) {
       const isCurrent = g.key === currentMonthKey;
+      // Room before a month's header whenever the rows of an open month sit right
+      // above it (the current month's, or one the user expanded), so one month
+      // visibly ends before the next begins.
+      if (!isCurrent && out.length > 0 && out[out.length - 1].type === 'tx') {
+        out.push({ type: 'gap', key: `gap-${g.key}` });
+      }
       const isOpen = isCurrent || g.key === expandedKey;
       // No header at all for the current month — everything it would have
       // said (the month name, the amount) is already on screen three other
@@ -285,13 +301,24 @@ function TransactionList({
         });
       }
       if (isOpen) {
+        // A small day label above each run of rows from the same day, so the
+        // date is said once instead of on every row.
+        let prevDate = null;
         for (const { tx } of g.items) {
+          if (tx.date !== prevDate) {
+            prevDate = tx.date;
+            out.push({ type: 'day', key: `d-${tx.date}-${g.key}`, label: dayLabel(tx.date, todayStr, yesterdayStr) });
+          }
           out.push({ type: 'tx', key: tx.id, tx });
+          // The demo's line sits right under the first transaction.
+          if (demoOn && !hintPlaced) { hintPlaced = true; out.push({ type: 'hint', key: 'swipe-hint' }); }
         }
       }
     }
     return out;
-  }, [groups, currentMonthKey, expandedKey, mode]);
+  }, [groups, currentMonthKey, expandedKey, mode, demoOn]);
+
+  firstTxIdRef.current = flatData.find(item => item.type === 'tx')?.key ?? null;
 
   // False for the first commit only, true once it has settled. Gates the
   // two per-row costs that profiling showed dominate a first paint —
@@ -330,19 +357,24 @@ function TransactionList({
     </Animated.View>
   ), [settled, justAddedId, cardColor, onEdit, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light]);
 
-  const renderItem = useCallback(({ item }) => (
-    item.type === 'header'
-      ? (
+  const renderItem = useCallback(({ item }) => {
+    if (item.type === 'gap') return <View style={{ height: MONTH_GAP }} />;
+    if (item.type === 'day') return <DayLabel label={item.label} light={light} />;
+    if (item.type === 'hint') return <DemoHint light={light} />;
+    if (item.type === 'header') {
+      return (
         <MonthHeader
           label={item.label}
           amount={item.amount}
           light={light}
           isOpen={item.isOpen}
+          isIncome={mode === 'income'}
           onPress={() => toggleMonth(item.groupKey)}
         />
-      )
-      : renderTransaction(item.tx)
-  ), [renderTransaction, light, toggleMonth]);
+      );
+    }
+    return renderTransaction(item.tx);
+  }, [renderTransaction, light, toggleMonth, mode]);
 
   const empty = (
     <View className="items-center justify-center py-14 px-4">

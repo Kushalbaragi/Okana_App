@@ -8,6 +8,7 @@ import { GlassPressable } from './Glass';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { formatCurrency } from '../utils/format';
 import { EXPENSE_HEX } from '../utils/colors';
+import { FONT } from '../utils/type';
 
 const SLIDE_MS = 9000;
 // Below this, a press+release counts as a tap (navigate) rather than a
@@ -60,10 +61,10 @@ function TitleSlide({ month, year }) {
   return (
     <View className="flex-1 items-center justify-center px-8">
       <View style={{ marginTop: -20 }}>
-        <Text className="text-white/35 text-xs font-semibold uppercase tracking-wide text-center mb-2">
+        <Text className="text-white/35 text-[13px] font-semibold uppercase tracking-wide text-center mb-2">
           Take a moment to review
         </Text>
-        <Text className="text-lg font-semibold text-center" style={{ color: '#4ade80', lineHeight: 26, textTransform: 'uppercase' }}>
+        <Text className="text-xl font-semibold text-center" style={{ color: '#4ade80', lineHeight: 26, textTransform: 'uppercase' }}>
           {MONTH_NAMES[month]} {year} spendings
         </Text>
       </View>
@@ -136,7 +137,7 @@ function DailyChartSlide({ month, year, values, labels, highestIndex, highestAmo
       {/* Positioned independently of the centered block below — moving the
           title shouldn't shift the chart's own vertical centering. */}
       <View className="items-center absolute" style={{ top: 100, left: 24, right: 24 }}>
-        <Text className="text-white/35 text-sm font-semibold uppercase tracking-wide text-center mb-2">
+        <Text className="text-white/35 text-[13px] font-semibold uppercase tracking-wide text-center mb-2">
           {MONTH_NAMES[month]} {year}
         </Text>
         <Text className="text-white text-xl font-semibold text-center uppercase">
@@ -151,7 +152,7 @@ function DailyChartSlide({ month, year, values, labels, highestIndex, highestAmo
               <Text className="text-white/50 text-[9px] font-semibold uppercase tracking-wide text-center mb-0.5">
                 Highest spent
               </Text>
-              <Text className="text-white/85 text-xs font-semibold text-center">
+              <Text className="text-white/85 text-[13px] font-semibold text-center">
                 {formatCurrency(highestAmount)}
               </Text>
             </FadeIn>
@@ -173,7 +174,7 @@ function DailyChartSlide({ month, year, values, labels, highestIndex, highestAmo
         <View className="mt-8" style={{ minHeight: 44, width: '100%' }}>
           {showHighestText && (
             <FadeIn>
-              <Text className="text-white/60 text-sm text-center" style={{ lineHeight: 20 }}>
+              <Text className="text-white/60 text-[13px] text-center" style={{ lineHeight: 20 }}>
                 You spent the most on {MONTH_NAMES[month]} {highestDay} — {formatCurrency(highestAmount)} on{' '}
                 <Text style={{ fontStyle: 'italic' }}>"{titleCaseWords(highestDescription)}"</Text>
               </Text>
@@ -198,8 +199,8 @@ function YoyBox({ color, lastYearLine, thisYearLine, diff }) {
       className="rounded-lg px-4 py-2.5 items-center"
       style={{ borderWidth: 1, borderColor: `${color}80` }}
     >
-      <Text className="text-xs font-semibold text-center" style={{ color }}>{lastYearLine}</Text>
-      <Text className="text-xs font-semibold text-center mt-1" style={{ color }}>
+      <Text className="text-[13px] font-semibold text-center" style={{ color }}>{lastYearLine}</Text>
+      <Text className="text-[13px] font-semibold text-center mt-1" style={{ color }}>
         {thisYearLine}{arrow ? ` ${arrow}` : ''}
       </Text>
     </View>
@@ -216,7 +217,7 @@ function growthSentence(kind, diff, pct) {
 function YoySection({ color, kind, diff, pct, month, year, lastYearAmount, thisYearAmount }) {
   return (
     <View className="items-center" style={{ width: '100%' }}>
-      <Text className="text-white/60 text-sm text-center mb-2">{growthSentence(kind, diff, pct)}</Text>
+      <Text className="text-white/60 text-[13px] text-center mb-2">{growthSentence(kind, diff, pct)}</Text>
       <YoyBox
         color={color}
         lastYearLine={`${MONTH_NAMES[month]} ${year - 1} — ${formatCurrency(lastYearAmount)}`}
@@ -229,14 +230,14 @@ function YoySection({ color, kind, diff, pct, month, year, lastYearAmount, thisY
 
 function DiffSummaryLine({ diff, base, compareLabel }) {
   if (base <= 0) {
-    return <Text className="text-white/50 text-sm text-center mb-6">No {compareLabel} data to compare yet.</Text>;
+    return <Text className="text-white/50 text-[13px] text-center mb-6">No {compareLabel} data to compare yet.</Text>;
   }
   if (diff === 0) {
-    return <Text className="text-white/50 text-sm text-center mb-6">Same as {compareLabel}.</Text>;
+    return <Text className="text-white/50 text-[13px] text-center mb-6">Same as {compareLabel}.</Text>;
   }
   const more = diff > 0;
   return (
-    <Text className="text-white/60 text-sm text-center mb-6">
+    <Text className="text-white/60 text-[13px] text-center mb-6">
       You spent{' '}
       <Text style={{ color: more ? '#f87171' : '#4ade80', fontWeight: '700' }}>
         {formatCurrency(Math.abs(diff))}
@@ -262,7 +263,7 @@ function MonthlyChartSlide({
       {/* Positioned independently of the centered block below — moving the
           title shouldn't shift the chart's own vertical centering. */}
       <View className="items-center absolute" style={{ top: 100, left: 24, right: 24 }}>
-        <Text className="text-white/35 text-sm font-semibold uppercase tracking-wide text-center mb-2">
+        <Text className="text-white/35 text-[13px] font-semibold uppercase tracking-wide text-center mb-2">
           {year}
         </Text>
         <Text className="text-white text-xl font-semibold text-center uppercase">
@@ -272,7 +273,7 @@ function MonthlyChartSlide({
 
       <View className="flex-1 items-center justify-center" style={{ paddingTop: 60 }}>
         <View className="items-center mb-1">
-          <Text className="text-white font-bold text-center" style={{ fontSize: 30 }}>
+          <Text className="text-white font-bold text-center" style={{ fontSize: FONT.amount }}>
             {formatCurrency(currentExpense)}
           </Text>
         </View>
@@ -369,7 +370,7 @@ function OverviewSlide({ month, year, incomeValues, expenseValues, monthSavings,
   return (
     <View className="flex-1 px-6">
       <View className="items-center absolute" style={{ top: 100, left: 24, right: 24 }}>
-        <Text className="text-white/35 text-sm font-semibold uppercase tracking-wide text-center mb-2">
+        <Text className="text-white/35 text-[13px] font-semibold uppercase tracking-wide text-center mb-2">
           {year}
         </Text>
         <Text className="text-white text-xl font-semibold text-center uppercase">
@@ -393,11 +394,11 @@ function OverviewSlide({ month, year, incomeValues, expenseValues, monthSavings,
           {showMessage && (
             <FadeIn>
               {headline && (
-                <Text className="font-semibold text-center mb-2" style={{ color, fontSize: 18 }}>
+                <Text className="font-semibold text-center mb-2" style={{ color, fontSize: FONT.title }}>
                   {headline}
                 </Text>
               )}
-              <Text className="text-white/60 text-sm text-center" style={{ lineHeight: 20 }}>
+              <Text className="text-white/60 text-[13px] text-center" style={{ lineHeight: 20 }}>
                 {message}
               </Text>
             </FadeIn>
@@ -442,7 +443,7 @@ function BudgetSlide({ month, year, budgetAmount, budgetSpent, percent, paused }
   return (
     <View className="flex-1 px-6">
       <View className="items-center absolute" style={{ top: 100, left: 24, right: 24 }}>
-        <Text className="text-white/35 text-sm font-semibold uppercase tracking-wide text-center mb-2">
+        <Text className="text-white/35 text-[13px] font-semibold uppercase tracking-wide text-center mb-2">
           {MONTH_NAMES[month]} {year}
         </Text>
         <Text className="text-white text-xl font-semibold text-center uppercase">
@@ -460,10 +461,10 @@ function BudgetSlide({ month, year, budgetAmount, budgetSpent, percent, paused }
         <View className="mt-8" style={{ minHeight: 80, width: '100%' }}>
           {showMessage && (
             <FadeIn>
-              <Text className="font-semibold text-center mb-2" style={{ color, fontSize: 18 }}>
+              <Text className="font-semibold text-center mb-2" style={{ color, fontSize: FONT.title }}>
                 {headline}
               </Text>
-              <Text className="text-white/60 text-sm text-center" style={{ lineHeight: 20 }}>
+              <Text className="text-white/60 text-[13px] text-center" style={{ lineHeight: 20 }}>
                 {message}
               </Text>
             </FadeIn>
@@ -505,7 +506,7 @@ function CalendarGrid({ firstDay, days }) {
               className="aspect-square items-center justify-center rounded-md"
               style={{ flex: 1, backgroundColor: d ? d.bg : 'transparent' }}
             >
-              {d && <Text style={{ color: d.color, fontSize: 12, fontWeight: '500' }}>{d.day}</Text>}
+              {d && <Text style={{ color: d.color, fontSize: FONT.caption, fontWeight: '500' }}>{d.day}</Text>}
             </View>
           ))}
         </View>
@@ -514,11 +515,11 @@ function CalendarGrid({ firstDay, days }) {
       <View className="flex-row items-center justify-center mt-3" style={{ gap: 12 }}>
         <View className="flex-row items-center" style={{ gap: 4 }}>
           <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(34,197,94,0.5)' }} />
-          <Text className="text-white/35" style={{ fontSize: 10 }}>No spend</Text>
+          <Text className="text-white/35" style={{ fontSize: FONT.label }}>No spend</Text>
         </View>
         <View className="flex-row items-center" style={{ gap: 4 }}>
           <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(255,75,75,0.5)' }} />
-          <Text className="text-white/35" style={{ fontSize: 10 }}>Spent</Text>
+          <Text className="text-white/35" style={{ fontSize: FONT.label }}>Spent</Text>
         </View>
       </View>
     </View>
@@ -540,7 +541,7 @@ function CalendarSlide({ firstDay, days, daysInMonth, spentDays, noSpendDays, pr
   return (
     <View className="flex-1 px-6">
       <View className="items-center absolute" style={{ top: 100, left: 24, right: 24 }}>
-        <Text className="text-white/35 text-sm font-semibold uppercase tracking-wide text-center mb-2">
+        <Text className="text-white/35 text-[13px] font-semibold uppercase tracking-wide text-center mb-2">
           Last month — {noSpendPhrase(noSpendDays)}
         </Text>
         <Text className="text-white text-xl font-semibold text-center uppercase">
@@ -558,7 +559,7 @@ function CalendarSlide({ firstDay, days, daysInMonth, spentDays, noSpendDays, pr
         <View className="mt-6" style={{ minHeight: 70, width: '100%' }}>
           {showTally && (
             <FadeIn>
-              <Text className="text-white/60 text-sm text-center" style={{ lineHeight: 20 }}>
+              <Text className="text-white/60 text-[13px] text-center" style={{ lineHeight: 20 }}>
                 You spent on {spentDays} of {daysInMonth} days —{' '}
                 <Text style={{ color: '#4ade80', fontWeight: '700' }}>{noSpendPhrase(noSpendDays)}</Text>.
               </Text>
@@ -566,7 +567,7 @@ function CalendarSlide({ firstDay, days, daysInMonth, spentDays, noSpendDays, pr
           )}
           {showCompare && (
             <FadeIn style={{ marginTop: 8 }}>
-              <Text className="text-sm text-center" style={{ lineHeight: 20, color: 'rgba(255,255,255,0.5)' }}>
+              <Text className="text-[13px] text-center" style={{ lineHeight: 20, color: 'rgba(255,255,255,0.5)' }}>
                 {prevLabel} —{' '}
                 <Text style={{ color: '#4ade80', fontWeight: '700' }}>{noSpendPhrase(prevNoSpendDays)}</Text>
               </Text>
@@ -586,13 +587,13 @@ function ClosingSlide({ onOpenBudgetSetup, hasBudgetThisMonth }) {
   return (
     <View className="flex-1 items-center justify-center px-8">
       <View style={{ marginTop: -20, alignItems: 'center' }}>
-        <Text className="text-white/35 text-xs font-semibold text-center mb-2">
+        <Text className="text-white/35 text-[13px] font-semibold text-center mb-2">
           Before you go Remember
         </Text>
-        <Text className="text-lg font-semibold text-center mb-3" style={{ color: '#4ade80', lineHeight: 26 }}>
+        <Text className="text-xl font-semibold text-center mb-3" style={{ color: '#4ade80', lineHeight: 26 }}>
           Savings is the real Earnings
         </Text>
-        <Text className="text-white/60 text-sm text-center" style={{ lineHeight: 20, maxWidth: 280, marginBottom: hasBudgetThisMonth ? 0 : 32 }}>
+        <Text className="text-white/60 text-[13px] text-center" style={{ lineHeight: 20, maxWidth: 280, marginBottom: hasBudgetThisMonth ? 0 : 32 }}>
           Each Rupee you save now — will save you in the Future
         </Text>
 

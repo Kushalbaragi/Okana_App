@@ -5,6 +5,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS
 import { DialogBackdrop } from './DialogBackdrop';
 import { SETTLE_EASING } from '../utils/motion';
 import { CheckIcon, CloseIcon } from './icons';
+import { FONT } from '../utils/type';
 
 const OPEN_MS = 220;
 const CLOSE_MS = 160;
@@ -75,7 +76,7 @@ export function ConfirmPill({ open, message, onConfirm, onDecline, onClosed, lig
           cardStyle,
         ]}
       >
-        <Text numberOfLines={2} style={{ flex: 1, fontSize: 14, lineHeight: 19, color: light ? '#111111' : '#ffffff' }}>{message}</Text>
+        <Text numberOfLines={2} style={{ flex: 1, fontSize: FONT.caption, lineHeight: 19, color: light ? '#111111' : '#ffffff' }}>{message}</Text>
         <Pressable
           onPress={onConfirm}
           hitSlop={8}

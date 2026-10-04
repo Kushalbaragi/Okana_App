@@ -45,7 +45,7 @@ import { TABULAR } from '../utils/type';
 // ENTER_DURATION) is what actually closes that gap, rather than just
 // narrowing it for the average case.
 const AMOUNT_SHIFT_SPRING = { damping: 24, stiffness: 500, mass: 0.35 };
-export const AMOUNT_LAYOUT_TRANSITION = layoutTransition(AMOUNT_SHIFT_SPRING);
+const AMOUNT_LAYOUT_TRANSITION = layoutTransition(AMOUNT_SHIFT_SPRING);
 
 const ENTER_DURATION = 220;
 const EXIT_DURATION = 180;
@@ -103,7 +103,7 @@ function digitExiting() {
 // *old* value gone at once so the *new* one's own entrance can start right
 // away, rather than waiting out a whole exit animation on a value the user
 // already moved on from.
-export function AmountDigit({ char, animateIn, color = '#ffffff', fontSize = 48, lineHeight = 56, fontWeight = '600', letterSpacing, delay = 0, instantExit = false, layoutReady = true }) {
+function AmountDigit({ char, animateIn, color = '#ffffff', fontSize = 48, lineHeight = 56, fontWeight = '600', letterSpacing, delay = 0, instantExit = false, layoutReady = true }) {
   const fadeProgress = useSharedValue(animateIn ? 0 : 1);
 
   useEffect(() => {

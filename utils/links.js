@@ -16,6 +16,8 @@ export async function openLink(url, { report = true } = {}) {
   }
 }
 
+export const TERMS_URL = 'https://kushalbaragiokana.notion.site/Terms-and-Condition-3c58f887c3c9806d86eae7473775949c?source=copy_link';
+
 const IOS_APP_ID = '6805307127';
 const ANDROID_PACKAGE = 'com.kushalbaragi.okana';
 

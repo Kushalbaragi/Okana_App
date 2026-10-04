@@ -7,7 +7,7 @@ import { CheckIcon } from './icons';
 import { SwipeDeleteAction, useSwipeDelete } from './SwipeDeleteAction';
 import { Card, ProgressBar, POSITIVE, dim, money } from './savingsShared';
 import { textColor } from '../utils/colors';
-import { TABULAR } from '../utils/type';
+import { TABULAR, FONT } from '../utils/type';
 
 // When a goal is deleted it fades out and the ones below slide up into its
 // place, so the removal is something you see happen.
@@ -75,15 +75,15 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
         <View className="flex-row items-center justify-between" style={{ gap: 12 }}>
           <View className="flex-row items-center flex-1" style={{ gap: 8 }}>
             {done && <CheckIcon size={14} color={POSITIVE} />}
-            <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 15, fontWeight: '400', color: done ? dim(light, 0.5) : textColor(light).tertiary }}>{goal.name}</Text>
+            <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: FONT.body, fontWeight: '400', color: done ? dim(light, 0.5) : textColor(light).tertiary }}>{goal.name}</Text>
           </View>
-          {!done && <Text style={{ fontSize: 15, fontWeight: '400', color: textColor(light).tertiary }}>{statusText}</Text>}
+          {!done && <Text style={{ fontSize: FONT.body, fontWeight: '400', color: textColor(light).tertiary }}>{statusText}</Text>}
         </View>
         {!done && (
           <>
-            <Text style={{ fontSize: 24, fontWeight: '600', marginTop: 10, color: textColor(light).primary, ...TABULAR }}>
+            <Text style={{ fontSize: FONT.amount, fontWeight: '600', marginTop: 10, color: textColor(light).primary, ...TABULAR }}>
               {money(headlineAmount)}
-              <Text style={{ fontSize: 15, fontWeight: '400', color: textColor(light).tertiary }}> {isDebt ? 'left' : 'saved'}</Text>
+              <Text style={{ fontSize: FONT.body, fontWeight: '400', color: textColor(light).tertiary }}> {isDebt ? 'left' : 'saved'}</Text>
             </Text>
             <View style={{ marginTop: 14 }}>
               <ProgressBar percent={goal.percent} height={5} light={light} trackColor={dim(light, 0.1)} />

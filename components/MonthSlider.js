@@ -5,6 +5,7 @@ import { hapticTick } from '../utils/haptics';
 import { reportError } from '../utils/errors';
 import { POSITIVE, dim, money } from './savingsShared';
 import { textColor } from '../utils/colors';
+import { FONT } from '../utils/type';
 
 // Width each month takes along the slider, and the bar drawn inside it.
 const STEP = 28;
@@ -122,7 +123,7 @@ function MonthSlider({ months, initialIndex, light = false }) {
 
   return (
     <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
-      <Text style={{ textAlign: 'center', fontSize: 14, fontWeight: '500', color: figureColor, height: 20 }}>{figure}</Text>
+      <Text style={{ textAlign: 'center', fontSize: FONT.caption, fontWeight: '500', color: figureColor, height: 20 }}>{figure}</Text>
 
       <View style={{ height: CHART_H, marginTop: 8 }}>
         {width > 0 && (
@@ -151,7 +152,7 @@ function MonthSlider({ months, initialIndex, light = false }) {
         )}
       </View>
 
-      <Text style={{ textAlign: 'center', fontSize: 13, color: textColor(light).tertiary, marginTop: 10 }}>{current.name}</Text>
+      <Text style={{ textAlign: 'center', fontSize: FONT.caption, color: textColor(light).tertiary, marginTop: 10 }}>{current.name}</Text>
     </View>
   );
 }

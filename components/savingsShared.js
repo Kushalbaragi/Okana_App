@@ -26,8 +26,9 @@ export const KIND_COPY = {
     sectionTotal: 'Total Savings',
     listLabel: 'Add new saving goal',
     newLabel: 'Add saving goal',
-    emptyTitle: 'Start your first goal',
-    emptyBody: "Track what you're setting aside for a bike, a home, or a rainy day.",
+    emptyTitle: 'What are you saving for?',
+    emptyBody: 'Emergency fund, trip, a phone…',
+    emptyAction: 'Add goal',
     namePlaceholder: 'Goal name',
     amountFieldLabel: '',
     sheetTitleNew: 'Add saving goal',
@@ -53,8 +54,9 @@ export const KIND_COPY = {
     sectionTotal: 'Total Debt',
     listLabel: 'Track new loan',
     newLabel: 'New loan',
-    emptyTitle: 'Track your first loan',
-    emptyBody: 'Car loan, personal loan, an EMI, money from a friend — anything you owe, in one place.',
+    emptyTitle: 'What are you paying off?',
+    emptyBody: 'Car, bike, personal, a friend…',
+    emptyAction: 'Add loan',
     namePlaceholder: 'Loan name',
     amountFieldLabel: 'Amount paid',
     sheetTitleNew: 'New loan',
@@ -77,11 +79,6 @@ export const KIND_COPY = {
     depositWord: 'payment',
   },
 };
-
-// Ideas offered under the loan name field and on the empty state — the
-// same fast-path suggestion chips GOAL_SUGGESTIONS gives Savings, just
-// pointed at the loan types the debt tracker actually gets used for.
-export const DEBT_SUGGESTIONS = ['Car Loan', 'Personal Loan', 'Bike Loan', 'Gold Loan', 'Friend Loan', 'No Cost EMI'];
 
 export const dim = (light, a = 0.4) => (light ? `rgba(0,0,0,${a})` : `rgba(255,255,255,${a})`);
 

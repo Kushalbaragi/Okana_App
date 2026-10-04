@@ -3,31 +3,23 @@ import { View, Text } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { parseISO } from 'date-fns';
-import BarChart from './BarChart';
+import BarChart, { BAR_CHART_ASPECT, MONTHLY_BAR_W } from './BarChart';
 import LineChart from './LineChart';
-import { GlassPressable } from './Glass';
-import { ChevronRight } from './icons';
 import {
   getMonthTotal,
   getMonthlyTotals,
   getDailyTotals,
   getLifetimeYearly,
-  getLifetimeMonthly,
   getEarliestDate,
   firstBarWithData,
   currentMonthYear,
   formatCurrency,
 } from '../utils/format';
 import { textColor } from '../utils/colors';
-import { CAPTION, TABULAR } from '../utils/type';
+import { CAPTION, TABULAR, FONT } from '../utils/type';
 
-const LIFETIME_YEARLY_THRESHOLD = 2; // years of history before "All Time" switches from monthly to yearly bars
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { SETTLE_EASING } from '../utils/motion';
-
-// Temporary — trying the chart with just Month, no Year/All Time picker.
-// Hidden, not deleted; see the render's own comment on RangeSelector.
-const SHOW_RANGE_SELECTOR = false;
 
 const MONTH_LABELS_SHORT = ['J','F','M','A','M','J','J','A','S','O','N','D'];
 
@@ -92,7 +84,7 @@ const HEADLINE_TEXT_STYLE = {
   left: 0,
   right: 0,
   textAlign: 'center',
-  fontSize: 44,
+  fontSize: FONT.display,
   lineHeight: HEADLINE_HEIGHT,
   // A touch heavier than the original hairline (300) — still not semibold,
   // but the figure was reading as a little thin at this size.
@@ -132,78 +124,34 @@ function AnimatedAmount({ value, color }) {
   );
 }
 
-// Fixed range names rather than the actual current month/year ("September",
-// "2026"), so the control reads as a range picker at a glance instead of
-// three unrelated proper nouns. Static now, so it lives out here rather
-// than being rebuilt every render — and RangeSelector no longer needs the
-// current month/year passed in at all. The period being shown is still
-// spelled out in full above the amount (see periodLabel).
+// The chart's three ranges, in swipe order: Month, then Year, then All Time.
 const RANGE_OPTIONS = [
   { id: 'month', label: 'Month' },
   { id: 'year',  label: 'Year' },
   { id: '5y',    label: 'All' },
 ];
 
-// Plain words, no pills. A segmented control announces itself as chrome
-// before it says anything about the data; three words with only the live
-// one brightened carry the same choice at a fraction of the weight.
-function RangeSelector({ value, onChange, light }) {
-  return (
-    // No top margin of its own any more — it used to sit below the chart
-    // and needed the gap itself; now the amount block above it (mb-7)
-    // already provides that space.
-    <View className="flex-row items-center justify-center" style={{ gap: 22 }}>
-      {RANGE_OPTIONS.map(opt => (
-        value === opt.id ? (
-          <GlassPressable
-            key={opt.id}
-            variant="field"
-            radius={9999}
-            onPress={() => onChange(opt.id)}
-            className="px-1 py-1"
-          >
-            <Text className="text-base" style={{ color: light ? '#111111' : '#ffffff' }}>{opt.label}</Text>
-          </GlassPressable>
-        ) : (
-          // variant="field" — transparent background (same look as before),
-          // but still gets GlassPressable's animated press-opacity instead
-          // of the plain Pressable this used to be, which had no press
-          // feedback at all.
-          <GlassPressable
-            key={opt.id}
-            variant="field"
-            radius={9999}
-            onPress={() => onChange(opt.id)}
-            className="px-1 py-1"
-          >
-            <Text className="text-base" style={{ color: textColor(light).disabled }}>{opt.label}</Text>
-          </GlassPressable>
-        )
-      ))}
-    </View>
-  );
-}
-
 // What the headline figure is OF, as one caption under it — just the period
-// ("september"). Which of expense/income/overview it's a period OF is
+// ("September"). Which of expense/income/overview it's a period OF is
 // Header's ModeSwitch job, at the very top of the screen; this caption only
 // ever names the period itself.
 function PeriodCaption({ periodLabel, light }) {
   return (
-    <Text style={[CAPTION, { color: textColor(light).tertiary }]}>{periodLabel.toLowerCase()}</Text>
+    <Text style={[CAPTION, { color: textColor(light).tertiary }]}>{periodLabel.charAt(0).toUpperCase() + periodLabel.slice(1).toLowerCase()}</Text>
   );
 }
 
-// One line under the headline amount — "avg daily spend – ₹450" and its
-// kind. Dimmer than the period caption above the amount (disabled, not
-// tertiary): this is a secondary reference figure, not something read on
-// every glance the way the period or the amount itself are. fontSize 12,
-// under CAPTION's 13, keeps it reading as the smallest thing on the card.
+// One line under the headline amount — the average, as just the figure and its
+// unit ("₹450 / day"); the tab and the period above already say what it is of.
+// Dimmer than the period caption above the amount (disabled, not tertiary):
+// this is a secondary reference figure, not something read on every glance the
+// way the period or the amount itself are.
 function AverageCaption({ info, light }) {
-  if (!info) return null;
+  // Always takes its line: Overview has no average, and without a stand-in the
+  // chart below slid up by that much every time the tab changed.
   return (
-    <Text style={{ fontSize: 12, fontWeight: '400', marginTop: 4, color: textColor(light).disabled }}>
-      {info.label} – {formatCurrency(info.value)}
+    <Text style={{ fontSize: FONT.caption, fontWeight: '400', marginTop: 4, color: textColor(light).disabled }}>
+      {info ? `${formatCurrency(info.value)} / ${info.unit}` : '\u00A0'}
     </Text>
   );
 }
@@ -223,31 +171,24 @@ function SummaryCard({
   const { month: currMonth, year: currYear } = currentMonthYear();
 
   // One shared scan for "earliest transaction" instead of three separate
-  // ones — getLifetimeYearly/getLifetimeMonthly used to each independently
+  // ones — getLifetimeYearly used to independently
   // re-derive this same thing internally, on top of this component's own
   // copy, which made switching to "All Time" noticeably do more work than
   // Month/Year (neither of which needs an account-wide earliest date at
   // all, just a same-year filter). getEarliestDate is the same helper the
   // Calendar page already uses for its own "before earliest activity" cutoff.
   const earliestDateStr = useMemo(() => getEarliestDate(transactions), [transactions]);
-  // Earliest transaction year decides "All Time" granularity — under
-  // LIFETIME_YEARLY_THRESHOLD years of history, yearly bars would only show
-  // a handful of candles, so months are shown instead; getLifetimeYearly
-  // takes over once there's enough history for yearly bars to actually be
-  // useful.
+  // All Time is always yearly bars, even for a brand new account: one bar for
+  // this year at the left, with the years after it as empty slots (see
+  // getLifetimeYearly).
   const earliestYear = earliestDateStr ? parseISO(earliestDateStr).getFullYear() : currYear;
-  const lifetimeGranularity = (currYear - earliestYear + 1) < LIFETIME_YEARLY_THRESHOLD ? 'month' : 'year';
 
   const chartData = useMemo(() => {
     if (timeRange === 'month') return getDailyTotals(transactions, currMonth, currYear);
-    if (timeRange === '5y') {
-      return lifetimeGranularity === 'year'
-        ? getLifetimeYearly(transactions, earliestDateStr)
-        : getLifetimeMonthly(transactions, earliestDateStr);
-    }
+    if (timeRange === '5y') return getLifetimeYearly(transactions, earliestDateStr);
     const { income, expense } = getMonthlyTotals(transactions, year);
     return { income, expense, labels: MONTH_LABELS_SHORT };
-  }, [transactions, timeRange, year, currYear, currMonth, lifetimeGranularity, earliestDateStr]);
+  }, [transactions, timeRange, year, currYear, currMonth, earliestDateStr]);
 
 
   // What the chart plots depends on ModeSwitch above: Expense/Income show
@@ -274,12 +215,12 @@ function SummaryCard({
     // stranded with huge gaps — the padded years past currYear are the
     // same kind of "hasn't happened yet" as a future month in the Year
     // tab, so they get the same disabled/untappable treatment.
-    if (timeRange === '5y' && lifetimeGranularity === 'year') {
+    if (timeRange === '5y') {
       const idx = (chartData.years ?? []).indexOf(currYear);
       return idx === -1 ? null : idx;
     }
     return null;
-  }, [timeRange, year, currYear, lifetimeGranularity, chartData]);
+  }, [timeRange, year, currYear, chartData]);
 
   // Mirrors the Calendar page's own "before earliest known activity" cutoff
   // (see spendShadeFor/getEarliestDate in utils/format.js) — a new account
@@ -307,14 +248,10 @@ function SummaryCard({
   // Overview already has no single series to average in the first place.
   //
   // Averaged over the same real (non-future, non-before-signup) range as
-  // disabledBeforeIndex/disabledAfterIndex above. All Time always
-  // averages true calendar years via a fresh getLifetimeYearly call, even
-  // when the chart itself is showing monthly bars (a young account, see
-  // lifetimeGranularity) — the bars being monthly there is a display
-  // choice for readability, not what "average yearly spending" should mean.
+  // disabledBeforeIndex/disabledAfterIndex above. All Time averages
+  // true calendar years.
   const averageInfo = useMemo(() => {
     if (mode === 'overview') return null;
-    const noun = mode === 'income' ? 'income' : 'spend';
 
     if (timeRange === 'month' || timeRange === 'year') {
       const series = mode === 'income' ? chartData.income : chartData.expense;
@@ -329,7 +266,7 @@ function SummaryCard({
       const total = real.reduce((a, b) => a + b, 0);
       if (total <= 0) return null;
       return {
-        label: timeRange === 'month' ? `Avg daily ${noun}` : `Avg monthly ${noun}`,
+        unit: timeRange === 'month' ? 'day' : 'month',
         value: total / real.length,
       };
     }
@@ -343,7 +280,7 @@ function SummaryCard({
       if (real.length < 2) return null;
       const total = real.reduce((a, b) => a + b, 0);
       if (total <= 0) return null;
-      return { label: `Avg yearly ${noun}`, value: total / real.length };
+      return { unit: 'year', value: total / real.length };
     }
 
     return null;
@@ -439,7 +376,7 @@ function SummaryCard({
   prevModeForRevealRef.current = mode;
   if (hasAnyData) hadDataRef.current = true;
   const chartInstant = !growFromZero;
-  const labelStep = timeRange === 'month' ? 4 : (timeRange === '5y' && lifetimeGranularity === 'month' ? 6 : 1);
+  const labelStep = timeRange === 'month' ? 4 : 1;
 
   // No per-bar selection in 5y — see the BarChart/LineChart call sites'
   // own comment on why "All Time" isn't a drill-down at any range.
@@ -489,10 +426,8 @@ function SummaryCard({
     transform: [{ translateX: chartTranslateX.value }],
   }));
 
-  // Swipe the chart itself to change Month/Year/All — this is what actually
-  // replaced the pill row (SHOW_RANGE_SELECTOR above): the three states
-  // didn't go away, they just don't need a permanent row of chrome to
-  // reach. Left = forward through the list (Month → Year → All, the same
+  // Swipe the chart itself to change Month/Year/All — the three states need no
+  // permanent row of chrome to reach. Left = forward through the list (Month → Year → All, the same
   // order RANGE_OPTIONS already defines), right = back; stops at either
   // end rather than wrapping, since this is a zoom level, not a cycle.
   // activeOffsetX/failOffsetY mirror AddModal's own Pan gesture — a real
@@ -527,16 +462,6 @@ function SummaryCard({
       onTimeRangeChange(next);
     }
   }, [resolveNextRange, onTimeRangeChange]);
-
-  // Which edge chevrons show, in lockstep with what a swipe can actually
-  // do: Month is the first stop (only a "forward" arrow, on the right —
-  // swiping left is what moves forward), Year sits in the middle (both
-  // directions live), All is the last stop (only "back", on the left).
-  // Income/Overview never reach Month (see changeRangeBy above), so on
-  // Year, in those two modes, there's nowhere left to swipe back to.
-  const rangeIndex = RANGE_OPTIONS.findIndex(o => o.id === timeRange);
-  const showLeftChevron = rangeIndex > 0 && !(mode !== 'expense' && rangeIndex === 1);
-  const showRightChevron = rangeIndex < RANGE_OPTIONS.length - 1;
 
   // The page-indicator dots below mirror only the stops a swipe can
   // actually reach — Income/Overview never touch Month (see
@@ -597,18 +522,6 @@ function SummaryCard({
           <AverageCaption info={averageInfo} light={light} />
         </View>
 
-        {/* Hidden, not removed — Month/Year/All is off for now, so the chart
-            just always shows Month (timeRange's own default in index.js).
-            The selector, its handler and timeRange itself are all still
-            wired up underneath; flip SHOW_RANGE_SELECTOR back on to bring
-            the row back exactly as it was. */}
-        {SHOW_RANGE_SELECTOR && (
-          <RangeSelector value={timeRange} onChange={onTimeRangeChange} light={light} />
-        )}
-
-        {/* position:'relative' scopes the chevrons below to just this
-            chart's own box, not the whole card — otherwise they'd center
-            across the amount block above too. */}
         <View style={{ position: 'relative' }}>
           <GestureDetector gesture={chartSwipe}>
             <Animated.View className="mt-4" style={chartAnimStyle}>
@@ -626,6 +539,10 @@ function SummaryCard({
                 // spans the full 12 months (or padded year slots), but the
                 // lines themselves stop at the last real point instead of
                 // dropping to zero and running flat through the future.
+                // Sits at the bottom of the same box the bar chart fills, so
+                // its axis labels land where the bars' do and nothing below it
+                // moves when the tab changes; any spare room is above it.
+                <View style={{ width: '100%', aspectRatio: BAR_CHART_ASPECT, justifyContent: 'flex-end' }}>
                 <LineChart
                   incomeData={chartData.income}
                   expenseData={chartData.expense}
@@ -641,6 +558,7 @@ function SummaryCard({
                   instant={chartInstant}
                   light={light}
                 />
+                </View>
               ) : (
                 // No onBarClick/onDeselect: this chart isn't a drill-down at
                 // any range. Omitting them is what removes the interaction —
@@ -657,7 +575,7 @@ function SummaryCard({
                   accentIndex={chartActiveIndex >= 0 ? chartActiveIndex : disabledAfterIndex}
                   disabledAfterIndex={disabledAfterIndex}
                   disabledBeforeIndex={disabledBeforeIndex}
-                  hideLabelAfterIndex={timeRange === '5y' && lifetimeGranularity === 'year' ? disabledAfterIndex : null}
+                  hideLabelAfterIndex={timeRange === '5y' ? disabledAfterIndex : null}
                   // Expense mode's values are all >= 0 magnitudes with
                   // isIncome false, so toneFor's sign check never fires and
                   // every bar comes out flat red; Income mode mirrors that
@@ -672,31 +590,14 @@ function SummaryCard({
                   // and Year/All's bars are monthly totals, not single days.
                   noSpendDots={mode === 'expense' && timeRange === 'month'}
                   instant={chartInstant}
+                  // All Time has few bars, which would otherwise come out wide:
+                  // they keep the same width as the Year tab's monthly candles.
+                  barWidth={timeRange === '5y' ? MONTHLY_BAR_W : undefined}
                   light={light}
                 />
               )}
             </Animated.View>
           </GestureDetector>
-
-          {/* Pure hint, not a second tap target — pointerEvents="none" so
-              these never compete with the swipe/tap gesture underneath,
-              which already covers the whole chart. bottom:36 (more than the
-              axis labels alone need) shifts the centring region up a bit,
-              closer to the bars' own visual centre rather than the chart's
-              full height including its labels. Which side(s) show is just
-              rangeIndex's position in RANGE_OPTIONS (see above). */}
-          {showLeftChevron && (
-            <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, bottom: 36, justifyContent: 'center' }}>
-              <View style={{ transform: [{ rotate: '180deg' }] }}>
-                <ChevronRight color={textColor(light).disabled} />
-              </View>
-            </View>
-          )}
-          {showRightChevron && (
-            <View pointerEvents="none" style={{ position: 'absolute', right: 0, top: 0, bottom: 36, justifyContent: 'center' }}>
-              <ChevronRight color={textColor(light).disabled} />
-            </View>
-          )}
         </View>
 
         {/* A plain page-indicator, not colored — Month/Year/All aren't a

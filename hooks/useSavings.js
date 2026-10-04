@@ -226,9 +226,11 @@ export function useSavings(onEntryLogged) {
   // fires from whatever caused the crossing (a deposit, an edited entry, a lowered
   // target), once per crossing. Like the other events, it carries no names or
   // amounts.
+  // A loan reaching what it owes is 'debt_cleared' (paid off) rather than a
+  // savings event, so the two don't mix in the numbers.
   const trackReached = useCallback((goal, savedBefore, savedAfter, targetAfter = goal.target) => {
     if (savedBefore >= goal.target || savedAfter < targetAfter) return
-    posthog?.capture('savings_goal_reached', { days_since_created: daysSince(goal.createdAt) })
+    posthog?.capture(goal.kind === 'debt' ? 'debt_cleared' : 'savings_goal_reached', { days_since_created: daysSince(goal.createdAt) })
   }, [posthog])
 
   // `kind` — 'savings' (default, every existing caller) or 'debt'. A debt
@@ -267,7 +269,10 @@ export function useSavings(onEntryLogged) {
     })
     if (result.success) {
       hapticAdded()
-      posthog?.capture(kind === 'debt' ? 'debt_created' : 'savings_goal_created')
+      // Like every event here, no names or amounts: for a loan, only its shape
+      // (EMI or flexible) and, for an EMI loan, how many EMIs it runs.
+      if (kind === 'debt') posthog?.capture('debt_created', { debt_type: debtType, tenure_months: tenureMonths })
+      else posthog?.capture('savings_goal_created')
       return { ...result, id }
     }
     return result
@@ -328,7 +333,10 @@ export function useSavings(onEntryLogged) {
         .eq('id', id).eq('user_id', user.id),
       rollback: () => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? prev : g) })),
     })
-    if (result.success && done) posthog?.capture('savings_goal_completed', { days_since_created: daysSince(prev.createdAt) })
+    if (result.success && done) {
+      // A loan marked cleared by hand (or closed early) is its own event.
+      posthog?.capture(prev.kind === 'debt' ? 'debt_marked_cleared' : 'savings_goal_completed', { days_since_created: daysSince(prev.createdAt) })
+    }
     return result
   }, [write, user, posthog])
 
@@ -360,7 +368,10 @@ export function useSavings(onEntryLogged) {
     })
     if (result.success) {
       hapticAdded()
-      posthog?.capture('savings_money_moved', { type })
+      // A payment on a loan is 'debt_payment_added'; money moved on a savings
+      // goal keeps 'savings_money_moved'.
+      if (goal?.kind === 'debt') posthog?.capture('debt_payment_added', { debt_type: goal.debtType, type })
+      else posthog?.capture('savings_money_moved', { type })
       if (goal) trackReached(goal, saved, saved + (type === 'add' ? value : -value))
       return { ...result, id }
     }

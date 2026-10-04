@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { useNetwork } from '../context/NetworkContext';
 import { SETTLE_EASING } from '../utils/motion';
+import { FONT } from '../utils/type';
 
 const COPY = {
   offline: { text: "You're offline", color: 'rgba(255,255,255,0.55)' },
@@ -61,7 +62,7 @@ export function OfflineBanner() {
         style,
       ]}
     >
-      <Text style={{ color: copy.color, fontSize: 12.5, fontWeight: '600' }}>
+      <Text style={{ color: copy.color, fontSize: FONT.caption, fontWeight: '600' }}>
         {copy.text}
       </Text>
     </Animated.View>

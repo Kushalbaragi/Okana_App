@@ -1,11 +1,10 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, InteractionManager, View, Text, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, Easing } from 'react-native-reanimated';
 import BudgetStatusBar from './BudgetStatusBar';
 import BudgetSetupModal from './BudgetSetupModal';
 import BudgetPlan, { AddBudgetItemSheet } from './BudgetPlan';
-import { TourHint } from './TourHint';
 import { BackIcon } from './icons';
 import SegmentedSwitch from './SegmentedSwitch';
 import SavingsSection, { SavingsSheetsHost, useSavingsUI } from './SavingsSection';
@@ -13,9 +12,9 @@ import { ConfirmPill } from './ConfirmPill';
 import { InlineConfirm } from './InlineConfirm';
 import SavingsBoundary from './SavingsBoundary';
 import ErrorBoundary from './ErrorBoundary';
-import { useTourStep } from '../hooks/useTourStep';
 import { SETTLE_EASING } from '../utils/motion';
 import { formatCurrency } from '../utils/format';
+import { FONT } from '../utils/type';
 
 // The page has three sections, switched from the header: the budget bar it
 // always was, savings goals, and debt (loans tracked the same way as a
@@ -36,9 +35,6 @@ const SECTION_FADE_MS = 220;
 // juddery rather than synchronized, so Home now stays put and only this
 // page moves.
 const WALLET_SLIDE_DURATION = 480;
-// How long after the budget sheet closes before the tour may point at the budget
-// bar — long enough that the sheet is gone and the new budget has been seen.
-const BUDGET_SHEET_TOUR_DELAY_MS = 2000;
 // How long after a Budget Plan line's delete is confirmed it goes ahead even
 // if the dialog never reports having closed — same value and reasoning as
 // Home's own DELETE_BACKSTOP_MS and SavingsSection's GOAL_DELETE_BACKSTOP_MS.
@@ -64,7 +60,7 @@ const PLAN_CHECK_DELAY_MS = 350;
 // amount, spent, percent — plus what setting one needs: `onSubmit`, last month's
 // amount and spend, and `onSetupClosed` for the caller's own bookkeeping when the
 // sheet closes. The sheet opens right here on the page, not by closing it first.
-function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, light = false, userId, slideX }) {
+function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, light = false, userId, slideX, locked = false, onLocked }) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
@@ -74,11 +70,15 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
   // so switching costs nothing.
   const [section, setSection] = useState('budget');
   const [detailGoalId, setDetailGoalId] = useState(null);
-  const savingsUI = useSavingsUI();
+  // `locked` is an account with no access to add new things (trial over, or
+  // never started): a new goal, loan or plan line asks for a subscription
+  // instead, while logging money against a goal or loan that already exists
+  // is left alone.
+  const savingsUI = useSavingsUI({ locked, onLocked });
   // Debt is a second, fully independent instance of the same goal-tracking
   // UI — its own sheet/confirm state and its own selected-item id, since
   // opening a loan's detail page has nothing to do with a savings goal's.
-  const debtUI = useSavingsUI();
+  const debtUI = useSavingsUI({ locked, onLocked });
   const [detailDebtId, setDetailDebtId] = useState(null);
 
   // Switching Budget/Savings/Debt via the segmented control always lands on
@@ -118,7 +118,10 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
   // The Budget Plan's one popup — same "render at the page root, slide over
   // everything" treatment as the savings/debt sheets below.
   const [addItemOpen, setAddItemOpen] = useState(false);
-  const openAddItem = useCallback(() => setAddItemOpen(true), []);
+  const openAddItem = useCallback(() => {
+    if (locked) { onLocked?.(); return; }
+    setAddItemOpen(true);
+  }, [locked, onLocked]);
   // Tapping an existing line opens the same sheet in edit mode — `editingItem`
   // is that line, or null while adding/closed. Only one of the two can be
   // open at a time in practice (they're separate taps on a modal sheet), but
@@ -126,15 +129,6 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
   const [editingItem, setEditingItem] = useState(null);
   const openEditItem = useCallback((item) => setEditingItem(item), []);
   const closeItemSheet = useCallback(() => { setAddItemOpen(false); setEditingItem(null); }, []);
-  // What a plan line is most often for: a couple of common fixed bills, plus
-  // anything already tracked as a loan or a savings goal so its name is one
-  // tap away instead of retyped. Active ones only — a cleared loan or a
-  // finished goal isn't something you're still planning to pay into.
-  const planSuggestions = useMemo(
-    () => [...new Set(['Rent', 'Credit card', ...(savings?.debts || []), ...(savings?.goals || [])].map(g => g.name || g))],
-    [savings?.debts, savings?.goals]
-  );
-
   // Deleting a Budget Plan line asks first, same as every other delete in
   // the app (Home's own transaction delete, Savings/Debt's goal and entry
   // delete) — the dialog closes the instant "Delete" is tapped, and the
@@ -252,9 +246,7 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
   const confirmPlanCheck = useCallback(() => resolvePlanCheck(true), [resolvePlanCheck]);
   const declinePlanCheck = useCallback(() => resolvePlanCheck(false), [resolvePlanCheck]);
 
-  const budgetSheetClosedAtRef = useRef(0);
   const closeBudgetSheet = useCallback(() => {
-    budgetSheetClosedAtRef.current = Date.now();
     setBudgetSheetOpen(false);
     onSetupClosed?.();
   }, [onSetupClosed]);
@@ -288,14 +280,6 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
     budgetSheetOpen, closeBudgetSheet, pendingPlanCheck, declinePlanCheck, deleteItemTarget, closeDeleteItem, clearListConfirmOpen, closeClearListConfirm, addItemOpen, editingItem, closeItemSheet, confirmOpen, closeConfirm, debtConfirmOpen, closeDebtConfirm,
     sheetOpen, closeSheet, debtSheetOpen, closeDebtSheet, section, detailGoalId, detailDebtId, onClose,
   ]);
-
-  // First-run tour for this page: once a budget actually exists, what the
-  // budget bar shows. Separate from the Home-screen tour in app/(app)/index.js
-  // — this one only makes sense once the user has actually opened the
-  // calendar, not forced on them right after signup.
-  const budgetSectionRef = useRef(null);
-  const budgetTour = useTourStep(userId, 'calendar_budget_left');
-  const [budgetTourActive, setBudgetTourActive] = useState(false);
 
   // Slides in from the right (like a pushed page) rather than up from the
   // bottom — translateX/windowWidth, not translateY/windowHeight. No drag-
@@ -361,38 +345,9 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
     return () => sub.remove();
   }, [open, handleBack]);
 
-  const advanceBudgetTour = useCallback(() => {
-    budgetTour.markSeen();
-    setBudgetTourActive(false);
-  }, [budgetTour]);
-
   const pageStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: pageTranslateX.value }],
   }));
-
-  useEffect(() => {
-    // Resets immediately on close so a tour hint mid-flow doesn't linger
-    // pointing at a row that's now sliding off-screen with the sheet.
-    // Only the Budget section has anything for the tour to point at.
-    if (!open || section !== 'budget') { setBudgetTourActive(false); return; }
-    // Not while the budget sheet is up: setting a budget makes `hasBudget` true
-    // before the sheet has finished, and the tour must not appear over it.
-    if (!userId || budgetTourActive || budgetSheetOpen) return;
-    // Budget-left only makes sense once a budget actually exists — deferred
-    // (not skipped outright) until one does.
-    if (budgetTour.seen || !budget?.hasBudget) return;
-    // Just after the budget sheet closed, the step waits a further beat so
-    // the tour doesn't land the instant the sheet goes.
-    const sinceSheetClosed = Date.now() - budgetSheetClosedAtRef.current;
-    // At least the sheet's own opening slide, so the tour doesn't spotlight
-    // something that's still animating into place.
-    const settle = WALLET_SLIDE_DURATION + 150;
-    const delay = sinceSheetClosed < BUDGET_SHEET_TOUR_DELAY_MS
-      ? Math.max(settle, BUDGET_SHEET_TOUR_DELAY_MS - sinceSheetClosed)
-      : settle;
-    const t = setTimeout(() => setBudgetTourActive(true), delay);
-    return () => clearTimeout(t);
-  }, [open, section, userId, budgetTourActive, budgetSheetOpen, budgetTour.seen, budget?.hasBudget]);
 
   return (
     // A plain absolutely-positioned overlay, not a native <Modal> — see
@@ -450,7 +405,7 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
                     The calendar heatmap that used to fill this block (month
                     nav, day-of-week header, the shaded grid) was cut
                     entirely, not just visually trimmed. */}
-                {budget && <View ref={budgetSectionRef}><BudgetStatusBar {...budgetBar} onSetup={openBudgetSheet} light={light} /></View>}
+                {budget && <BudgetStatusBar {...budgetBar} onSetup={openBudgetSheet} light={light} />}
 
                 {/* The space that heatmap left behind, now a plan for where
                     next month's money is going, written before the salary
@@ -507,13 +462,6 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
               </Animated.View>
             </View>
 
-            <TourHint
-              visible={budgetTourActive}
-              targetRef={budgetSectionRef}
-              description="This shows what's left in your budget this month."
-              onNext={advanceBudgetTour}
-            />
-
             {/* Last child of the page, so its sheets slide up over everything
                 above — header included. Deferred with their sections above:
                 nothing can open one of these sheets before contentReady
@@ -546,6 +494,7 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
                   open={budgetSheetOpen}
                   onClose={closeBudgetSheet}
                   onSubmit={submitBudget}
+                  currentAmount={budgetBar.amount}
                   lastMonthAmount={lastMonthAmount}
                   lastMonthSpent={lastMonthSpent}
                 />
@@ -564,7 +513,6 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
                   onAdd={budgetPlan.addItem}
                   onEdit={budgetPlan.updateItem}
                   editItem={editingItem}
-                  suggestions={planSuggestions}
                   light={light}
                 />
               </ErrorBoundary>
@@ -635,7 +583,7 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
                     backgroundColor: light ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.92)',
                   }}
                 >
-                  <Text numberOfLines={1} style={{ color: light ? '#ffffff' : '#111111', fontSize: 13, fontWeight: '600' }}>{planToastText}</Text>
+                  <Text numberOfLines={1} style={{ color: light ? '#ffffff' : '#111111', fontSize: FONT.caption, fontWeight: '600' }}>{planToastText}</Text>
                 </View>
               </Animated.View>
             )}

@@ -5,7 +5,7 @@ import Animated, { useSharedValue, useAnimatedScrollHandler, useAnimatedStyle, r
 import Svg, { Defs, LinearGradient, Stop, Path, Rect, Text as SvgText } from 'react-native-svg';
 import { hapticTick } from '../utils/haptics';
 import { textColor } from '../utils/colors';
-import { TABULAR } from '../utils/type';
+import { TABULAR, FONT } from '../utils/type';
 
 // A ruler you drag sideways to set an amount: the ticks scroll under a fixed
 // centre line and the value is whichever one sits under it.
@@ -375,7 +375,8 @@ function buildMonthsScale(max) {
 // and never below MONTHS_MIN) so its own ruler only ever offers ticks the
 // loan actually has.
 export function monthsScale(max = MONTHS_MAX) {
-  const clampedMax = Math.max(MONTHS_MIN, Math.min(MONTHS_MAX, Math.round(max) || MONTHS_MAX));
+  // `max` of 0 is a real answer (a loan with no EMIs set yet has nothing to have paid), not "unset".
+  const clampedMax = Math.max(MONTHS_MIN, Math.min(MONTHS_MAX, Number.isFinite(max) ? Math.round(max) : MONTHS_MAX));
   return { ticks: Array.from({ length: clampedMax - MONTHS_MIN + 1 }, (_, i) => MONTHS_MIN + i), ...buildMonthsScale(clampedMax) };
 }
 
@@ -386,9 +387,9 @@ const figureFormat = new Intl.NumberFormat('en-IN');
 export function RulerFigure({ value, light = false }) {
   return (
     <Text
-      style={{ fontSize: 42, lineHeight: 50, fontWeight: '300', letterSpacing: -1, color: light ? '#111111' : '#ffffff', ...TABULAR }}
+      style={{ fontSize: FONT.display, lineHeight: 50, fontWeight: '300', letterSpacing: -1, color: light ? '#111111' : '#ffffff', ...TABULAR }}
     >
-      <Text style={{ fontSize: 26, fontWeight: '400', color: textColor(light).disabled }}>₹ </Text>
+      <Text style={{ fontSize: FONT.amount, fontWeight: '400', color: textColor(light).disabled }}>₹ </Text>
       {figureFormat.format(value)}
     </Text>
   );

@@ -80,7 +80,7 @@ function AppShell() {
 function CrashFallback() {
   return (
     <View className="flex-1 items-center justify-center px-8" style={{ backgroundColor: '#000000' }}>
-      <Text className="text-white text-lg font-semibold text-center">Something went wrong</Text>
+      <Text className="text-white text-xl font-semibold text-center">Something went wrong</Text>
       <Text className="text-center mt-2" style={{ color: 'rgba(255,255,255,0.5)' }}>
         Restart the app to keep going. Your data is safe.
       </Text>

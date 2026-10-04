@@ -4,15 +4,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, Easing, runOnJS } from 'react-native-reanimated';
 import { GlassPressable, POPUP_RADIUS, SMOOTH, CARD_RADIUS } from './Glass';
-import { NumericKeypad } from './NumericKeypad';
 import { useAmountEntry } from '../hooks/useAmountEntry';
-import { AmountRow } from './AmountField';
 import AmountRuler, { RulerFigure, BUDGET_SCALE } from './AmountRuler';
 import { TrendArrowIcon } from './icons';
 import { SuccessBadge } from './SuccessBadge';
 import { formatCurrency, currentMonthYear } from '../utils/format';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
-import { FLAGS } from '../utils/flags';
 import { hapticAdded } from '../utils/haptics';
 import { SETTLE_EASING } from '../utils/motion';
 import { OfflineBanner } from './OfflineBanner';
@@ -32,9 +29,9 @@ const BACKDROP_MAX_OPACITY = 0.55;
 const OPEN_MS = 340;
 const CLOSE_MS = 240;
 
-// Where the ruler starts when there is no previous month to carry over — a
-// visible suggestion to adjust, not a blank to fill in.
-const DEFAULT_BUDGET = 20000;
+// Where the ruler starts for someone who has never set a budget — a visible
+// suggestion to adjust, not a blank to fill in.
+const DEFAULT_BUDGET = 50000;
 
 // How long the "you set X more/less" confirmation holds on screen before
 // auto-redirecting home — long enough to actually read, short enough not to
@@ -67,18 +64,17 @@ function lastMonthMessage(lastMonthAmount, lastMonthSpent) {
 // calendar page) instead of in a native <Modal> of its own — a second native Modal
 // opened over the calendar is broken on Android, which is why this used to make
 // the calendar close first. The sheet, its drag and its confirmation are the same.
-function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, lastMonthSpent, inline = false }) {
+function BudgetSetupModal({ open, onClose, onClosed, onSubmit, currentAmount, lastMonthAmount, lastMonthSpent, inline = false }) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const { month: currMonth } = currentMonthYear();
 
-  // A string either way, so the keypad path and the ruler path share the
-  // submit logic below. With the ruler it starts as last month's budget — the
-  // natural starting point, so leaving it untouched just keeps things as they
-  // were — and `session` tells the ruler to go back there on each open.
-  const rulerOn = FLAGS.budgetRuler;
-  const startValue = lastMonthAmount ?? DEFAULT_BUDGET;
-  const { amount, prevAmountLength, skipDigitAnim, onKeyPress: handleKeypadPress, setProgrammatic: setAmountProgrammatically } = useAmountEntry(rulerOn ? String(startValue) : '');
+  // The ruler starts at the last budget that was set — this month's if there is
+  // one, else last month's — the natural starting point, so leaving it untouched
+  // just keeps things as they were; the first time ever it starts at
+  // DEFAULT_BUDGET. `session` tells the ruler to go back there on each open.
+  const startValue = currentAmount ?? lastMonthAmount ?? DEFAULT_BUDGET;
+  const { amount, setProgrammatic: setAmountProgrammatically } = useAmountEntry(String(startValue));
   const [session, setSession] = useState(0);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -131,7 +127,7 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
 
   useEffect(() => {
     if (open) {
-      setAmountProgrammatically(rulerOn ? String(startValue) : '');
+      setAmountProgrammatically(String(startValue));
       setSession(n => n + 1);
       setError('');
       setSubmitting(false);
@@ -242,7 +238,7 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
   // native Modal) stays mounted for good once it's been opened once, instead
   // of unmounting itself the moment `visible` goes false — unmounting (which
   // this did unconditionally before) tore the whole ruler down with it, and
-  // `rulerOn`'s minor/major tick Paths cover roughly 2,300 ticks across the
+  // The ruler's minor/major tick Paths cover roughly 2,300 ticks across the
   // full AMOUNT_BANDS range: cheap to keep around, but expensive for the
   // native SVG renderer to parse fresh, which is exactly what remounting
   // forced on every single open after the first. Already fully inert while
@@ -283,36 +279,28 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
                 <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.2)' }} />
               </View>
 
-              <Text className="text-white text-lg font-semibold text-center mb-2 px-6">
+              <Text className="text-white text-xl font-semibold text-center mb-2 px-6">
                 Set your {MONTH_NAMES[currMonth]} budget
               </Text>
               <Text className="text-white/50 text-base text-center mb-6 px-6" style={{ lineHeight: 22 }}>
                 How much do you want to spend this month?
               </Text>
 
-              {rulerOn ? (
-                <>
-                  <View className="items-center mb-2">
-                    <RulerFigure value={parseFloat(amount) || 0} />
-                  </View>
+              <View className="items-center mb-2">
+                <RulerFigure value={parseFloat(amount) || 0} />
+              </View>
 
-                  {/* Edge to edge, so the ticks can run off both sides of the screen. */}
-                  <AmountRuler
-                    scale={BUDGET_SCALE}
-                    initialValue={startValue}
-                    sessionKey={session}
-                    onChange={v => setAmountProgrammatically(String(v))}
-                    surface={SHEET_COLOR}
-                  />
-                </>
-              ) : (
-                <View className="items-center mb-6">
-                  <AmountRow amount={amount} prevAmountLength={prevAmountLength} skipDigitAnim={skipDigitAnim} />
-                </View>
-              )}
+              {/* Edge to edge, so the ticks can run off both sides of the screen. */}
+              <AmountRuler
+                scale={BUDGET_SCALE}
+                initialValue={startValue}
+                sessionKey={session}
+                onChange={v => setAmountProgrammatically(String(v))}
+                surface={SHEET_COLOR}
+              />
 
               {recap && (
-                <View className="px-6" style={{ marginTop: rulerOn ? 24 : 0 }}>
+                <View className="px-6" style={{ marginTop: 24 }}>
                   <View
                     className="px-4 py-3 w-full"
                     style={{
@@ -321,16 +309,16 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
                       backgroundColor: 'rgba(0,0,0,0.18)', borderColor: 'rgba(255,255,255,0.07)',
                     }}
                   >
-                    <Text className="text-white/35 text-xs font-semibold uppercase tracking-wide mb-1.5">Last month</Text>
+                    <Text className="text-white/35 text-[13px] font-semibold uppercase tracking-wide mb-1.5">Last month</Text>
                     <Text className="text-white text-base font-medium mb-1">{recap.stat}</Text>
-                    <Text className="text-sm" style={{ color: recap.color, lineHeight: 18 }}>{recap.hint}</Text>
+                    <Text className="text-[13px]" style={{ color: recap.color, lineHeight: 18 }}>{recap.hint}</Text>
                   </View>
                 </View>
               )}
 
               {!!error && <Text className="text-red-400 text-base text-center mx-5 mt-4">{error}</Text>}
 
-              <View style={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: rulerOn ? Math.max(insets.bottom, 8) + 12 : 20 }}>
+              <View style={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: Math.max(insets.bottom, 8) + 12 }}>
                 <GlassPressable
                   variant="active"
                   radius={9999}
@@ -342,7 +330,6 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
                 </GlassPressable>
               </View>
 
-              {!rulerOn && <NumericKeypad onKeyPress={handleKeypadPress} insetBottom={insets.bottom} />}
             </Animated.View>
 
             {confirmDelta && (
@@ -357,7 +344,7 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
                 {confirmDelta.greeting ? (
                   <>
                     <SuccessBadge style={{ marginBottom: 24 }} />
-                    <Text className="text-white text-lg font-semibold text-center" style={{ lineHeight: 26 }}>
+                    <Text className="text-white text-xl font-semibold text-center" style={{ lineHeight: 26 }}>
                       You set {formatCurrency(confirmDelta.amount)} budget{'\n'}for {MONTH_NAMES[currMonth]}. Stick with it!
                     </Text>
                   </>
@@ -369,7 +356,7 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
                     >
                       <TrendArrowIcon up={confirmDelta.up} color={confirmColor} size={28} />
                     </View>
-                    <Text className="text-white text-lg font-semibold text-center" style={{ lineHeight: 26 }}>
+                    <Text className="text-white text-xl font-semibold text-center" style={{ lineHeight: 26 }}>
                       You decided to spend{'\n'}{formatCurrency(confirmDelta.diff)} {confirmDelta.up ? 'more' : 'less'} this month
                     </Text>
                   </>

@@ -7,7 +7,7 @@ import AmountEntrySheet from './AmountEntrySheet';
 import { Card, cardFill, dim, money } from './savingsShared';
 import { CheckIcon, PlusIcon } from './icons';
 import { textColor } from '../utils/colors';
-import { BODY } from '../utils/type';
+import { BODY, FONT } from '../utils/type';
 
 // This is the space the calendar's Budget section used to give a heatmap
 // (see WalletPage's own comment on that being cut) — now a plan for
@@ -146,11 +146,11 @@ function BudgetPlan({ plan, onAddPress, onEditItem, onItemChecked, onRequestChec
         </Text>
         <View className="flex-row items-center" style={{ gap: 14 }}>
           {/* Only once there's something TO clear — an empty list already
-              says "Nothing planned yet" below, so a clear action next to
+              explains itself below, so a clear action next to
               that would just be asking to clear nothing. */}
           {items.length > 0 && (
             <Pressable onPress={onRequestClear} accessibilityRole="button" accessibilityLabel="Clear plan list" hitSlop={8}>
-              <Text style={{ fontSize: 13, color: textColor(light).tertiary }}>Clear list</Text>
+              <Text style={{ fontSize: FONT.caption, color: textColor(light).tertiary }}>Clear list</Text>
             </Pressable>
           )}
           <Pressable
@@ -167,7 +167,9 @@ function BudgetPlan({ plan, onAddPress, onEditItem, onItemChecked, onRequestChec
       <Card light={light}>
         <View style={{ paddingVertical: 8 }}>
         {items.length === 0 ? (
-          <Text style={[ROW_PAD, { fontSize: 14, color: textColor(light).tertiary }]}>Nothing planned yet.</Text>
+          <Text style={[ROW_PAD, { fontSize: FONT.caption, lineHeight: 20, color: textColor(light).tertiary }]}>
+            Decide where your salary needs to spend before it arrives.
+          </Text>
         ) : (
           <>
             {sortedItems.map((item, i) => (
@@ -190,7 +192,7 @@ function BudgetPlan({ plan, onAddPress, onEditItem, onItemChecked, onRequestChec
                 { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: dim(light, 0.08) },
               ]}
             >
-              <Text style={{ fontSize: 15, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}>{money(total)}</Text>
+              <Text style={{ fontSize: FONT.body, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}>{money(total)}</Text>
             </View>
           </>
         )}
@@ -210,9 +212,8 @@ function BudgetPlan({ plan, onAddPress, onEditItem, onItemChecked, onRequestChec
 // line rather than starting a new one — its own name and amount become the
 // starting point instead of the blank/default ones, the title and button
 // say "Edit"/"Save" instead of "Add", and submitting calls `onEdit` with its
-// id instead of `onAdd`. Suggestion chips are an add-only shortcut — a line
-// already has a name once you're editing it.
-export function AddBudgetItemSheet({ open, onClose, onClosed, onAdd, onEdit, editItem, suggestions = [], light = false }) {
+// id instead of `onAdd`.
+export function AddBudgetItemSheet({ open, onClose, onClosed, onAdd, onEdit, editItem, light = false }) {
   const isEdit = !!editItem;
   return (
     <AmountEntrySheet
@@ -222,13 +223,9 @@ export function AddBudgetItemSheet({ open, onClose, onClosed, onAdd, onEdit, edi
       light={light}
       namePlaceholder="e.g. Rent, EMI, investment"
       initialName={editItem?.name || ''}
-      nameSuggestions={isEdit ? [] : suggestions}
       initialAmount={editItem?.amount ?? 0}
-      // Fixed, not left to AmountEntrySheet's own default — that default
-      // grows the sheet (and with it, the name field's position on
-      // screen) the moment focusing the name field reveals the
-      // suggestion chips. Sized as if the chips were always showing, so
-      // that growth never happens: the name field stays put.
+      // Fixed, not left to AmountEntrySheet's own default, so the sheet's size
+      // (and with it the name field's position) never changes.
       //
       // 0.72 — the same COMPACT_RATIO every other caller falls back to,
       // not a smaller value. Tried 0.62 for a more compact feel, but

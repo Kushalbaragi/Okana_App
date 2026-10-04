@@ -9,6 +9,7 @@ import { CheckIcon, ChevronRight } from './icons';
 import { POSITIVE, dim } from './savingsShared';
 import { hapticAdded, hapticTick } from '../utils/haptics';
 import { reportError } from '../utils/errors';
+import { FONT } from '../utils/type';
 
 const HEIGHT = 56;
 const BORDER = 1;
@@ -26,7 +27,6 @@ const SNAP_MS = 120;
 // One shimmer pass per SHIMMER_MS; SPREAD is how many letters the highlight spans.
 const SHIMMER_MS = 2200;
 const SPREAD = 3;
-const HINT_SIZE = 15;
 
 function ShimmerChar({ ch, i, n, phase, color, still }) {
   const style = useAnimatedStyle(() => {
@@ -34,7 +34,7 @@ function ShimmerChar({ ch, i, n, phase, color, still }) {
     const d = phase.value * (n + SPREAD * 2) - SPREAD - i;
     return { opacity: 0.5 + 0.5 * Math.max(0, 1 - Math.abs(d) / SPREAD) };
   });
-  return <Animated.Text style={[{ fontSize: HINT_SIZE, fontWeight: '500', color }, style]}>{ch}</Animated.Text>;
+  return <Animated.Text style={[{ fontSize: FONT.body, fontWeight: '500', color }, style]}>{ch}</Animated.Text>;
 }
 
 // The hint, with a soft highlight sweeping across it letter by letter — a
@@ -143,7 +143,7 @@ export default function SlideToPay({ label, paidLabel, paid, onComplete, light =
         accessibilityRole="text"
       >
         <CheckIcon size={16} color={POSITIVE} />
-        <Text style={{ fontSize: HINT_SIZE, fontWeight: '500', color: POSITIVE }}>{paidLabel}</Text>
+        <Text style={{ fontSize: FONT.body, fontWeight: '500', color: POSITIVE }}>{paidLabel}</Text>
       </View>
     );
   }

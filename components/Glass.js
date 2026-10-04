@@ -1,4 +1,4 @@
-import { View, Pressable, TextInput, StyleSheet } from 'react-native';
+import { View, Pressable, StyleSheet } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring } from 'react-native-reanimated';
 import { SPRING_BOUNCY } from '../utils/motion';
 
@@ -44,7 +44,7 @@ const BG = {
 
 // Tailwind's rounded-* scale, so call sites can pass the same vocabulary
 // they'd use in a className elsewhere in the app.
-export const RADIUS = { none: 0, sm: 6, md: 8, lg: 10, xl: 12, '2xl': 16, '3xl': 24, full: 9999 };
+const RADIUS = { none: 0, sm: 6, md: 8, lg: 10, xl: 12, '2xl': 16, '3xl': 24, full: 9999 };
 
 // Apple-style corners. iOS draws its own shapes with a "continuous" curve, which
 // eases into the straight edge instead of meeting it at the hard arc a plain
@@ -64,15 +64,6 @@ function radiusStyle(radius, corners) {
   if (corners.includes('t')) { style.borderTopLeftRadius = radius; style.borderTopRightRadius = radius; }
   if (corners.includes('b')) { style.borderBottomLeftRadius = radius; style.borderBottomRightRadius = radius; }
   return style;
-}
-
-export function GlassView({ variant = 'glass', radius = 0, corners, style, className, children, ...props }) {
-  const r = radiusStyle(radius, corners);
-  return (
-    <View style={[{ backgroundColor: BG[variant] }, r, style]} className={className} {...props}>
-      {children}
-    </View>
-  );
 }
 
 // Press feedback used to be an instant opacity snap (Pressable's own
@@ -132,21 +123,5 @@ export function GlassPressable({ variant = 'active', radius = RADIUS.xl, corners
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: BG[variant] }, r]} />
       {children}
     </AnimatedPressable>
-  );
-}
-
-export function GlassTextInput({ radius = RADIUS.xl, style, className, inputClassName, ...props }) {
-  const r = radiusStyle(radius);
-  return (
-    <View
-      style={[{ backgroundColor: 'transparent', borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)' }, r, style]}
-      className={className}
-    >
-      <TextInput
-        placeholderTextColor="#4d4d4d"
-        style={INPUT_TEXT_STYLE}
-        className={inputClassName || "text-white text-base px-4 py-3.5"}
-        {...props} />
-    </View>
   );
 }

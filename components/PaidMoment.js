@@ -6,7 +6,9 @@ import Animated, {
 import Svg, { Path } from 'react-native-svg';
 import { POSITIVE, money } from './savingsShared';
 import { hapticAdded } from '../utils/haptics';
-import { TABULAR } from '../utils/type';
+import { TABULAR, FONT } from '../utils/type';
+import { seg, soft } from '../utils/timeline';
+import RollingNumber from './RollingNumber';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
@@ -34,61 +36,6 @@ const HAPTIC_AT = 1500;
 const RING_PATH = 'M46 4a42 42 0 1 1 0 84a42 42 0 1 1 0-84';
 const RING_LEN = 264;
 const TICK_LEN = 56;
-
-const seg = (ms, range) => {
-  'worklet';
-  const x = Math.min(1, Math.max(0, (ms - range[0]) / (range[1] - range[0])));
-  return 1 - (1 - x) * (1 - x) * (1 - x);
-};
-
-// The exits use a smoothstep (slow at both ends) instead of the ease-out the
-// beats use, so nothing starts or stops with a visible edge.
-const soft = (ms, range) => {
-  'worklet';
-  const x = Math.min(1, Math.max(0, (ms - range[0]) / (range[1] - range[0])));
-  return x * x * (3 - 2 * x);
-};
-
-// One character position of a rolling number: the old character slides up and
-// out while the new one slides in from below, together, inside a box one line
-// tall so nothing shows outside it.
-function RollChar({ oldCh, newCh, ms, range, style, lh }) {
-  const oldStyle = useAnimatedStyle(() => {
-    const p = seg(ms.value, range);
-    return { opacity: 1 - p, transform: [{ translateY: -lh * p }] };
-  });
-  const newStyle = useAnimatedStyle(() => {
-    const p = seg(ms.value, range);
-    return { opacity: p, transform: [{ translateY: lh * (1 - p) }] };
-  });
-  const place = [style, { position: 'absolute', left: 0, right: 0, textAlign: 'center' }];
-  return (
-    <View style={{ height: lh, overflow: 'hidden', justifyContent: 'center' }}>
-      {/* Invisible, only to give the box its width. */}
-      <Text style={[style, { opacity: 0 }]}>{newCh || oldCh}</Text>
-      <Animated.Text style={[...place, oldStyle]}>{oldCh}</Animated.Text>
-      <Animated.Text style={[...place, newStyle]}>{newCh}</Animated.Text>
-    </View>
-  );
-}
-
-// A number that changes digit by digit: only the characters that differ
-// (lined up from the right) roll, the rest — the ₹, the commas, a digit that
-// stays the same — sit still. 26 → 25 rolls just the 6.
-function RollingNumber({ from, to, ms, range, style, lh }) {
-  const a = Array.from(from).reverse();
-  const b = Array.from(to).reverse();
-  const n = Math.max(a.length, b.length);
-  const cells = [];
-  for (let i = n - 1; i >= 0; i -= 1) {
-    const oldCh = a[i] ?? '';
-    const newCh = b[i] ?? '';
-    cells.push(oldCh === newCh
-      ? <Text key={i} style={style}>{oldCh}</Text>
-      : <RollChar key={i} oldCh={oldCh} newCh={newCh} ms={ms} range={range} style={style} lh={lh} />);
-  }
-  return <View style={{ flexDirection: 'row', alignItems: 'center', height: lh }}>{cells}</View>;
-}
 
 // The paid moment: not a pop-up, just the page going dark for a few seconds.
 // `prevRemaining`/`remaining` are the money owed before and after this EMI,
@@ -143,8 +90,8 @@ export default function PaidMoment({ title, milestone, left, prevLeft, remaining
   const ink = light ? '#111111' : '#ffffff';
   const mute = light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)';
   const scrim = light ? 'rgba(255,255,255,0.97)' : 'rgba(0,0,0,0.97)';
-  const numText = { fontSize: 40, fontWeight: '300', lineHeight: 48, color: ink, ...TABULAR };
-  const amtText = { fontSize: 26, fontWeight: '300', letterSpacing: -0.5, lineHeight: 34, color: ink, ...TABULAR };
+  const numText = { fontSize: FONT.display, fontWeight: '300', lineHeight: 48, color: ink, ...TABULAR };
+  const amtText = { fontSize: FONT.amount, fontWeight: '300', letterSpacing: -0.5, lineHeight: 34, color: ink, ...TABULAR };
   const centred = { position: 'absolute', alignItems: 'center' };
 
   // A transparent Modal, like Celebration's: it covers the whole device, so
@@ -161,18 +108,18 @@ export default function PaidMoment({ title, milestone, left, prevLeft, remaining
               <AnimatedPath d={RING_PATH} stroke={POSITIVE} strokeWidth={3} strokeLinecap="round" strokeDasharray={RING_LEN} animatedProps={ringProps} />
               <AnimatedPath d="M28 47l12 12 24-26" stroke={POSITIVE} strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={TICK_LEN} animatedProps={tickProps} />
             </Svg>
-            <Animated.Text style={[{ fontSize: 14, fontWeight: '300', marginTop: 14, color: ink }, labelStyle]}>{title}</Animated.Text>
+            <Animated.Text style={[{ fontSize: FONT.caption, fontWeight: '300', marginTop: 14, color: ink }, labelStyle]}>{title}</Animated.Text>
           </Animated.View>
 
           <Animated.View style={[centred, amountStyle]}>
             <RollingNumber from={money(prevRemaining)} to={money(remaining)} ms={ms} range={AMOUNT_ROLL} style={amtText} lh={34} />
-            <Text style={{ fontSize: 12, fontWeight: '300', color: mute, marginTop: 6 }}>left to pay</Text>
+            <Text style={{ fontSize: FONT.caption, fontWeight: '300', color: mute, marginTop: 6 }}>left to pay</Text>
           </Animated.View>
 
           <Animated.View style={[centred, countStyle]}>
-            {!!milestone && <Text style={{ fontSize: 13, fontWeight: '300', color: POSITIVE, marginBottom: 8 }}>{milestone}</Text>}
+            {!!milestone && <Text style={{ fontSize: FONT.caption, fontWeight: '300', color: POSITIVE, marginBottom: 8 }}>{milestone}</Text>}
             <RollingNumber from={String(prevLeft)} to={String(left)} ms={ms} range={COUNT_ROLL} style={numText} lh={48} />
-            <Text style={{ fontSize: 12, fontWeight: '300', color: mute, marginTop: 6 }}>EMIs to go</Text>
+            <Text style={{ fontSize: FONT.caption, fontWeight: '300', color: mute, marginTop: 6 }}>EMIs to go</Text>
           </Animated.View>
         </Animated.View>
       </View>

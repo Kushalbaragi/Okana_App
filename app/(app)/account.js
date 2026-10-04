@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, Platform, StyleSheet, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -20,7 +20,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
 import { isConnectivityError, reportError } from '../../utils/errors';
 import { clearAllUserData, clearDataCaches } from '../../utils/localData';
-import { openLink } from '../../utils/links';
+import { openLink, openStoreListing, TERMS_URL } from '../../utils/links';
 import { useSubscription } from '../../hooks/useSubscription';
 import { useTransactions } from '../../hooks/useTransactions';
 import { openManageSubscription } from '../../hooks/usePurchases';
@@ -32,14 +32,14 @@ import { textColor } from '../../utils/colors';
 import { BackIcon, EditIcon, ChevronRight, CheckIcon, CameraIcon } from '../../components/icons';
 import { ONBOARDING_SEEN_KEY } from '../onboarding';
 import { AnimatedModal } from '../../components/AnimatedModal';
+import EditNameSheet from '../../components/EditNameSheet';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { ActionOverlay } from '../../components/ActionOverlay';
 import * as SettingsUI from '../../components/SettingsUI';
-import { TourHint, TOUR_HINT_BORDER_WIDTH, TOUR_HINT_BORDER_COLOR } from '../../components/TourHint';
-import { useTourStep } from '../../hooks/useTourStep';
 import { CARD_RADIUS, POPUP_RADIUS, SMOOTH } from '../../components/Glass';
 import { SETTLE_EASING } from '../../utils/motion';
 import { GUTTER } from '../../utils/spacing';
+import { FONT } from '../../utils/type';
 
 // One-flag experiment: a light theme for just this screen. Flip back to
 // false to fully revert. Mirrors the same LIGHT_HOME flag in app/(app)/index.js.
@@ -70,7 +70,7 @@ function Pill({ label, tone = 'green' }) {
   const bg = tone === 'red' ? 'rgba(248,113,113,0.14)' : 'rgba(74,222,128,0.14)';
   return (
     <View style={{ backgroundColor: bg, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999 }}>
-      <Text style={{ color, fontSize: 12, fontWeight: '600' }}>{label}</Text>
+      <Text style={{ color, fontSize: FONT.caption, fontWeight: '600' }}>{label}</Text>
     </View>
   );
 }
@@ -136,11 +136,7 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 // new photo by the time 'success' fires, what gets revealed is the new
 // photo, reading as it "fading in" even though the image itself never
 // moved — the check disappearing is what does the work.
-// forwardRef so the Settings screen can measure this exact 80x80 circle for
-// the "add your profile photo" tour hint — the wrapping layout View around
-// it also has vertical padding and stretches to the row's full width, which
-// would highlight a wide rectangle instead of hugging the actual circle.
-const AvatarPhoto = forwardRef(function AvatarPhoto({ uri, phase, onPress }, ref) {
+function AvatarPhoto({ uri, phase, onPress }) {
   const ringOpacity = useSharedValue(0);
   const ringProgress = useSharedValue(0); // 0 → 1
   const checkOpacity = useSharedValue(0);
@@ -206,7 +202,6 @@ const AvatarPhoto = forwardRef(function AvatarPhoto({ uri, phase, onPress }, ref
 
   return (
     <Pressable
-      ref={ref}
       onPress={onPress}
       disabled={phase === 'uploading'}
       style={{ width: 80, height: 80 }}
@@ -278,7 +273,7 @@ const AvatarPhoto = forwardRef(function AvatarPhoto({ uri, phase, onPress }, ref
       </Animated.View>
     </Pressable>
   );
-});
+}
 
 // The shared confirm dialog, with this screen's theme.
 function ConfirmModal(props) {
@@ -313,7 +308,7 @@ function DeleteAccountOverlay({ type, phase, onDone, subscriptionWarning }) {
     >
       {subscriptionWarning && (
         <>
-          <Text className="text-sm text-center mt-3" style={{ lineHeight: 19, color: textColor(LIGHT_SETTINGS).tertiary }}>
+          <Text className="text-[13px] text-center mt-3" style={{ lineHeight: 19, color: textColor(LIGHT_SETTINGS).tertiary }}>
             Your {Platform.OS === 'ios' ? 'App Store' : 'Play Store'} subscription is still active — cancel it to stop future charges.
           </Text>
           <Pressable
@@ -321,7 +316,7 @@ function DeleteAccountOverlay({ type, phase, onDone, subscriptionWarning }) {
             className="mt-4 px-4 py-[10px] rounded-full"
             style={{ backgroundColor: 'rgba(74,222,128,0.14)' }}
           >
-            <Text className="text-sm font-semibold" style={{ color: '#4ade80' }}>Manage Subscription</Text>
+            <Text className="text-[13px] font-semibold" style={{ color: '#4ade80' }}>Manage Subscription</Text>
           </Pressable>
         </>
       )}
@@ -365,7 +360,7 @@ function BottomBanner({ visible, children }) {
         style,
       ]}
     >
-      <Text className="text-sm font-medium text-center" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.80)' }}>{children}</Text>
+      <Text className="text-[13px] font-medium text-center" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.80)' }}>{children}</Text>
     </Animated.View>
   );
 }
@@ -418,11 +413,7 @@ export default function AccountPage() {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(profile?.name || '');
   const [savingName, setSavingName] = useState(false);
-  // A tap on Save blurs the TextInput (see its onBlur below) before Save's
-  // own onPress actually fires — a ref, not state, because the deferred
-  // onBlur check below needs the CURRENT value the instant it runs, not
-  // whatever `savingName` was captured as when that closure was created.
-  const nameSaveInFlightRef = useRef(false);
+  const [nameError, setNameError] = useState('');
   const [avatarPhase, setAvatarPhase] = useState('idle'); // 'idle' | 'uploading' | 'success'
 
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -503,19 +494,17 @@ export default function AccountPage() {
     if (savingName) return;
     if (!nameInput.trim() || nameInput.trim() === profile?.name) { setEditingName(false); return; }
     if (!isOnline) { notifyOffline(); return; }
-    nameSaveInFlightRef.current = true;
     setSavingName(true);
-    setActionError('');
+    setNameError('');
     try {
       const { error } = await supabase.auth.updateUser({ data: { name: nameInput.trim() } });
       if (error) throw error;
       setEditingName(false);
     } catch (err) {
       if (isConnectivityError(err, isOnline)) { notifyOffline(); }
-      else { reportError(err); setActionError(err.message || 'Failed to update name. Please try again.'); }
+      else { reportError(err); setNameError(err.message || 'Failed to update name. Please try again.'); }
     } finally {
       setSavingName(false);
-      nameSaveInFlightRef.current = false;
     }
   }
 
@@ -996,29 +985,8 @@ export default function AccountPage() {
 
   const isFocused = useIsFocused();
 
-  // One-time nudge to set a profile photo — only for accounts that don't
-  // have one yet, and deferred until the screen is actually focused (not
-  // fired the instant it mounts underneath something else, same "wait for
-  // focus" reasoning as refreshSubscription above).
-  const rootRef = useRef(null);
-  const avatarRef = useRef(null);
-  const avatarTour = useTourStep(user?.id, 'settings_add_photo');
-  const [avatarTourActive, setAvatarTourActive] = useState(false);
-
-  useEffect(() => {
-    if (!isFocused) { setAvatarTourActive(false); return; }
-    if (!user || avatarTour.seen || profile?.avatar) return;
-    const t = setTimeout(() => setAvatarTourActive(true), 900);
-    return () => clearTimeout(t);
-  }, [isFocused, user, avatarTour.seen, profile?.avatar]);
-
-  const advanceAvatarTour = useCallback(() => {
-    avatarTour.markSeen();
-    setAvatarTourActive(false);
-  }, [avatarTour]);
-
   return (
-    <View ref={rootRef} className="flex-1" style={{ backgroundColor: SETTINGS_BG }}>
+    <View className="flex-1" style={{ backgroundColor: SETTINGS_BG }}>
       {/* Only forces a dark status bar while this (experimentally light)
           screen is actually focused — see the same pattern in
           app/(app)/index.js for why this doesn't leak into other screens. */}
@@ -1053,24 +1021,7 @@ export default function AccountPage() {
 
         <View className="items-center pt-6 pb-8">
           <View style={{ position: 'relative' }}>
-            <AvatarPhoto ref={avatarRef} uri={profile?.avatar} phase={avatarPhase} onPress={pickAndUploadAvatar} />
-            {/* Drawn as a plain sibling of the avatar itself, not measured
-                across the tree (TourHint's `hideRing` below) — this pushed
-                native-stack screen still read a few px off with
-                measureLayout, and a ring positioned this way physically
-                cannot misalign, since it shares the avatar's own parent. */}
-            {avatarTourActive && (
-              <View
-                pointerEvents="none"
-                style={{
-                  position: 'absolute', top: -3, left: -3, right: -3, bottom: -3,
-                  borderRadius: 43,
-                  borderWidth: TOUR_HINT_BORDER_WIDTH,
-                  borderColor: TOUR_HINT_BORDER_COLOR,
-                  transform: [{ translateX: -5 }, { translateY: -4 }],
-                }}
-              />
-            )}
+            <AvatarPhoto uri={profile?.avatar} phase={avatarPhase} onPress={pickAndUploadAvatar} />
           </View>
 
           {/* Name/email used to be two editable-looking rows inside the
@@ -1079,59 +1030,24 @@ export default function AccountPage() {
               the icon-led card underneath is then purely actions/links,
               nothing to read or fill in. */}
           <View className="items-center mt-4" style={{ gap: 5 }}>
-            {editingName ? (
-              <View className="flex-row items-center" style={{ gap: 8 }}>
-                <TextInput
-                  autoFocus
-                  value={nameInput}
-                  onChangeText={setNameInput}
-                  onSubmitEditing={saveName}
-                  // Tapping outside (or the Save button — see the ref's
-                  // own comment) blurs this first. Deferred a tick so a
-                  // same-gesture Save press still gets to fire; if nothing
-                  // caught that flag by then, this was a genuine "tapped
-                  // away" and the typed name is discarded — closing without
-                  // saving is exactly that, since nameInput never persists
-                  // anywhere until saveName actually runs.
-                  onBlur={() => {
-                    setTimeout(() => {
-                      if (!nameSaveInFlightRef.current) setEditingName(false);
-                    }, 0);
-                  }}
-                  maxLength={60}
-                  className="text-base text-center px-3 py-2"
-                  style={{
-                    color: LIGHT_SETTINGS ? '#111111' : '#ffffff',
-                    minWidth: 120,
-                    borderRadius: 10,
-                    borderWidth: 1,
-                    borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.14)',
-                  }}
-                />
-                <Pressable onPress={saveName} disabled={savingName}>
-                  <Text className="text-base" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.60)' : 'rgba(255,255,255,0.60)' }}>Save</Text>
-                </Pressable>
+            <Pressable
+              onPress={() => { setNameInput(profile?.name || ''); setNameError(''); setEditingName(true); }}
+              className="flex-row items-center"
+              accessibilityRole="button"
+              accessibilityLabel="Edit name"
+            >
+              {/* Balances the icon's own width + gap on the opposite side,
+                  so the name text lands under the avatar's centre — without
+                  it, the trailing icon pulls the whole row (and so the
+                  name) visibly right of centre. Purely a layout spacer,
+                  invisible either way. */}
+              <View style={{ width: 25 }} />
+              <Text style={{ fontSize: FONT.body, color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>{profile?.name || '—'}</Text>
+              <View style={{ marginLeft: 12 }}>
+                <EditIcon size={13} color={LIGHT_SETTINGS ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)'} />
               </View>
-            ) : (
-              <Pressable
-                onPress={() => { setNameInput(profile?.name || ''); setEditingName(true); }}
-                className="flex-row items-center"
-                accessibilityRole="button"
-                accessibilityLabel="Edit name"
-              >
-                {/* Balances the icon's own width + gap on the opposite side,
-                    so the name text lands under the avatar's centre — without
-                    it, the trailing icon pulls the whole row (and so the
-                    name) visibly right of centre. Purely a layout spacer,
-                    invisible either way. */}
-                <View style={{ width: 25 }} />
-                <Text style={{ fontSize: 17, color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>{profile?.name || '—'}</Text>
-                <View style={{ marginLeft: 12 }}>
-                  <EditIcon size={13} color={LIGHT_SETTINGS ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)'} />
-                </View>
-              </Pressable>
-            )}
-            <Text className="text-xs" style={{ color: textColor(LIGHT_SETTINGS).tertiary }}>{profile?.email || '—'}</Text>
+            </Pressable>
+            <Text className="text-[13px]" style={{ color: textColor(LIGHT_SETTINGS).tertiary }}>{profile?.email || '—'}</Text>
           </View>
         </View>
 
@@ -1159,7 +1075,7 @@ export default function AccountPage() {
               icon={<Feather name="download" size={18} color={textColor(LIGHT_SETTINGS).tertiary} />}
               label="Backup Data"
               onPress={exportData}
-              right={exporting && <Text className="text-xs" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>Exporting…</Text>}
+              right={exporting && <Text className="text-[13px]" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>Exporting…</Text>}
             />
             <Divider />
             <Row
@@ -1185,6 +1101,14 @@ export default function AccountPage() {
             <Divider />
 
             <Row
+              icon={<Feather name="star" size={18} color={textColor(LIGHT_SETTINGS).tertiary} />}
+              label="Rate Okana"
+              onPress={() => openStoreListing({ review: true })}
+            />
+
+            <Divider />
+
+            <Row
               icon={<Feather name="log-out" size={18} color={textColor(LIGHT_SETTINGS).tertiary} />}
               label="Log Out"
               onPress={() => setShowLogoutConfirm(true)}
@@ -1205,28 +1129,15 @@ export default function AccountPage() {
             />
           </Card>
           {!!actionError && (
-            <Text className="text-red-400 text-sm mt-2 px-1">{actionError}</Text>
+            <Text className="text-red-400 text-[13px] mt-2 px-1">{actionError}</Text>
           )}
           {!!exportError && (
-            <Text className="text-red-400 text-sm mt-2 px-1">{exportError}</Text>
+            <Text className="text-red-400 text-[13px] mt-2 px-1">{exportError}</Text>
           )}
 
-          <Text className="text-xs text-center mt-4 mb-8" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>v{APP_VERSION}</Text>
+          <Text className="text-[13px] text-center mt-4 mb-8" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>v{APP_VERSION}</Text>
         </View>
       </ScrollView>
-
-      {/* Fixed — not inside the ScrollView, so it never scrolls away from
-          the avatar it's measuring, same as WalletPage's tour hints. */}
-      <TourHint
-        visible={avatarTourActive}
-        targetRef={avatarRef}
-        relativeTo={rootRef}
-        description="Tap here to add your profile photo."
-        onNext={advanceAvatarTour}
-        circular
-        padding={3}
-        hideRing
-      />
 
       <InfoModal
         open={importOptionsOpen}
@@ -1243,7 +1154,7 @@ export default function AccountPage() {
           <Text className="text-base font-semibold mb-1" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>
             {downloadingTemplate ? 'Preparing…' : 'Get template'}
           </Text>
-          <Text className="text-sm" style={{ lineHeight: 18, color: textColor(LIGHT_SETTINGS).tertiary }}>
+          <Text className="text-[13px]" style={{ lineHeight: 18, color: textColor(LIGHT_SETTINGS).tertiary }}>
             Download an empty Excel file with the right columns.
           </Text>
         </Pressable>
@@ -1253,11 +1164,22 @@ export default function AccountPage() {
           style={{ borderRadius: CARD_RADIUS, ...SMOOTH, backgroundColor: '#ffffff' }}
         >
           <Text className="text-black text-base font-semibold mb-1">Import file</Text>
-          <Text style={{ color: 'rgba(0,0,0,0.5)', fontSize: 14, lineHeight: 18 }}>
+          <Text style={{ color: 'rgba(0,0,0,0.5)', fontSize: FONT.caption, lineHeight: 18 }}>
             Choose a file from your device to import.
           </Text>
         </Pressable>
       </InfoModal>
+
+      <EditNameSheet
+        open={editingName}
+        value={nameInput}
+        onChange={t => { setNameInput(t); setNameError(''); }}
+        onSave={saveName}
+        onClose={() => { if (!savingName) setEditingName(false); }}
+        saving={savingName}
+        error={nameError}
+        unchanged={nameInput.trim() === (profile?.name || '')}
+      />
 
       <InfoModal open={modal === 'feedback'} title={feedbackSent ? '✓ Message sent!' : 'Support'} onClose={closeFeedbackModal}>
         {!feedbackSent && (
@@ -1296,7 +1218,7 @@ export default function AccountPage() {
             >
               <Text className="text-black text-base font-semibold">Send</Text>
             </Pressable>
-            <Text className="mt-3 text-center" style={{ fontSize: 12, color: textColor(LIGHT_SETTINGS).disabled }}>We typically respond within 1–2 business days.</Text>
+            <Text className="mt-3 text-center" style={{ fontSize: FONT.caption, color: textColor(LIGHT_SETTINGS).disabled }}>We typically respond within 1–2 business days.</Text>
           </>
         )}
       </InfoModal>
@@ -1308,7 +1230,7 @@ export default function AccountPage() {
         <Card>
           <Row label="Privacy Policy" onPress={() => openLink('https://kushalbaragiokana.notion.site/Privacy-Policy-3c58f887c3c9806180c1ed51844d872e?source=copy_link')} />
           <Divider />
-          <Row label="Terms & Conditions" onPress={() => openLink('https://kushalbaragiokana.notion.site/Terms-and-Condition-3c58f887c3c9806d86eae7473775949c?source=copy_link')} />
+          <Row label="Terms & Conditions" onPress={() => openLink(TERMS_URL)} />
           <Divider />
           <Row label="Refunds & Cancellations" onPress={() => openLink('https://kushalbaragiokana.notion.site/Refund-Cancellation-Policy-3c58f887c3c980c48cb6ded1520897ed?source=copy_link')} />
         </Card>
@@ -1391,7 +1313,7 @@ export default function AccountPage() {
                 <Text className="text-base font-semibold mb-2 text-center" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>
                   {importError.title}
                 </Text>
-                <Text className="text-sm mb-5 text-center" style={{ lineHeight: 20, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.50)' : 'rgba(255,255,255,0.50)' }}>
+                <Text className="text-[13px] mb-5 text-center" style={{ lineHeight: 20, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.50)' : 'rgba(255,255,255,0.50)' }}>
                   {importError.message}
                 </Text>
                 <View style={{ gap: 8 }}>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Modal, View, Pressable, StyleSheet, useWindowDimensions, Platform, Keyboard } from 'react-native';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
 import { DialogBackdrop } from './DialogBackdrop';
 import { SETTLE_EASING } from '../utils/motion';
@@ -15,13 +16,19 @@ import { OfflineBanner } from './OfflineBanner';
 // dialog, or a sheet) gets the blurred, lightly dimmed DialogBackdrop. Passing a
 // `dim` asks for the plain tint of that strength instead — a loading overlay
 // that has to hide the page passes 1.
-export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', dim, children }) {
+// `swipeToClose` (bottom sheets only) lets the sheet be pulled down with a finger:
+// it follows the finger, and on release either carries on down and closes or
+// settles back. Off by default — a sheet with its own scrolling content would
+// fight it.
+export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', dim, swipeToClose = false, children }) {
   const blurred = dim === undefined;
   const scrim = dim ?? 1;
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const [visible, setVisible] = useState(open);
   const backdropOpacity = useSharedValue(0);
   const progress = useSharedValue(0); // 0 closed → 1 open
+  // How far a finger has pulled the sheet down, on top of the open/close slide.
+  const dragY = useSharedValue(0);
 
   // Tracked manually (not via KeyboardAvoidingView) — React state naturally
   // ignores a setState call with the same value, which is exactly the
@@ -53,6 +60,7 @@ export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', dim
   useEffect(() => {
     if (open) {
       setVisible(true);
+      dragY.value = 0;
       backdropOpacity.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) });
       progress.value = withTiming(1, { duration: 380, easing: SETTLE_EASING });
     } else {
@@ -80,7 +88,7 @@ export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', dim
       // Folds the open/close slide and the keyboard-follow offset into one
       // transform — when open (progress=1) this is just -keyboardOffset;
       // while closed it's still safely off-screen regardless of keyboard state.
-      return { transform: [{ translateY: (1 - progress.value) * windowHeight - keyboardOffset.value }] };
+      return { transform: [{ translateY: (1 - progress.value) * windowHeight - keyboardOffset.value + dragY.value }] };
     }
     // Scale + a settle-in translateY (instead of scale alone) — matches the
     // "digit-up"/ease-out-expo reveal feel used elsewhere in the web app
@@ -95,11 +103,36 @@ export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', dim
   });
   const centerAreaStyle = useAnimatedStyle(() => ({ paddingBottom: keyboardOffset.value }));
 
+  const pull = Gesture.Pan()
+    .enabled(swipeToClose)
+    // Only a downward pull starts it, so sideways and upward drags (and taps on
+    // what is inside) are left alone.
+    .activeOffsetY(10)
+    .failOffsetX([-24, 24])
+    .onStart(() => { runOnJS(Keyboard.dismiss)(); })
+    .onUpdate((e) => {
+      dragY.value = Math.max(0, e.translationY);
+      // The backdrop lightens as the sheet leaves.
+      backdropOpacity.value = 1 - Math.min(1, dragY.value / (windowHeight * 0.5));
+    })
+    .onEnd((e) => {
+      if (e.translationY > 110 || e.velocityY > 800) {
+        // Carries on down from where the finger let go, then closes.
+        dragY.value = withTiming(windowHeight, { duration: 220, easing: Easing.in(Easing.cubic) }, (finished) => {
+          if (finished) runOnJS(onClose)();
+        });
+      } else {
+        dragY.value = withTiming(0, { duration: 260, easing: SETTLE_EASING });
+        backdropOpacity.value = withTiming(1, { duration: 260, easing: SETTLE_EASING });
+      }
+    });
+
   if (!visible) return null;
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-      <View style={{ flex: 1 }}>
+      {/* A native <Modal> is its own window, outside the app's gesture root. */}
+      <GestureHandlerRootView style={{ flex: 1 }}>
         <Pressable style={{ flex: 1 }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
           {blurred ? (
             <DialogBackdrop progress={backdropOpacity} />
@@ -136,16 +169,24 @@ export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', dim
         ) : (
           // The keyboard-follow offset is folded into contentStyle's own
           // transform above — this stays pinned to the true bottom edge.
-          <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0 }, contentStyle]}>
-            {children}
-          </Animated.View>
+          swipeToClose ? (
+            <GestureDetector gesture={pull}>
+              <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0 }, contentStyle]}>
+                {children}
+              </Animated.View>
+            </GestureDetector>
+          ) : (
+            <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0 }, contentStyle]}>
+              {children}
+            </Animated.View>
+          )
         )}
 
         {/* A native <Modal> is its own window, so the app-root offline banner is
             hidden behind it — and what a sheet here does (sending feedback, say)
             can need the network. This copy shows the same state from inside. */}
         <OfflineBanner />
-      </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }

@@ -14,6 +14,7 @@ import { useAudioPlayer } from 'expo-audio';
 import { SuccessBadge } from './SuccessBadge';
 import { SETTLE_EASING } from '../utils/motion';
 import { darkText } from '../utils/colors';
+import { FONT } from '../utils/type';
 
 const SUCCESS_SOUND = require('../assets/sounds/success.wav');
 
@@ -120,10 +121,10 @@ export function PaymentProcessing({ succeeded, successMessage = 'Payment is succ
       {showLabels && (
         <Animated.View style={labelsStyle}>
           <FadeIn delay={300} duration={450}>
-            <Text style={{ color: '#4ade80', fontSize: 16, fontWeight: '600', textAlign: 'center' }}>Processing Payment</Text>
+            <Text style={{ color: '#4ade80', fontSize: FONT.body, fontWeight: '600', textAlign: 'center' }}>Processing Payment</Text>
           </FadeIn>
           <FadeIn delay={550} duration={450}>
-            <Text style={{ color: darkText.disabled, fontSize: 11, fontWeight: '600', letterSpacing: 1, marginTop: 6, textAlign: 'center' }}>HOLD ON</Text>
+            <Text style={{ color: darkText.disabled, fontSize: FONT.label, fontWeight: '600', letterSpacing: 1, marginTop: 6, textAlign: 'center' }}>HOLD ON</Text>
           </FadeIn>
         </Animated.View>
       )}
@@ -131,7 +132,7 @@ export function PaymentProcessing({ succeeded, successMessage = 'Payment is succ
         <>
           <SuccessBadge style={{ marginBottom: 18 }} playSound player={successSound} />
           <FadeIn delay={350} duration={450} distance={10}>
-            <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '500', textAlign: 'center' }}>{successMessage}</Text>
+            <Text style={{ color: '#ffffff', fontSize: FONT.body, fontWeight: '500', textAlign: 'center' }}>{successMessage}</Text>
           </FadeIn>
         </>
       )}

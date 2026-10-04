@@ -40,7 +40,9 @@ function SegmentedSwitch({ options, value, onChange, buttonWidth = 88, trackColo
         >
           <Text
             className="text-base font-medium"
-            style={{ color: value === opt.id ? '#ffffff' : textColor(light).disabled }}
+            // The unselected option is readable, not ghosted: on a sheet whose own
+            // background is close to the track's, a fainter colour disappeared.
+            style={{ color: value === opt.id ? '#ffffff' : textColor(light).secondary }}
           >
             {opt.label}
           </Text>
