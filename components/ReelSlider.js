@@ -3,6 +3,7 @@ import { View, Text, Pressable } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { SPRING_SMOOTH } from '../utils/motion';
 import { textColor } from '../utils/colors';
+import { FONT } from '../utils/type';
 
 // The sliding-reel-under-a-fixed-window switch shared by the Home header's
 // own Expense/Income/Overview mode switch (see ModeSlider/DimReel in
@@ -44,7 +45,7 @@ function DimReel({ modes, labels, slot, containerWidth, trackStyle, light, onSel
     <Animated.View style={[{ position: 'absolute', left: containerWidth / 2, top: 0, height: '100%', flexDirection: 'row' }, trackStyle]}>
       {modes.map(m => (
         <Pressable key={m} onPress={() => onSelect(m)} style={{ width: slot, height: '100%', alignItems: 'center', justifyContent: 'center' }}>
-          <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: '500', color: textColor(light).disabled, letterSpacing: 0.1 }}>
+          <Text numberOfLines={1} style={{ fontSize: FONT.caption, fontWeight: '500', color: textColor(light).disabled, letterSpacing: 0.1 }}>
             {labels[m]}
           </Text>
         </Pressable>
@@ -134,7 +135,7 @@ export function ReelSlider({ modes, labels, value, onSelect, light, slot = DEFAU
               <Text
                 numberOfLines={1}
                 onLayout={measure(m)}
-                style={{ fontSize: 12, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase', color: textColor(light).primary }}
+                style={{ fontSize: FONT.caption, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase', color: textColor(light).primary }}
               >
                 {labels[m]}
               </Text>

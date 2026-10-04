@@ -6,7 +6,7 @@ import Animated, {
 import Svg, { Path } from 'react-native-svg';
 import { POSITIVE, money } from './savingsShared';
 import { hapticAdded } from '../utils/haptics';
-import { TABULAR } from '../utils/type';
+import { TABULAR, FONT } from '../utils/type';
 import { seg, soft } from '../utils/timeline';
 import RollingNumber from './RollingNumber';
 
@@ -90,8 +90,8 @@ export default function PaidMoment({ title, milestone, left, prevLeft, remaining
   const ink = light ? '#111111' : '#ffffff';
   const mute = light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)';
   const scrim = light ? 'rgba(255,255,255,0.97)' : 'rgba(0,0,0,0.97)';
-  const numText = { fontSize: 40, fontWeight: '300', lineHeight: 48, color: ink, ...TABULAR };
-  const amtText = { fontSize: 26, fontWeight: '300', letterSpacing: -0.5, lineHeight: 34, color: ink, ...TABULAR };
+  const numText = { fontSize: FONT.display, fontWeight: '300', lineHeight: 48, color: ink, ...TABULAR };
+  const amtText = { fontSize: FONT.amount, fontWeight: '300', letterSpacing: -0.5, lineHeight: 34, color: ink, ...TABULAR };
   const centred = { position: 'absolute', alignItems: 'center' };
 
   // A transparent Modal, like Celebration's: it covers the whole device, so
@@ -108,18 +108,18 @@ export default function PaidMoment({ title, milestone, left, prevLeft, remaining
               <AnimatedPath d={RING_PATH} stroke={POSITIVE} strokeWidth={3} strokeLinecap="round" strokeDasharray={RING_LEN} animatedProps={ringProps} />
               <AnimatedPath d="M28 47l12 12 24-26" stroke={POSITIVE} strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={TICK_LEN} animatedProps={tickProps} />
             </Svg>
-            <Animated.Text style={[{ fontSize: 14, fontWeight: '300', marginTop: 14, color: ink }, labelStyle]}>{title}</Animated.Text>
+            <Animated.Text style={[{ fontSize: FONT.caption, fontWeight: '300', marginTop: 14, color: ink }, labelStyle]}>{title}</Animated.Text>
           </Animated.View>
 
           <Animated.View style={[centred, amountStyle]}>
             <RollingNumber from={money(prevRemaining)} to={money(remaining)} ms={ms} range={AMOUNT_ROLL} style={amtText} lh={34} />
-            <Text style={{ fontSize: 12, fontWeight: '300', color: mute, marginTop: 6 }}>left to pay</Text>
+            <Text style={{ fontSize: FONT.caption, fontWeight: '300', color: mute, marginTop: 6 }}>left to pay</Text>
           </Animated.View>
 
           <Animated.View style={[centred, countStyle]}>
-            {!!milestone && <Text style={{ fontSize: 13, fontWeight: '300', color: POSITIVE, marginBottom: 8 }}>{milestone}</Text>}
+            {!!milestone && <Text style={{ fontSize: FONT.caption, fontWeight: '300', color: POSITIVE, marginBottom: 8 }}>{milestone}</Text>}
             <RollingNumber from={String(prevLeft)} to={String(left)} ms={ms} range={COUNT_ROLL} style={numText} lh={48} />
-            <Text style={{ fontSize: 12, fontWeight: '300', color: mute, marginTop: 6 }}>EMIs to go</Text>
+            <Text style={{ fontSize: FONT.caption, fontWeight: '300', color: mute, marginTop: 6 }}>EMIs to go</Text>
           </Animated.View>
         </Animated.View>
       </View>

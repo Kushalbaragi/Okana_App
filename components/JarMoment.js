@@ -8,7 +8,7 @@ import { POSITIVE, money } from './savingsShared';
 import RollingNumber from './RollingNumber';
 import { hapticAdded, hapticTick } from '../utils/haptics';
 import { seg, soft } from '../utils/timeline';
-import { TABULAR } from '../utils/type';
+import { TABULAR, FONT } from '../utils/type';
 import { EXPENSE_HEX } from '../utils/colors';
 
 // The savings moment: a glass jar of coins that is the goal. Each coin is worth
@@ -285,7 +285,7 @@ export default function JarMoment({ type, name, savedBefore, savedAfter, target,
   const ink = light ? '#111111' : '#ffffff';
   const mute = light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)';
   const scrim = light ? 'rgba(255,255,255,0.97)' : 'rgba(0,0,0,0.97)';
-  const amountText = { fontSize: 28, fontWeight: '300', lineHeight: 36, color: ink, ...TABULAR };
+  const amountText = { fontSize: FONT.amount, fontWeight: '300', lineHeight: 36, color: ink, ...TABULAR };
 
   return (
     <Modal transparent animationType="none" statusBarTranslucent visible onRequestClose={finish}>
@@ -323,7 +323,7 @@ export default function JarMoment({ type, name, savedBefore, savedAfter, target,
               {slots.map((slot, i) => (isAdd
                 ? <FallingCoin key={`f-${i}`} slot={slot} ms={ms} start={FIRST + i * GAP} move={MOVE} settle={SETTLE} absorbed={absorbed} />
                 : <LeavingCoin key={`l-${i}`} slot={slot} ms={ms} start={FIRST + i * GAP} move={MOVE} />))}
-              <Animated.Text style={[{ position: 'absolute', left: 120, top: 80, width: 60, textAlign: 'center', fontSize: 13, fontWeight: '500', color: isAdd ? POSITIVE : EXPENSE_HEX }, floatStyle]}>
+              <Animated.Text style={[{ position: 'absolute', left: 120, top: 80, width: 60, textAlign: 'center', fontSize: FONT.caption, fontWeight: '500', color: isAdd ? POSITIVE : EXPENSE_HEX }, floatStyle]}>
                 {isAdd ? '+' : '−'}{money(amount)}
               </Animated.Text>
             </Animated.View>
@@ -331,12 +331,12 @@ export default function JarMoment({ type, name, savedBefore, savedAfter, target,
           </View>
 
           {!!name && !complete && (
-            <Text numberOfLines={1} style={{ fontSize: 16, fontWeight: '400', color: ink, marginTop: 4, paddingHorizontal: 32 }}>{name}</Text>
+            <Text numberOfLines={1} style={{ fontSize: FONT.body, fontWeight: '400', color: ink, marginTop: 4, paddingHorizontal: 32 }}>{name}</Text>
           )}
           <View style={{ alignItems: 'center', marginTop: 14 }}>
             <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
               <RollingNumber from={money(savedBefore)} to={money(savedAfter)} ms={ms} range={T.roll} style={amountText} lh={36} />
-              <Text style={{ fontSize: 13, fontWeight: '300', color: mute }}>saved</Text>
+              <Text style={{ fontSize: FONT.caption, fontWeight: '300', color: mute }}>saved</Text>
             </View>
             {complete && (
               <Animated.View style={[{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14, paddingHorizontal: 32 }, doneStyle]}>
@@ -344,7 +344,7 @@ export default function JarMoment({ type, name, savedBefore, savedAfter, target,
                   <Circle cx={46} cy={46} r={46} fill="#4ade80" />
                   <Path d="M27 47l13 13 25-27" stroke="#000000" strokeWidth={8} strokeLinecap="round" strokeLinejoin="round" />
                 </Svg>
-                <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 15, fontWeight: '400', color: POSITIVE }}>
+                <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: FONT.body, fontWeight: '400', color: POSITIVE }}>
                   {name ? `You saved for ${name}` : 'Goal completed'}
                 </Text>
               </Animated.View>

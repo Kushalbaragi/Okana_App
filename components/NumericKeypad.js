@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { View, Pressable } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
-import { TABULAR } from '../utils/type';
+import { TABULAR, FONT } from '../utils/type';
 import { BackspaceIcon } from './icons';
 
 // Default layout — Amount entry (digits + decimal point). Screens that only
@@ -76,7 +76,7 @@ function KeypadKey({ label, onPress, color = '#ffffff' }) {
           <BackspaceIcon size={24} color={color} />
         </Animated.View>
       ) : (
-        <Animated.Text style={[{ color, fontSize: 30, fontWeight: '400', ...TABULAR }, animStyle]}>
+        <Animated.Text style={[{ color, fontSize: FONT.amount, fontWeight: '400', ...TABULAR }, animStyle]}>
           {label}
         </Animated.Text>
       )}
