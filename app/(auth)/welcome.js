@@ -18,6 +18,7 @@ import { SuccessBadge } from '../../components/SuccessBadge';
 import { ChevronRight } from '../../components/icons';
 import { reportError } from '../../utils/errors';
 import { SETTLE_EASING } from '../../utils/motion';
+import { FONT } from '../../utils/type';
 
 const SUCCESS_SOUND = require('../../assets/sounds/success.wav');
 
@@ -68,10 +69,10 @@ function WelcomeGreetingPage({ name, onDone }) {
 
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
-      <Animated.Text style={[{ color: '#ffffff', fontSize: 17, fontWeight: '400', marginBottom: 8 }, helloStyle]}>
+      <Animated.Text style={[{ color: '#ffffff', fontSize: FONT.body, fontWeight: '400', marginBottom: 8 }, helloStyle]}>
         Hello <Text style={{ color: '#4ade80', fontWeight: '600' }}>{name}</Text>👋
       </Animated.Text>
-      <Animated.Text style={[{ color: '#ffffff', fontSize: 21, fontWeight: '500' }, titleStyle]}>
+      <Animated.Text style={[{ color: '#ffffff', fontSize: FONT.title, fontWeight: '500' }, titleStyle]}>
         Welcome to Okana
       </Animated.Text>
     </View>
@@ -94,12 +95,12 @@ function TrialStartedPage({ onDone, soundPlayer }) {
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
       <SuccessBadge style={{ marginBottom: 22 }} playSound player={soundPlayer} />
       <FadeIn delay={500} distance={20}>
-        <Text style={{ color: '#ffffff', fontSize: 19, fontWeight: '700', textAlign: 'center' }}>
+        <Text style={{ color: '#ffffff', fontSize: FONT.title, fontWeight: '700', textAlign: 'center' }}>
           You're all set
         </Text>
       </FadeIn>
       <FadeIn delay={900} distance={20}>
-        <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 15, marginTop: 8, textAlign: 'center' }}>
+        <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: FONT.body, marginTop: 8, textAlign: 'center' }}>
           Okana Plus — Free for 30 days.{'\n'}No payment required.
         </Text>
       </FadeIn>
@@ -178,13 +179,13 @@ function IntroQuotePage({ onFinish }) {
           headline and out-shouted it despite being the smaller of the two,
           which read as a mismatched hierarchy rather than an intentional
           one. */}
-      <Animated.Text style={[{ color: '#4ade80', fontSize: 13, fontWeight: '700', textAlign: 'center', letterSpacing: 1 }, line1Style]}>
+      <Animated.Text style={[{ color: '#4ade80', fontSize: FONT.caption, fontWeight: '700', textAlign: 'center', letterSpacing: 1 }, line1Style]}>
         TRACK EVERY RUPEE YOU SPEND
       </Animated.Text>
-      <Animated.Text style={[{ color: '#ffffff', fontSize: 24, fontWeight: '700', textAlign: 'center', marginTop: 10 }, line2Style]}>
+      <Animated.Text style={[{ color: '#ffffff', fontSize: FONT.amount, fontWeight: '700', textAlign: 'center', marginTop: 10 }, line2Style]}>
         Small amounts add up
       </Animated.Text>
-      <Animated.Text style={[{ color: darkText.tertiary, fontSize: 14, textAlign: 'center', marginTop: 8 }, line3Style]}>
+      <Animated.Text style={[{ color: darkText.tertiary, fontSize: FONT.caption, textAlign: 'center', marginTop: 8 }, line3Style]}>
         Track it, Analyse it
       </Animated.Text>
 
@@ -204,7 +205,7 @@ function IntroQuotePage({ onFinish }) {
               box carries extra font-metric space (ascender/descender)
               a tightly-bound SVG icon doesn't, so their glyphs still read
               as off-center from each other even with matching boxes. */}
-          <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '600', lineHeight: 20 }}>Start Tracking</Text>
+          <Text style={{ color: '#ffffff', fontSize: FONT.body, fontWeight: '600', lineHeight: 20 }}>Start Tracking</Text>
           <Animated.View style={[{ height: 20, justifyContent: 'center', marginTop: 2 }, arrowStyle]}>
             <ChevronRight size={16} color="#ffffff" />
           </Animated.View>

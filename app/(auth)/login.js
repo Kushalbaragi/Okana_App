@@ -77,13 +77,13 @@ export default function LoginScreen() {
       <Animated.View className="flex-1 bg-bg justify-center px-6" style={containerStyle}>
         <View className="w-full max-w-[400px] self-center">
           <View className="items-center mb-10">
-            <Text className="text-white text-[22px] font-semibold mb-1">Okana</Text>
+            <Text className="text-white text-[20px] font-semibold mb-1">Okana</Text>
             <Text className="text-white/50 text-base">Your money, beautifully tracked.</Text>
           </View>
 
           <View className="gap-4">
             <View>
-              <Text className="text-white text-[15px] font-medium mb-2">Email</Text>
+              <Text className="text-white text-[16px] font-medium mb-2">Email</Text>
               <GlassTextInput
                 value={email}
                 onChangeText={t => { setEmail(t); setError(''); }}
@@ -97,7 +97,7 @@ export default function LoginScreen() {
               />
             </View>
 
-            <Text className="text-red-400 text-sm text-center" style={{ minHeight: 18 }} numberOfLines={1}>
+            <Text className="text-red-400 text-[13px] text-center" style={{ minHeight: 18 }} numberOfLines={1}>
               {error}
             </Text>
 
@@ -119,7 +119,7 @@ export default function LoginScreen() {
             </GlassPressable>
           </View>
 
-          <Text className="text-white/50 text-sm text-center mt-4">
+          <Text className="text-white/50 text-[13px] text-center mt-4">
             We'll email you a code — no password needed.
           </Text>
         </View>

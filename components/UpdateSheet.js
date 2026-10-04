@@ -9,6 +9,7 @@ import { DialogBackdrop } from './DialogBackdrop';
 import { openStoreListing } from '../utils/links';
 import { SETTLE_EASING } from '../utils/motion';
 import { darkText } from '../utils/colors';
+import { FONT } from '../utils/type';
 
 const OPEN_DURATION = 520;
 const CLOSE_DURATION = 900;
@@ -70,14 +71,14 @@ export function UpdateSheet({ open, latestVersion, onDismiss }) {
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <UpdateIcon />
-              <Text style={{ fontSize: 16, fontWeight: '500', color: '#ffffff' }}>Update available</Text>
+              <Text style={{ fontSize: FONT.body, fontWeight: '500', color: '#ffffff' }}>Update available</Text>
             </View>
             <Pressable onPress={onDismiss} hitSlop={10} accessibilityRole="button" accessibilityLabel="Dismiss">
               <CloseIcon />
             </Pressable>
           </View>
 
-          <Text style={{ fontSize: 13, color: darkText.tertiary, marginBottom: 18 }}>
+          <Text style={{ fontSize: FONT.caption, color: darkText.tertiary, marginBottom: 18 }}>
             A new version of Okana is ready.
           </Text>
 
@@ -85,7 +86,7 @@ export function UpdateSheet({ open, latestVersion, onDismiss }) {
             onPress={handleUpdate}
             style={{ backgroundColor: '#4ade80', alignItems: 'center', paddingVertical: 13, borderRadius: 9999 }}
           >
-            <Text style={{ fontSize: 14, fontWeight: '500', color: '#08170e' }}>Update now</Text>
+            <Text style={{ fontSize: FONT.caption, fontWeight: '500', color: '#08170e' }}>Update now</Text>
           </Pressable>
         </Animated.View>
       </View>

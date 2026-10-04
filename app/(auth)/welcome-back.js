@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay } from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
 import { SETTLE_EASING } from '../../utils/motion';
+import { FONT } from '../../utils/type';
 
 const HOLD_MS = 6000; // a brief courtesy beat, not the full first-run carousel
 
@@ -39,10 +40,10 @@ export default function WelcomeBackScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#000000', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
-      <Animated.Text style={[{ color: '#ffffff', fontSize: 17, fontWeight: '400', marginBottom: 8 }, helloStyle]}>
+      <Animated.Text style={[{ color: '#ffffff', fontSize: FONT.body, fontWeight: '400', marginBottom: 8 }, helloStyle]}>
         Hello <Text style={{ color: '#4ade80', fontWeight: '600' }}>{firstName}</Text>👋
       </Animated.Text>
-      <Animated.Text style={[{ color: '#ffffff', fontSize: 21, fontWeight: '500' }, titleStyle]}>
+      <Animated.Text style={[{ color: '#ffffff', fontSize: FONT.title, fontWeight: '500' }, titleStyle]}>
         Welcome back to Okana
       </Animated.Text>
     </View>

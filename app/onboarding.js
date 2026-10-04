@@ -13,6 +13,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { reportError } from '../utils/errors';
 import { darkText } from '../utils/colors';
+import { FONT } from '../utils/type';
 
 export const ONBOARDING_SEEN_KEY = 'okana_onboarding_seen';
 
@@ -64,7 +65,7 @@ function QuotePage({ active }) {
 
   return (
     <Animated.View style={[{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 48 }, style]}>
-      <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 17, textAlign: 'center', lineHeight: 25 }}>
+      <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: FONT.body, textAlign: 'center', lineHeight: 25 }}>
         “You can't see your <Text style={{ color: '#4ade80' }}>progress</Text>{'\n'}if you dont track it”
       </Text>
     </Animated.View>
@@ -104,7 +105,7 @@ export default function OnboardingScreen() {
       <Text
         style={{
           position: 'absolute', bottom: insets.bottom + 20, left: 0, right: 0,
-          textAlign: 'center', color: darkText.disabled, fontSize: 13,
+          textAlign: 'center', color: darkText.disabled, fontSize: FONT.caption,
         }}
       >
         Built with ♥ by Kushal

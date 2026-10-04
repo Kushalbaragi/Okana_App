@@ -58,7 +58,7 @@ export default function NameScreen() {
       <Animated.View className="flex-1 bg-bg justify-center px-6" style={containerStyle}>
         <View className="w-full max-w-[400px] self-center">
           <View className="items-center mb-10">
-            <Text className="text-white text-[22px] font-semibold mb-1">Okana</Text>
+            <Text className="text-white text-[20px] font-semibold mb-1">Okana</Text>
             <Text className="text-white/50 text-base">Your money, beautifully tracked.</Text>
           </View>
 
@@ -66,7 +66,7 @@ export default function NameScreen() {
 
           <View className="gap-4">
             <View>
-              <Text className="text-white text-[15px] font-medium mb-2">Name</Text>
+              <Text className="text-white text-[16px] font-medium mb-2">Name</Text>
               <GlassTextInput
                 autoFocus
                 value={name}

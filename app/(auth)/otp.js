@@ -123,7 +123,7 @@ export default function OtpScreen() {
       </View>
 
       <View className="flex-1 items-center justify-center px-8">
-        <Text className="text-white text-[22px] font-semibold mb-2 text-center">Enter the code</Text>
+        <Text className="text-white text-[20px] font-semibold mb-2 text-center">Enter the code</Text>
         <Text className="text-white/50 text-base text-center mb-10">
           We sent a {CODE_LENGTH}-digit code to{'\n'}
           <Text className="text-white/60">{email}</Text>
@@ -146,7 +146,7 @@ export default function OtpScreen() {
           ))}
         </Animated.View>
 
-        <Text className="text-red-400 text-sm text-center mt-5" style={{ minHeight: 18 }} numberOfLines={1}>
+        <Text className="text-red-400 text-[13px] text-center mt-5" style={{ minHeight: 18 }} numberOfLines={1}>
           {error}
         </Text>
 
