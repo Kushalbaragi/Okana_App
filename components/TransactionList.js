@@ -1,12 +1,12 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { View, Text, FlatList, Pressable, InteractionManager, StyleSheet } from 'react-native';
+import { View, Text, FlatList, Pressable, InteractionManager } from 'react-native';
 import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
 import TransactionItem from './TransactionItem';
 import { formatCurrency } from '../utils/format';
-import { textColor } from '../utils/colors';
+import { textColor, INCOME_TEXT } from '../utils/colors';
 import { BODY, TABULAR } from '../utils/type';
 import { GUTTER, LEDGER_PILL_INSET } from '../utils/spacing';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
@@ -17,18 +17,6 @@ import { ChevronRight } from './icons';
 // (a taller list row settling into place reads better a bit more gently
 // than AmountField's narrow digit sliding, which uses SPRING_QUICK).
 const ROW_LAYOUT_TRANSITION = layoutTransition(SPRING_SMOOTH);
-
-// MonthHeader's label column — every label is the same "MMM-YYYY" shape
-// (see flatData below), but the font is proportional, so "SEP-2026" and
-// "AUG-2026" aren't the same pixel width. Left unconstrained, the dash
-// after it lands at a different x on every row depending on which month's
-// letters happen to be drawn, so a stack of collapsed months reads as a
-// ragged column instead of one straight line of dashes. A fixed-width box
-// around just the label pins the dash to the same x on every row
-// regardless of which month it is. 100, not a tighter guess — a tighter
-// width clipped the widest real labels ("MAR-2026", "MAY-2026", ...) at
-// MonthHeader's fontSize; this is comfortably past even the widest one.
-const MONTH_LABEL_WIDTH = 100;
 
 // Plays once, only for the row TransactionList is told just got added (see
 // justAddedId) — a plain fade + small rise, no stagger, since there's only
@@ -61,76 +49,37 @@ const DEMO_SWIPE_HOLD_MS = 1300;
 // month's expense total, Income its income total, Overview shows nothing
 // (see TransactionList's own comment on why Overview has no single figure
 // that means anything here) — `amount == null` is what skips it below.
-function MonthHeader({ label, amount, light, isOpen, onPress }) {
+function MonthHeader({ label, amount, light, isOpen, isIncome, onPress }) {
   return (
-    <>
-      {/* A true hairline (device pixel, not a logical point) above every
-          header — the same divider convention SettingsUI/SavingsSection
-          already use elsewhere, just inset to the ledger's own margin
-          rather than theirs. Sits outside the Pressable so it's just a
-          line, not part of the tappable row's own visual feedback.
-          No margin of its own on purpose — the row below carries equal
-          padding top and bottom (see paddingVertical there), which is what
-          actually centres its content between this line and the next one;
-          if this divider added its own extra margin on one side, the text
-          would sit closer to whichever line that margin was next to. */}
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${label}, ${isOpen ? 'expanded' : 'collapsed'}`}>
+      {/* Laid out like a transaction row: the month at the same left edge as a
+          row's date chip, the total at the same right edge as a row's amount
+          (both rows and headers pad LEDGER_PILL_INSET each side), so the
+          amounts run down one straight column across this month and the
+          collapsed ones. A plain row, no card behind it. */}
       <View
         style={{
-          height: StyleSheet.hairlineWidth,
-          marginHorizontal: LEDGER_PILL_INSET,
-          backgroundColor: light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: LEDGER_PILL_INSET,
+          paddingVertical: 14,
         }}
-      />
-      <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${label}, ${isOpen ? 'expanded' : 'collapsed'}`}>
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingHorizontal: LEDGER_PILL_INSET,
-            paddingVertical: 14,
-          }}
-        >
-          {/* No card background any more — several of these stacked back to
-              back (a few consecutive collapsed months) read as a wall of
-              identical dark blocks, clashing with how plain the current
-              month's own rows are just above them. A plain row matches that
-              same language instead of looking like a different component
-              bolted onto the same list. Label/total stay bright, dash dim —
-              same hierarchy as before, just without the box around it. */}
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {/* Fixed width, not flex/auto — see MONTH_LABEL_WIDTH's own
-                comment above: this is what keeps the dash below at the
-                same x on every collapsed month row regardless of which
-                month's label (a different pixel width each time, in this
-                proportional font) is actually drawn inside it. */}
-            <View style={{ width: MONTH_LABEL_WIDTH }}>
-              <Text numberOfLines={1} style={[BODY, { color: textColor(light).primary }]}>{label}</Text>
-            </View>
-            {amount != null && (
-              // One Text with nested spans, not two sibling Text boxes —
-              // siblings each get their own layout box, and the dash's
-              // glyph sits at a different optical height within its box
-              // than the amount does within its own, so the row read as
-              // misaligned even though both boxes shared the same
-              // line-height. Nesting spans inside a single Text lays them
-              // out on one shared baseline instead.
-              <Text style={[BODY, { color: textColor(light).disabled }]}>
-                {'—   '}
-                <Text style={[{ color: textColor(light).primary }, TABULAR]}>{formatCurrency(amount)}</Text>
-              </Text>
-            )}
-          </View>
-
-          {/* Rotates between pointing right (collapsed) and down (open) —
-              same treatment SavingsSection's own "Completed" toggle already
-              uses. */}
-          <View style={{ transform: [{ rotate: isOpen ? '90deg' : '0deg' }] }}>
-            <ChevronRight color={light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)'} />
-          </View>
+      >
+        <Text numberOfLines={1} style={[BODY, { color: textColor(light).primary }]}>{label}</Text>
+        {amount != null && (
+          <Text style={[BODY, TABULAR, { color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>{formatCurrency(amount)}</Text>
+        )}
+        {/* At the far right, out past the amount rather than taking room from it
+            (into the list's side margin), so the amounts still end where a row's
+            amount does, with a little space before the chevron.
+            Points right when collapsed, down when open — same treatment
+            SavingsSection's own "Completed" toggle uses. */}
+        <View pointerEvents="none" style={{ position: 'absolute', right: -8, top: 0, bottom: 0, justifyContent: 'center', transform: [{ rotate: isOpen ? '90deg' : '0deg' }] }}>
+          <ChevronRight color={light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)'} />
         </View>
-      </Pressable>
-    </>
+      </View>
+    </Pressable>
   );
 }
 
@@ -262,8 +211,14 @@ function TransactionList({
   //
   const flatData = useMemo(() => {
     const out = [];
+    let gapAdded = false;
     for (const g of groups) {
       const isCurrent = g.key === currentMonthKey;
+      // Room between the current month's rows and the first past month's header.
+      if (!isCurrent && !gapAdded) {
+        gapAdded = true;
+        if (out.length > 0) out.push({ type: 'gap', key: 'gap' });
+      }
       const isOpen = isCurrent || g.key === expandedKey;
       // No header at all for the current month — everything it would have
       // said (the month name, the amount) is already on screen three other
@@ -330,19 +285,22 @@ function TransactionList({
     </Animated.View>
   ), [settled, justAddedId, cardColor, onEdit, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light]);
 
-  const renderItem = useCallback(({ item }) => (
-    item.type === 'header'
-      ? (
+  const renderItem = useCallback(({ item }) => {
+    if (item.type === 'gap') return <View style={{ height: 24 }} />;
+    if (item.type === 'header') {
+      return (
         <MonthHeader
           label={item.label}
           amount={item.amount}
           light={light}
           isOpen={item.isOpen}
+          isIncome={mode === 'income'}
           onPress={() => toggleMonth(item.groupKey)}
         />
-      )
-      : renderTransaction(item.tx)
-  ), [renderTransaction, light, toggleMonth]);
+      );
+    }
+    return renderTransaction(item.tx);
+  }, [renderTransaction, light, toggleMonth, mode]);
 
   const empty = (
     <View className="items-center justify-center py-14 px-4">

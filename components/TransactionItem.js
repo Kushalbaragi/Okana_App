@@ -2,21 +2,15 @@ import { memo, useCallback, useEffect, useRef } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
-import { formatCurrencyPlain } from '../utils/format';
+import { dateBoxParts, formatCurrencyPlain } from '../utils/format';
 import { SwipeDeleteAction, useSwipeDelete } from './SwipeDeleteAction';
 import { CARD_COLOR } from './Glass';
 import { textColor, INCOME_TEXT } from '../utils/colors';
 import { BODY, TABULAR } from '../utils/type';
 import { LEDGER_PILL_INSET } from '../utils/spacing';
 
-// Wide enough for a 7-figure amount ("₹9999999", no thousands separators —
-// see formatCurrencyPlain) at BODY size — fixed rather than sized to
-// content, so the dash's own box always starts at the same x. Left-aligned
-// on purpose (not right-aligned) — every amount starts at the same left
-// edge, which is what was actually asked for; the tradeoff is the visible
-// gap before the dash varies with how many digits that row's amount has
-// (a short "₹375" leaves more room than "₹56900" does).
-const AMOUNT_COL_WIDTH = 82;
+// The date chip plus the room after it.
+const DATE_COL_WIDTH = 40;
 
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard — see the matching comment in Header.js.
@@ -64,6 +58,8 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
   }, [tx.description, tx.amount, tx.date, isIncome, contentOpacity]);
   const contentStyle = useAnimatedStyle(() => ({ opacity: contentOpacity.value }));
 
+  const { day, month } = dateBoxParts(tx.date);
+
   const row = (
     <Pressable
       onPress={handleCardPress}
@@ -71,32 +67,30 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
       // Matches MonthHeader's own paddingHorizontal (both read
       // LEDGER_PILL_INSET), so a row's amount starts under the pill's text
       // above it rather than further left at the raw list edge.
-      style={{ backgroundColor: cardColor, paddingLeft: LEDGER_PILL_INSET }}
+      style={{ backgroundColor: cardColor, paddingLeft: LEDGER_PILL_INSET, paddingRight: LEDGER_PILL_INSET }}
     >
-      {/* Three columns — amount, dash, description — the date it happened
-          is said once by the month this row sits under (see MonthHeader in
-          TransactionList), not repeated on every row underneath it. The
-          amount column is a fixed width (not sized to its own digits), so
-          every row's dash and description line up in a straight column
-          regardless of how long that row's own amount is. */}
+      {/* The day it happened as a small stacked day-over-month chip (the same one
+          Savings' history rows use), the description, and the amount at
+          the far end. The date's slot is a fixed width, so every row's
+          description starts at the same x whatever the date's own length. */}
       <Animated.View className="flex-row items-center" style={contentStyle}>
-        <Text
-          numberOfLines={1}
-          style={[BODY, TABULAR, { width: AMOUNT_COL_WIDTH, color: isIncome ? INCOME_TEXT : textColor(light).primary }]}
-        >
-          {formatCurrencyPlain(tx.amount)}
-        </Text>
-        <Text style={[BODY, { marginLeft: 4, color: textColor(light).disabled }]}>-</Text>
+        <View style={{ width: DATE_COL_WIDTH }}>
+          <View style={{ width: 26, height: 28, borderRadius: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.06)' }}>
+            <Text style={[TABULAR, { fontSize: 10, fontWeight: '500', lineHeight: 12, color: textColor(light).tertiary }]}>{day}</Text>
+            <Text style={{ fontSize: 7, lineHeight: 8, marginTop: 1, letterSpacing: 0.3, color: textColor(light).disabled }}>{month}</Text>
+          </View>
+        </View>
         {/* Not yet synced to the server — sitting in the offline queue, or
             an insert/update still in flight. */}
         {tx._pending && (
-          <View style={{ width: 5, height: 5, borderRadius: 2.5, marginLeft: 8, backgroundColor: light ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }} />
+          <View style={{ width: 5, height: 5, borderRadius: 2.5, marginRight: 8, backgroundColor: light ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }} />
         )}
-        {/* Amount now carries the brightness, description the dim — the
-            number is what you're scanning the ledger for, the description
-            is what jogs your memory once you've spotted it. */}
-        <Text numberOfLines={1} style={[BODY, { flexShrink: 1, marginLeft: 8, color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>
+        <Text numberOfLines={1} style={[BODY, { flex: 1, color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>
           {tx.description || (isIncome ? 'Income' : 'Expense')}
+        </Text>
+        {/* Same colour as the description, so the row reads as one line. */}
+        <Text numberOfLines={1} style={[BODY, TABULAR, { marginLeft: 12, textAlign: 'right', color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>
+          {formatCurrencyPlain(tx.amount)}
         </Text>
       </Animated.View>
     </Pressable>
