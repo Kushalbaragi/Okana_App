@@ -6,6 +6,8 @@ import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeabl
 import { GlassPressable, CARD_RADIUS, SMOOTH } from './Glass';
 import MonthSlider from './MonthSlider';
 import PaymentGrid from './PaymentGrid';
+import SlideToPay from './SlideToPay';
+import PaidMoment from './PaidMoment';
 import Celebration from './Celebration';
 import ErrorBoundary from './ErrorBoundary';
 import { InlineConfirm } from './InlineConfirm';
@@ -16,11 +18,12 @@ import { SwipeDeleteAction, useSwipeDelete, useSwipeGroup } from './SwipeDeleteA
 import { Card, ProgressBar, POSITIVE, cardFill, dim, money, KIND_COPY, DEBT_SUGGESTIONS } from './savingsShared';
 import { textColor } from '../utils/colors';
 import { TABULAR } from '../utils/type';
-import { CheckIcon, ChevronRight, PlusIcon } from './icons';
-import { currentMonthYear, dateBoxParts, today } from '../utils/format';
+import { CheckIcon, ChevronRight, EditIcon, PlusIcon } from './icons';
+import { currentMonthYear, dateBoxParts, formatDateFull, today } from '../utils/format';
 import { hapticAdded } from '../utils/haptics';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { GUTTER } from '../utils/spacing';
+import useEmiPayFlow from '../hooks/useEmiPayFlow';
 
 // List and detail swap by crossfade — the same fade the home screen uses for a
 // tab switch, and cheap because it's opacity only.
@@ -45,6 +48,57 @@ const GOAL_DELETE_BACKSTOP_MS = 700;
 // confirm uses, so the two read as one consistent beat.
 const EMI_CONFIRM_DELAY_MS = 1500;
 
+// Months since year 0 for a plain "YYYY-MM-DD", so two dates compare (and
+// subtract) as whole months.
+const monthIndexOf = (dateStr) => Number(dateStr.slice(0, 4)) * 12 + Number(dateStr.slice(5, 7)) - 1;
+
+// Asking "add this to your expenses?" after an EMI payment is logged — the
+// same beat (see EMI_CONFIRM_DELAY_MS), the same pill, and the same
+// money-moving calls (`logEntryAsExpense`/`linkEntryTransaction`) regardless
+// of WHERE the payment came from. Shared rather than duplicated because
+// there are now two callers: SavingsSheetsHost's own MoneySheet submit, and
+// GoalDetail's own slide-to-pay control (see its own comment) — both
+// log a payment and both owe the user this same follow-up.
+function useEmiExpenseConfirm(savings, showToast) {
+  const [pending, setPending] = useState(null);
+  const delayRef = useRef(null);
+  useEffect(() => () => clearTimeout(delayRef.current), []);
+
+  // A beat after the payment lands, not the instant it does — reads as a
+  // follow-up prompt rather than a jarring interruption right on top of
+  // whatever just closed (a sheet sliding away, or the CTA's own tap).
+  const schedule = useCallback(({ entryId, amount, date, name }) => {
+    clearTimeout(delayRef.current);
+    delayRef.current = setTimeout(() => setPending({ entryId, amount, date, name }), EMI_CONFIRM_DELAY_MS);
+  }, []);
+
+  const resolve = useCallback((addTransaction) => {
+    if (!pending) return;
+    const p = pending;
+    setPending(null);
+    if (!addTransaction) return;
+    (async () => {
+      const result = await savings.logEntryAsExpense({ amount: p.amount, date: p.date, description: p.name });
+      if (!result?.success) return;
+      // Links the new expense back onto the payment entry that prompted it,
+      // so deleting the entry later takes this expense with it (see
+      // useSavings.deleteEntry) instead of leaving it orphaned on Home.
+      if (p.entryId) savings.linkEntryTransaction(p.entryId, result.id);
+      // A full second after the pill has closed, not right on top of it —
+      // see WalletPage's own comment on the same delay for its plan-check
+      // confirm.
+      setTimeout(() => showToast?.(`${p.name} added to your expenses`), 1000);
+    })();
+  }, [pending, savings, showToast]);
+
+  return {
+    pending,
+    schedule,
+    confirm: useCallback(() => resolve(true), [resolve]),
+    decline: useCallback(() => resolve(false), [resolve]),
+  };
+}
+
 // A line on how the goal got there: how many deposits (or payments, for a
 // loan), over how long, since when. Empty when there are none to speak of.
 function journeyNote(entries, depositWord = 'deposit') {
@@ -54,6 +108,30 @@ function journeyNote(entries, depositWord = 'deposit') {
   const days = Math.max(1, Math.floor((Date.now() - new Date(`${first}T00:00:00`).getTime()) / 86400000));
   const span = days < 60 ? `${days} day${days === 1 ? '' : 's'}` : `${Math.round(days / 30.44)} months`;
   return `${deposits} ${depositWord}${deposits === 1 ? '' : 's'} over ${span} · since ${MONTH_NAMES[Number(first.slice(5, 7)) - 1].slice(0, 3)} ${first.slice(0, 4)}`;
+}
+
+// What a finished goal's celebration says. An EMI loan gets its own wording —
+// the loan's name, "Fully paid" (or how many months early, if it was closed
+// ahead of the planned finish month), and what it cost in total. A flexible
+// debt says the same minus the schedule (no planned finish, no EMI count).
+// Everything else keeps the generic copy.
+function celebrationCopy(goal, kind, copy) {
+  if (kind === 'debt' && goal.debtType === 'flexible') {
+    return { title: goal.name, subtitle: 'Fully paid', note: `${money(goal.target)} repaid` };
+  }
+  if (kind !== 'debt' || goal.debtType !== 'emi') {
+    return { title: copy.celebrationTitle, subtitle: `${goal.name} · ${money(goal.target)}`, note: journeyNote(goal.entries, copy.depositWord) };
+  }
+  let monthsEarly = 0;
+  if (goal.estimatedFinishDate) {
+    const { month, year } = currentMonthYear();
+    monthsEarly = monthIndexOf(goal.estimatedFinishDate) - (year * 12 + month);
+  }
+  return {
+    title: goal.name,
+    subtitle: monthsEarly >= 1 ? `Fully paid, ${monthsEarly} month${monthsEarly === 1 ? '' : 's'} early` : 'Fully paid',
+    note: goal.totalRepayment != null ? `${goal.tenureMonths} EMIs · ${money(goal.totalRepayment)} repaid` : '',
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -90,6 +168,15 @@ export function useSavingsUI() {
     setSheetClosed(false);
     setSheetOpen(true);
   }, []);
+  // A settlement, not a scheduled EMI — the amount isn't locked to the
+  // loan's own monthly figure (see MoneySheet's own prefill), and submitting
+  // it marks the loan done outright rather than letting the schedule's own
+  // count catch up to it (see SavingsSheetsHost's submitMoney).
+  const openCloseEarly = useCallback((goalId) => {
+    setSheetData({ kind: 'money', goalId, entryId: null, type: 'add', closeEarly: true });
+    setSheetClosed(false);
+    setSheetOpen(true);
+  }, []);
   const openEntry = useCallback((goalId, entryId) => {
     setSheetData({ kind: 'money', goalId, entryId, type: 'add' });
     setSheetClosed(false);
@@ -120,7 +207,7 @@ export function useSavingsUI() {
   const closeConfirm = useCallback(() => setConfirmOpen(false), []);
 
   return {
-    sheetOpen, sheetData, sheetClosed, markSheetClosed, openNewGoal, openEditGoal, openMoney, openEntry, closeSheet,
+    sheetOpen, sheetData, sheetClosed, markSheetClosed, openNewGoal, openEditGoal, openMoney, openCloseEarly, openEntry, closeSheet,
     confirmOpen, confirmData, openDeleteGoal, openDeleteEntry, closeConfirm,
   };
 }
@@ -137,9 +224,9 @@ export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings'
   // GoalSheet's own step 2) — logged as that goal's first entry right after
   // it's created, dated today, so "I already had ₹50,000 saved for this"
   // shows up as real progress instead of a separate field nothing else reads.
-  const submitGoal = useCallback(async ({ name, target, location, tenureMonths, emisPaidBefore, startingAmount }) => {
-    if (goalId) return savings.editGoal(goalId, { name, target, location, tenureMonths, emisPaidBefore });
-    const result = await savings.addGoal({ name, target, location, kind, tenureMonths, emisPaidBefore });
+  const submitGoal = useCallback(async ({ name, target, location, debtType, tenureMonths, emisPaidBefore, firstEmiDate, startingAmount, emiAmount }) => {
+    if (goalId) return savings.editGoal(goalId, { name, target, location, tenureMonths, emisPaidBefore, firstEmiDate, emiAmount });
+    const result = await savings.addGoal({ name, target, location, kind, debtType, tenureMonths, emisPaidBefore, firstEmiDate, emiAmount });
     if (result?.success && startingAmount > 0) {
       await savings.addEntry(result.id, { type: 'add', amount: startingAmount, date: today(), note: 'Already saved' });
     }
@@ -147,50 +234,25 @@ export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings'
   }, [savings, goalId, kind]);
 
   // Logging an EMI payment doesn't touch the main transaction list on its
-  // own — asked about afterward instead (see below), same reasoning as
-  // Budget's own checked lines: paying down a loan isn't automatically a
-  // home-screen expense. Only offered for a brand-new debt payment, not an
-  // edit (an edited entry already made its own choice the first time) and
-  // not Savings (a deposit into a goal isn't spending). Only two outcomes,
-  // both real (see ConfirmPill's own comment) — the write runs in the
-  // background rather than holding the pill open on a busy/error state.
-  const [pendingEmiConfirm, setPendingEmiConfirm] = useState(null);
-  const emiConfirmDelayRef = useRef(null);
-  useEffect(() => () => { if (emiConfirmDelayRef.current) clearTimeout(emiConfirmDelayRef.current); }, []);
+  // own — asked about afterward instead (useEmiExpenseConfirm above), same
+  // reasoning as Budget's own checked lines: paying down a loan isn't
+  // automatically a home-screen expense. Only offered for a brand-new debt
+  // payment, not an edit (an edited entry already made its own choice the
+  // first time) and not Savings (a deposit into a goal isn't spending).
+  const emiConfirm = useEmiExpenseConfirm(savings, showToast);
   const submitMoney = useCallback(async (payload) => {
     const result = entry ? await savings.updateEntry(entry.id, payload) : await savings.addEntry(goalId, payload);
     if (result?.success && kind === 'debt' && !entry && payload.type === 'add') {
-      // The pill doesn't pop up the instant the payment is logged — a beat
-      // first, so it reads as a follow-up prompt rather than a jarring
-      // interruption right on top of the sheet closing.
-      const pending = { entryId: result.id, amount: payload.amount, date: payload.date, name: goal?.name || 'this loan' };
-      if (emiConfirmDelayRef.current) clearTimeout(emiConfirmDelayRef.current);
-      emiConfirmDelayRef.current = setTimeout(() => setPendingEmiConfirm(pending), EMI_CONFIRM_DELAY_MS);
+      emiConfirm.schedule({ entryId: result.id, amount: payload.amount, date: payload.date, name: goal?.name || 'this loan' });
+      // A pre-closure payment settles the loan outright — it doesn't wait
+      // for the schedule's own EMI count to happen to catch up to it (see
+      // useSavingsUI's openCloseEarly), since the real foreclosure amount
+      // almost never matches `emisRemaining × emiAmount` exactly (a bank's
+      // own fee or discount, not this app's schedule math).
+      if (sheetData?.closeEarly) savings.setGoalCompleted(goalId, true);
     }
     return result;
-  }, [savings, goalId, entry, kind, goal]);
-  const resolveEmiConfirm = useCallback((addTransaction) => {
-    if (!pendingEmiConfirm) return;
-    const pending = pendingEmiConfirm;
-    setPendingEmiConfirm(null);
-    if (!addTransaction) return;
-    (async () => {
-      const result = await savings.logEntryAsExpense({
-        amount: pending.amount, date: pending.date, description: pending.name,
-      });
-      if (!result?.success) return;
-      // Links the new expense back onto the payment entry that prompted it,
-      // so deleting the entry later takes this expense with it (see
-      // useSavings.deleteEntry) instead of leaving it orphaned on Home.
-      if (pending.entryId) savings.linkEntryTransaction(pending.entryId, result.id);
-      // A full second after the pill has closed, not right on top of it —
-      // see WalletPage's own comment on the same delay for its plan-check
-      // confirm.
-      setTimeout(() => showToast?.(`${pending.name} added to your expenses`), 1000);
-    })();
-  }, [pendingEmiConfirm, savings, showToast]);
-  const confirmEmiTransaction = useCallback(() => resolveEmiConfirm(true), [resolveEmiConfirm]);
-  const declineEmiTransaction = useCallback(() => resolveEmiConfirm(false), [resolveEmiConfirm]);
+  }, [savings, goalId, entry, kind, goal, emiConfirm, sheetData]);
 
   // What the confirmation is about, looked up from the data rather than
   // carried in state so it can't go stale.
@@ -231,9 +293,9 @@ export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings'
     if (entryId) {
       const result = await savings.deleteEntry(entryId);
       // The entry's own payment might have been mirrored into Home's
-      // expense list (see resolveEmiConfirm above) — deleteEntry takes that
-      // expense with it, and this is the only place that actually happened,
-      // so it's the only place that can tell the user about it.
+      // expense list (see useEmiExpenseConfirm above) — deleteEntry takes
+      // that expense with it, and this is the only place that actually
+      // happened, so it's the only place that can tell the user about it.
       if (result?.removedTransaction) showToast?.('Also removed from your expenses');
     }
   }, [savings, showToast]);
@@ -281,10 +343,12 @@ export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings'
         onClose={closeSheet}
         onClosed={ui.markSheetClosed}
         goalName={goal?.name || ''}
+        goal={goal}
         entry={entry}
         initialType={sheetData?.type || 'add'}
         maxWithdraw={goal?.saved || 0}
         onSubmit={submitMoney}
+        closeEarly={!!sheetData?.closeEarly}
         light={light}
         kind={kind}
       />
@@ -302,13 +366,13 @@ export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings'
       {/* Asked right after a new EMI payment is logged (see submitMoney
           above) — the payment itself is already recorded on the loan either
           way; this only decides whether it also becomes a real expense.
-          Kind-gated at the state level (only debt ever sets
-          pendingEmiConfirm), so this stays inert for Savings. */}
+          Kind-gated at the call site (only debt ever calls `schedule`), so
+          this stays inert for Savings. */}
       <ConfirmPill
-        open={!!pendingEmiConfirm}
-        message={`Add ${money(pendingEmiConfirm?.amount || 0)} for ${pendingEmiConfirm?.name || 'this loan'} as expense`}
-        onConfirm={confirmEmiTransaction}
-        onDecline={declineEmiTransaction}
+        open={!!emiConfirm.pending}
+        message={`Add ${money(emiConfirm.pending?.amount || 0)} for ${emiConfirm.pending?.name || 'this loan'} as expense`}
+        onConfirm={emiConfirm.confirm}
+        onDecline={emiConfirm.decline}
         light={light}
       />
     </>
@@ -328,7 +392,7 @@ export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings'
 function monthlyNets(entries) {
   const { month, year } = currentMonthYear();
   const nowIndex = year * 12 + month;
-  const indexOf = (e) => Number(e.date.slice(0, 4)) * 12 + Number(e.date.slice(5, 7)) - 1;
+  const indexOf = (e) => monthIndexOf(e.date);
   const start = entries.length > 0 ? Math.min(...entries.map(indexOf)) : nowIndex;
   // The last real month: the current one, or a later one if an entry is dated
   // ahead, so no entry lands among the placeholders.
@@ -349,27 +413,22 @@ function monthlyNets(entries) {
   };
 }
 
-// Debt's own equivalent of monthlyNets above: rather than a per-month net, a
-// year x month grid of which months have a payment logged. Runs from the
-// month the loan was added to either its last tenured month (tenureMonths
-// set) or the current month/latest payment, whichever is later, so a month
-// with nothing in it yet still shows as "due" rather than being cut off.
-//
-// `emisPaidBefore` backdates that start by however many EMIs were already
-// paid before the loan was added here — most loans aren't added on day one.
-// Those months are marked paid outright, with no entry of their own behind
-// them; only the ones from the loan's app-add date on are read off real
-// entries.
-function paymentGrid(entries, createdAt, tenureMonths, emisPaidBefore = 0) {
-  const payments = entries.filter(e => e.type === 'add');
+// EMI debt's own circle tracker: a year x month grid of which EMIs are paid.
+// A loan is a schedule, so this fills in schedule order — the first
+// `emisPaid` months of it — rather than against the date any individual
+// payment happens to carry. `emisPaid` is useSavings.js's own derived count
+// (the EMIs that predate this app, plus every whole EMI's worth of money
+// logged since), so a payment logged on the goal's page fills the next
+// circle here, and a lump sum fills as many as it actually covers. Runs from
+// the loan's own first EMI to either its last tenured month (tenureMonths
+// set) or today, whichever is later, so a month with nothing paid yet still
+// shows as "due" rather than being cut off.
+function paymentGrid(firstEmiDate, tenureMonths, emisPaid = 0) {
   const { month: curMonth, year: curYear } = currentMonthYear();
   const curIndex = curYear * 12 + curMonth;
-  const created = new Date(createdAt);
-  const trackedIndex = created.getFullYear() * 12 + created.getMonth();
-  const startIndex = trackedIndex - emisPaidBefore;
-  const paidIndexes = new Set(payments.map(e => Number(e.date.slice(0, 4)) * 12 + Number(e.date.slice(5, 7)) - 1));
-  const latestPaid = paidIndexes.size ? Math.max(...paidIndexes) : trackedIndex;
-  const endIndex = tenureMonths ? startIndex + tenureMonths - 1 : Math.max(curIndex, latestPaid);
+  const startIndex = monthIndexOf(firstEmiDate);
+  const paidThroughIndex = startIndex + emisPaid - 1;
+  const endIndex = tenureMonths ? startIndex + tenureMonths - 1 : Math.max(curIndex, paidThroughIndex);
 
   const startYear = Math.floor(startIndex / 12);
   const endYear = Math.floor(endIndex / 12);
@@ -378,12 +437,11 @@ function paymentGrid(entries, createdAt, tenureMonths, emisPaidBefore = 0) {
     const cells = [];
     for (let m = 0; m < 12; m++) {
       const idx = y * 12 + m;
-      const paid = idx < trackedIndex ? idx >= startIndex : paidIndexes.has(idx);
-      cells.push({ paid, inRange: idx >= startIndex && idx <= endIndex });
+      cells.push({ paid: idx <= paidThroughIndex, inRange: idx >= startIndex && idx <= endIndex });
     }
     years.push({ year: y, cells });
   }
-  return { years, paidCount: emisPaidBefore + payments.length };
+  return { years };
 }
 
 // The label + round "+" row above the goal/loan list, same layout as
@@ -513,22 +571,52 @@ const HistoryRow = memo(function HistoryRow({ entry, onPress, onDelete, register
 // ---------------------------------------------------------------------------
 // Detail
 // ---------------------------------------------------------------------------
-function GoalDetail({ goal, savings, ui, light, kind = 'savings' }) {
+function GoalDetail({ goal, savings, ui, light, kind = 'savings', showToast }) {
   const copy = KIND_COPY[kind];
   const insets = useSafeAreaInsets();
   // Held back while the celebration is up, so the "goal reached" prompt comes
   // in once it has been dismissed rather than under it.
   const [celebrating, setCelebrating] = useState(false);
+  // Celebration's own Modal is mounted only once this is true — see the
+  // `first` block below for why that's not the same moment as `celebrating`
+  // itself.
+  const [celebrationReady, setCelebrationReady] = useState(false);
+  const celebrationTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(celebrationTimerRef.current), []);
+  // The slide-to-pay sequence for an EMI loan (see useEmiPayFlow): the paid
+  // moment, and the figures the status line and tracker show while it plays.
+  const emiConfirm = useEmiExpenseConfirm(savings, showToast);
+  const { moment, endMoment, payEmi, payHold, barG, dotG, shownEntries, isNewEntry } = useEmiPayFlow({ goal, savings, emiConfirm });
   const showReached = goal.reached && !goal.completedAt && !celebrating;
-  const chart = useMemo(() => monthlyNets(goal.entries), [goal.entries]);
+  // A debt goal is one of two shapes now (see useSavings.js's own comment
+  // on `debtType`) — an EMI/Loan (fixed schedule, the circle tracker below)
+  // or Flexible (no schedule, tracked the same plain entries-only way a
+  // savings goal is, just read backwards — see MonthSlider's own caller
+  // further down reusing Savings' exact chart for it).
+  const isEmiDebt = kind === 'debt' && goal.debtType === 'emi';
+  const isFlexibleDebt = kind === 'debt' && goal.debtType === 'flexible';
+  // Only the non-EMI chart reads this.
+  const chart = useMemo(() => (isEmiDebt ? null : monthlyNets(goal.entries)), [isEmiDebt, goal.entries]);
   const grid = useMemo(
-    () => (kind === 'debt' ? paymentGrid(goal.entries, goal.createdAt, goal.tenureMonths, goal.emisPaidBefore) : null),
-    [kind, goal.entries, goal.createdAt, goal.tenureMonths, goal.emisPaidBefore]
+    () => (isEmiDebt && goal.firstEmiDate ? paymentGrid(goal.firstEmiDate, goal.tenureMonths, dotG.emisPaid) : null),
+    [isEmiDebt, goal.firstEmiDate, goal.tenureMonths, dotG.emisPaid]
   );
-  const emisLeft = kind === 'debt' && goal.tenureMonths != null ? Math.max(0, goal.tenureMonths - grid.paidCount) : null;
-  const showChart = kind === 'debt'
-    ? (goal.entries.length > 0 || goal.tenureMonths != null || goal.emisPaidBefore > 0)
-    : goal.entries.length > 0;
+  const showChart = isEmiDebt ? !!grid : goal.entries.length > 0;
+
+  // Whether THIS cycle's EMI is already behind the loan — the schedule is a
+  // plain month index (see useSavings.js's own `emisPaid`), not a calendar,
+  // so "paid for the current month" is read off `nextEmiDate` rather than
+  // tracked on its own: once the next due EMI's own month is AFTER the
+  // current one, the schedule has already caught up through this month.
+  // `goal.nextEmiDate` is null once there's nothing left to pay at all
+  // (loan cleared), which is its own state below, not this one.
+  const curMonthIndex = useMemo(() => {
+    const { month, year } = currentMonthYear();
+    return year * 12 + month;
+  }, []);
+  const emiPaidThisCycle = !!goal.nextEmiDate && monthIndexOf(goal.nextEmiDate) > curMonthIndex;
+
+  const openCloseEarly = useCallback(() => ui.openCloseEarly(goal.id), [ui, goal.id]);
 
   // Celebrates the moment the goal reaches its target while this page is open.
   // A goal that was already reached when its page opened does not (nor one whose
@@ -536,15 +624,56 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings' }) {
   // what's compared is the same goal's `reached` from one render to the next.
   // Worked out during render, not in an effect, so the prompt above never gets a
   // frame on screen before the celebration covers it.
-  const [seen, setSeen] = useState({ id: goal.id, reached: goal.reached });
-  if (seen.id !== goal.id || seen.reached !== goal.reached) {
-    setSeen({ id: goal.id, reached: goal.reached });
-    if (seen.id === goal.id && goal.reached && !seen.reached) setCelebrating(true);
+  //
+  // Two ways in, because there are two ways a goal gets done: its own target
+  // or schedule being met (`reached`), and it being marked done by hand. Only
+  // the first used to count, which left the second with no moment at all —
+  // and a loan settled early, or one already paid off by the time its page is
+  // opened, arrives ONLY by that second route, so clearing it was silent.
+  // `celebrated` latches so a goal that hits its target and is then marked
+  // done still gets exactly one.
+  const completed = !!goal.completedAt;
+  const [seen, setSeen] = useState({ id: goal.id, reached: goal.reached, completed, celebrated: false });
+  if (seen.id !== goal.id || seen.reached !== goal.reached || seen.completed !== completed) {
+    const sameGoal = seen.id === goal.id;
+    const first = sameGoal && !seen.celebrated
+      && ((goal.reached && !seen.reached && !completed) || (completed && !seen.completed));
+    // Reopening a done loan (completed -> not completed) lets it celebrate
+    // again the next time it is completed.
+    const reopened = seen.completed && !completed;
+    setSeen({ id: goal.id, reached: goal.reached, completed, celebrated: sameGoal && !reopened && (seen.celebrated || first) });
+    if (first) {
+      // `celebrating` flips on THIS render, synchronously, so `showReached`
+      // above never gets a frame on screen first — that part still happens
+      // exactly as the comment above describes. Mounting Celebration's own
+      // Modal is held back a beat longer, on purpose: crossing the final EMI
+      // or deposit goes through MoneySheet's AddModal, which is ALSO a
+      // native `<Modal>` — and this transition lands on the exact same
+      // render as that one finishing its own close animation and telling
+      // its native Modal to dismiss (see AddModal's onClosed, called right
+      // alongside its own cleanup). Presenting one native Modal while
+      // another is mid-dismissal is a real iOS/UIKit race, not a React one —
+      // no error, nothing to catch, the second presentation just silently
+      // never happens. A short delay here is what actually fixes "the
+      // celebration doesn't show at all" rather than papering over a crash
+      // that was never there. Marking a goal done by hand has no modal to
+      // race (it's a plain button in this same page), so this is pure
+      // safety margin there, not a fix for anything broken on that path.
+      clearTimeout(celebrationTimerRef.current);
+      celebrationTimerRef.current = setTimeout(() => setCelebrationReady(true), 300);
+      setCelebrating(true);
+    }
   }
+  // Tied to `celebrationReady`, not `celebrating` — the buzz should land
+  // with the Modal actually appearing, not 300ms ahead of it.
   useEffect(() => {
-    if (celebrating) hapticAdded();
-  }, [celebrating]);
-  const endCelebration = useCallback(() => setCelebrating(false), []);
+    if (celebrationReady) hapticAdded();
+  }, [celebrationReady]);
+  const endCelebration = useCallback(() => {
+    clearTimeout(celebrationTimerRef.current);
+    setCelebrating(false);
+    setCelebrationReady(false);
+  }, []);
   const swipes = useSwipeGroup();
   const { openEntry, openDeleteEntry } = ui;
   const editEntry = useCallback((entryId) => openEntry(goal.id, entryId), [openEntry, goal.id]);
@@ -555,49 +684,72 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings' }) {
     {/* Everything down to the History label stays put; only the history below
         it scrolls, the way the transaction list does on the home screen. */}
     <View style={{ paddingHorizontal: GUTTER, paddingTop: 8 }}>
-      {/* The name lives up here now, larger and bolder than the card below
-          it — the card itself no longer repeats it. Tapping it still opens
-          the edit sheet, just without the pencil glyph in front any more. */}
-      <Pressable
-        onPress={() => ui.openEditGoal(goal.id)}
-        className="items-center justify-center"
-        style={{ marginTop: 4 }}
-        accessibilityRole="button"
-        accessibilityLabel={copy.editGoalLabel}
-      >
-        <Text numberOfLines={1} style={{ fontSize: 22, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}>{goal.name}</Text>
-      </Pressable>
+      {/* The name, with a pen beside it — both open the edit sheet. */}
+      <View className="flex-row items-center justify-center" style={{ marginTop: 4, gap: 10, paddingHorizontal: 24 }}>
+        {/* An empty box as wide as the pen, so the title itself sits at the
+            true centre of the page and the pen hangs off its right side. */}
+        <View style={{ width: 16 }} />
+        <Pressable
+          onPress={() => ui.openEditGoal(goal.id)}
+          style={{ flexShrink: 1 }}
+          accessibilityRole="button"
+          accessibilityLabel={copy.editGoalLabel}
+        >
+          {/* EMI debt: the amount below is the focus, so the name steps back. */}
+          <Text numberOfLines={1} style={isEmiDebt
+            ? { fontSize: 16, fontWeight: '500', color: textColor(light).secondary }
+            : { fontSize: 22, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}
+          >{goal.name}</Text>
+        </Pressable>
+        {/* The same sheet the title opens, but findable without knowing the
+            title is tappable. */}
+        <Pressable
+          onPress={() => ui.openEditGoal(goal.id)}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel={copy.editGoalLabel}
+        >
+          <EditIcon size={16} color={textColor(light).tertiary} />
+        </Pressable>
+      </View>
       {!!goal.location && (
         <Text className="text-xs text-center" numberOfLines={1} style={{ marginTop: 4, color: textColor(light).tertiary }}>
           {kind === 'debt' ? 'from' : 'in'} {goal.location}
         </Text>
       )}
 
-      {/* Same card shape as GoalCard's own list row and BudgetStatusBar,
-          headline-first: the figure and its "of X" caption on one baseline
-          (location now sits under the name above instead of repeating
-          here) sharing a row with the percent, then the bar underneath.
-          Only the percent says "saved"/"paid" — the figure's own caption
-          doesn't repeat it. Debt's headline is `remaining`, not `saved` —
-          see GoalCard's own comment on why. */}
-      <View style={{ marginTop: 16, marginBottom: 16 }}>
-        <Card light={light}>
-          <View style={{ padding: 20 }}>
-            <View className="flex-row items-baseline justify-between" style={{ gap: 12, marginBottom: 12 }}>
-              <View className="flex-row items-baseline flex-1" style={{ gap: 6 }}>
-                <Text style={{ fontSize: 24, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}>
-                  {money(kind === 'debt' ? goal.remaining : goal.saved)}
-                </Text>
-                <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 13, color: light ? '#111111' : '#ffffff' }}>
-                  of {money(goal.target)}
-                </Text>
+      {isEmiDebt ? (
+        // An EMI loan is just the one figure on the page background — progress
+        // lives in the tracker below, the loan's other numbers in the tracker's
+        // footer and the edit sheet, and the monthly EMI on the slider.
+        <View style={{ marginTop: 24, marginBottom: 12, alignItems: 'center' }}>
+          <Text style={{ fontSize: 42, fontWeight: '400', letterSpacing: -1.5, color: light ? '#111111' : '#ffffff', ...TABULAR }}>{money(barG.remaining)}</Text>
+          <Text style={{ fontSize: 13, color: textColor(light).tertiary, marginTop: 6 }}>left to pay</Text>
+        </View>
+      ) : (
+        // Savings and flexible debt: the same card shape as GoalCard's list row
+        // — the figure with its "of X" caption on one baseline, the percent
+        // beside it, then the bar. A debt's figure is what's left, a goal's is
+        // what's saved.
+        <View style={{ marginTop: 16, marginBottom: 16 }}>
+          <Card light={light}>
+            <View style={{ padding: 20 }}>
+              <View className="flex-row items-baseline justify-between" style={{ gap: 12, marginBottom: 12 }}>
+                <View className="flex-row items-baseline flex-1" style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 24, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}>
+                    {money(kind === 'debt' ? barG.remaining : goal.saved)}
+                  </Text>
+                  <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 13, color: light ? '#111111' : '#ffffff' }}>
+                    of {money(goal.target)}
+                  </Text>
+                </View>
+                <Text className="text-[13px]" numberOfLines={1} style={{ color: light ? '#111111' : '#ffffff' }}>{barG.percent}% {kind === 'debt' ? 'paid' : 'saved'}</Text>
               </View>
-              <Text className="text-[13px]" numberOfLines={1} style={{ color: light ? '#111111' : '#ffffff' }}>{goal.percent}% {kind === 'debt' ? 'paid' : 'saved'}</Text>
+              <ProgressBar percent={barG.percent} duration={900} height={8} light={light} trackColor="rgba(74,222,128,0.12)" />
             </View>
-            <ProgressBar percent={goal.percent} height={8} light={light} trackColor="rgba(74,222,128,0.12)" />
-          </View>
-        </Card>
-      </View>
+          </Card>
+        </View>
+      )}
 
       {goal.completedAt ? (
         <View className="flex-row items-center justify-center" style={{ gap: 10, marginTop: 20 }}>
@@ -627,8 +779,11 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings' }) {
       showsVerticalScrollIndicator={false}
       style={{ flex: 1 }}
       onScrollBeginDrag={swipes.closeOpen}
-      // Clears the round button that floats over the bottom of the page.
-      contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: insets.bottom + 120 }}
+      // The extra clearance is only for the floating "+" (see its own
+      // comment on why EMI debt no longer has one) — without it, this would
+      // just be leaving a gap under the history for a button that isn't
+      // there.
+      contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: insets.bottom + (isEmiDebt ? 24 : 120) }}
     >
       {/* Net per month from the first entry on, as a row that slides under a
           fixed centre — the month in the middle is the one read out. Not shown
@@ -643,40 +798,50 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings' }) {
           card itself changed, only where it lives. */}
       {showChart && (
         <View style={{ marginTop: 12 }}>
-          <Text className="text-[11px] font-medium uppercase tracking-wider px-5 mb-2" style={{ color: textColor(light).disabled }}>{copy.monthlyTitle}</Text>
+          <Text className="text-[11px] font-medium uppercase tracking-wider px-5 mb-2" style={{ color: textColor(light).disabled }}>
+            {isFlexibleDebt ? 'Monthly payments' : copy.monthlyTitle}
+          </Text>
           <Card light={light}>
-            {kind === 'debt' ? (
-              // EMIs left is now the prominent figure (bold), EMIs paid the
-              // small secondary caption on the right — the reverse of the
-              // two figures' original weighting — then the grid itself, one
-              // row per year.
+            {isEmiDebt ? (
+              // EMIs remaining, the circle tracker (one row per year), then
+              // the loan's total and monthly figures.
               <View style={{ paddingVertical: 16, paddingHorizontal: 20 }}>
-                <View className="flex-row items-end justify-between" style={{ marginBottom: 14 }}>
-                  {emisLeft != null && (
-                    <Text>
-                      <Text style={{ fontSize: 26, fontWeight: '600', letterSpacing: -0.5, color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.90)' }}>
-                        {emisLeft}
-                      </Text>
-                      <Text style={{ fontSize: 13, fontWeight: '400', color: textColor(light).tertiary }}>
-                        {' '}EMI remaining
-                      </Text>
+                {dotG.emisRemaining != null && (
+                  <Text style={{ marginBottom: 14 }}>
+                    <Text style={{ fontSize: 26, fontWeight: '600', letterSpacing: -0.5, color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.90)' }}>
+                      {dotG.emisRemaining}
+                    </Text>
+                    <Text style={{ fontSize: 13, fontWeight: '400', color: textColor(light).tertiary }}>
+                      {' '}EMI remaining
+                    </Text>
+                  </Text>
+                )}
+                <PaymentGrid years={grid.years} light={light} />
+                <View className="flex-row items-center justify-between" style={{ marginTop: 6, paddingTop: 14, borderTopWidth: 1, borderTopColor: dim(light, 0.08) }}>
+                  {goal.target > 0 && (
+                    <Text className="text-[13px]" style={{ color: textColor(light).tertiary }}>
+                      Total loan <Text style={{ color: textColor(light).secondary }}>{money(goal.target)}</Text>
                     </Text>
                   )}
-                  <Text className="text-xs" style={{ color: textColor(light).tertiary }}>
-                    {grid.paidCount}{goal.tenureMonths != null ? ` / ${goal.tenureMonths}` : ''} {copy.monthlyAvgSuffix}
-                  </Text>
+                  {goal.emiAmount != null && (
+                    <Text className="text-[13px]" style={{ color: textColor(light).tertiary }}>
+                      <Text style={{ color: textColor(light).secondary }}>{money(goal.emiAmount)}</Text> / month
+                    </Text>
+                  )}
                 </View>
-                <PaymentGrid years={grid.years} light={light} />
               </View>
             ) : (
-              // The average sits at the top left; the slider below has no side
-              // padding, so its bars slide right out to the card's edge.
+              // Flexible debt reuses this exact chart — no schedule of its
+              // own, so it's tracked (and shown) the same plain way a
+              // savings goal is, just read backwards. The average sits at
+              // the top left; the slider below has no side padding, so its
+              // bars slide right out to the card's edge.
               <View style={{ paddingVertical: 16 }}>
                 <View style={{ paddingHorizontal: 20, marginBottom: 6 }}>
                   <Text style={{ color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.90)', fontSize: 26, fontWeight: '600', letterSpacing: -0.5 }}>
                     {chart.average < 0 ? '−' : ''}{money(Math.abs(chart.average))}
                   </Text>
-                  <Text className="text-sm" style={{ color: dim(light, 0.5), marginTop: 2 }}>{copy.monthlyAvgSuffix}</Text>
+                  <Text className="text-sm" style={{ color: dim(light, 0.5), marginTop: 2 }}>average per month</Text>
                 </View>
                 <MonthSlider key={goal.id} months={chart.months} initialIndex={chart.initialIndex} light={light} />
               </View>
@@ -689,12 +854,12 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings' }) {
         {copy.historyTitle}
       </Text>
 
-      {goal.entries.length === 0 ? (
-        <Text className="text-base px-1" style={{ color: textColor(light).tertiary }}>{copy.historyEmpty}</Text>
+      {shownEntries.length === 0 ? (
+        <Text className="text-base px-4" style={{ color: textColor(light).tertiary }}>{copy.historyEmpty}</Text>
       ) : (
         <Card light={light}>
-          {goal.entries.map((e, i) => (
-            <View key={e.id}>
+          {shownEntries.map((e, i) => (
+            <Animated.View key={e.id} entering={isNewEntry(e.id) ? FadeIn.duration(900) : undefined}>
               <HistoryRow
                 entry={e}
                 onPress={editEntry}
@@ -705,20 +870,60 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings' }) {
                 light={light}
                 kind={kind}
               />
-              {i < goal.entries.length - 1 && <Divider inset={16} light={light} />}
-            </View>
+              {i < shownEntries.length - 1 && <Divider inset={16} light={light} />}
+            </Animated.View>
           ))}
         </Card>
       )}
     </ScrollView>
-    <AddFab onPress={() => ui.openMoney(goal.id, 'add')} label={copy.fabLabel} />
+    {/* EMI debt's one real action, pinned to the bottom where a thumb rests:
+        slide to log this month's EMI. Close early stays a quiet link under
+        it — rare and weighty, so reachable but never the easy tap. Hidden
+        once the loan is done (`reached`/`completedAt` have their own
+        banner above). */}
+    {isEmiDebt && !goal.completedAt && !goal.reached && (
+      <View style={{ paddingHorizontal: GUTTER, paddingTop: 12, paddingBottom: insets.bottom + 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: dim(light, 0.12) }}>
+        <SlideToPay
+          label={`Slide to pay ${money(goal.emiAmount || 0)}`}
+          paidLabel={goal.nextEmiDate ? `EMI paid · next ${formatDateFull(goal.nextEmiDate)}` : 'EMI paid'}
+          paid={(emiPaidThisCycle && !payHold) || !(goal.emiAmount > 0)}
+          onComplete={payEmi}
+          light={light}
+        />
+        <Pressable onPress={openCloseEarly} hitSlop={8} accessibilityRole="button" accessibilityLabel="Close loan early" style={{ alignSelf: 'center', paddingVertical: 10 }}>
+          <Text style={{ fontSize: 14, fontWeight: '500', color: textColor(light).secondary }}>Close early</Text>
+        </Pressable>
+      </View>
+    )}
+    {/* EMI debt has no floating "+" any more — the slide-to-pay bar and Close
+        early above are its own two real actions, placed to be found without
+        a separate round button floating over the page as well. Savings and
+        Flexible debt have no schedule to read a specific action off, so
+        this stays their one way in. */}
+    {!isEmiDebt && <AddFab onPress={() => ui.openMoney(goal.id, 'add')} label={copy.fabLabel} />}
     {/* Decoration: if it fails it goes away, and the "goal reached" prompt it was
-        holding back comes straight in. */}
-    {celebrating && (
+        holding back comes straight in. `celebrationReady`, not `celebrating`
+        — see the `first` block above for why mounting this Modal waits a
+        beat past the moment `celebrating` itself flips. */}
+    {celebrationReady && (
       <ErrorBoundary onError={endCelebration}>
-        <Celebration title={copy.celebrationTitle} subtitle={`${goal.name} · ${money(goal.target)}`} note={journeyNote(goal.entries, copy.depositWord)} onDone={endCelebration} />
+        <Celebration {...celebrationCopy(goal, kind, copy)} onDone={endCelebration} />
       </ErrorBoundary>
     )}
+    {moment && (
+      <ErrorBoundary onError={endMoment}>
+        <PaidMoment {...moment} light={light} onDone={endMoment} />
+      </ErrorBoundary>
+    )}
+    {/* Asked after a slide-to-pay payment (see useEmiPayFlow) — the same pill
+        and follow-up SavingsSheetsHost's own MoneySheet submit offers. */}
+    <ConfirmPill
+      open={!!emiConfirm.pending}
+      message={`Add ${money(emiConfirm.pending?.amount || 0)} for ${emiConfirm.pending?.name || 'this loan'} as expense`}
+      onConfirm={emiConfirm.confirm}
+      onDecline={emiConfirm.decline}
+      light={light}
+    />
     </View>
   );
 }
@@ -726,7 +931,7 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings' }) {
 // ---------------------------------------------------------------------------
 // Section
 // ---------------------------------------------------------------------------
-function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOpenGoal, onCloseGoal, kind = 'savings' }) {
+function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOpenGoal, onCloseGoal, kind = 'savings', showToast }) {
   const copy = KIND_COPY[kind];
   const insets = useSafeAreaInsets();
   // What is shown is held while a sheet is open, and let go once it has
@@ -837,7 +1042,7 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
       </Animated.View>
 
       <Animated.View style={[StyleSheet.absoluteFill, detailStyle]} pointerEvents={detailOpen ? 'auto' : 'none'}>
-        {detailGoal && <GoalDetail goal={detailGoal} savings={savings} ui={ui} light={light} kind={kind} />}
+        {detailGoal && <GoalDetail goal={detailGoal} savings={savings} ui={ui} light={light} kind={kind} showToast={showToast} />}
       </Animated.View>
     </View>
   );

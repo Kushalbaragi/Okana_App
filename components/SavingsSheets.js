@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, Keyboard } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 // Aliased — `ReanimatedView.View` below is used both for the field rows'
 // `layout` transition and (further down) the wheel picker's own animated
 // column and rows; the named hooks/helpers (used only by the wheel) are
@@ -49,6 +49,16 @@ const FIELD_LAYOUT_TRANSITION = layoutTransition(SPRING_QUICK);
 // without this every OTHER field's card would re-render right along with it
 // for no reason, which is exactly the kind of unnecessary work that was
 // making the drag itself feel like it was hanging.
+//
+// The flat colour this tint actually renders as, over InlineSheet's own
+// background — needed by the months ruler below, whose edge-fade has to
+// dissolve into a real flat colour (an SVG gradient stop, not a style) and
+// so can't just reuse this View's own translucent `rgba` fill the way the
+// card itself does. Computed by hand (base × (1 − alpha) + white/black ×
+// alpha) and kept in sync with the overlay colours just below; a mismatch
+// here is exactly what used to show up as a dark seam under the ruler,
+// cutting the card in two instead of the fade actually blending into it.
+export const FIELD_CARD_SURFACE = { light: '#efefed', dark: '#262626' };
 const FieldCard = memo(function FieldCard({ light, children }) {
   return (
     <View style={{ backgroundColor: light ? 'rgba(0,0,0,0.045)' : 'rgba(255,255,255,0.07)', borderRadius: CARD_RADIUS, ...SMOOTH, overflow: 'hidden' }}>
@@ -599,41 +609,49 @@ const AmountTextRow = memo(function AmountTextRow({ label, value, onChangeValue,
   );
 });
 
-// heightRatio, by field count: a flat 0.72 for every case (used until now)
-// sized the sheet for debt's five rows even when editing a savings goal
-// shows only three — the space that row count didn't use just sat blank
-// between the last card and the Save button, because InlineSheet's own
-// content area is `flex: 1` and stretches to fill whatever height the
-// ratio hands it regardless of how tall the actual rows are. Flat values
-// instead of a formula, named for the row count each one is sized for — a
-// new saving goal is 4 (adds "already saved"), editing one is 3, and debt
-// is now three DIFFERENT heights of its own depending on which type is
-// showing (see `sheetHeightRatio` above): the type-selector step alone
-// (name isn't even asked yet), Flexible's own 2 rows (name, amount owed),
-// and EMI's 6 fields (name, borrowed amount, total EMIs, monthly EMI, EMIs
-// already paid, first EMI) plus the Loan Summary card, counted as roughly
-// 1.5 rows of its own since it's shorter than a field row but taller than
-// nothing. These are a best estimate, not a measurement (nothing here
-// renders this to check it against an actual device) — nudge them if a
-// state still shows a gap or, worse, clips a row.
+// Fallback heights only. The sheet measures its own content and sizes
+// itself to it (see `contentHeight` in GoalSheet's return) — these are what
+// it uses for the frames before that measurement lands, which in practice
+// means never, since the content stays mounted while the sheet is closed
+// and has therefore already been measured by the time it opens.
 //
-// All of these land on the same straight line against their own row/step
-// count — 0.38 + 0.06 * rows — treating each type-selector tile as its own
-// "row" (there are two, stacked); close enough that every debt ratio below
-// follows that formula rather than a separately eyeballed number. The
-// savings pair are still the original tuned values (up from 0.62/0.56/0.5,
-// which read as too tight and crowded the Save button).
+// They used to BE the sizing, one hand-tuned ratio per state, and the
+// comment here openly called them estimates against an actual device. That
+// is exactly what went wrong: whatever a ratio guessed wrong became dead
+// space inside the sheet — above the rows or below them, depending on which
+// end the content was anchored to — and no amount of nudging the numbers
+// removes a gap you can't see from here. Measuring has no slack to leave.
+// Kept roughly right per state anyway, so even the fallback is close.
 const DEBT_TYPE_STEP_HEIGHT_RATIO = 0.50;
 const DEBT_FLEXIBLE_HEIGHT_RATIO = 0.50;
-// Back to the formula's own straight 0.83 (6 field rows plus the Loan
-// Summary card at roughly 1.5): Total EMIs is a plain closed row again at
-// rest, so it no longer needs the extra height the always-open ruler did.
-// Opening it, like opening any other row here, reflows within this height
-// rather than growing the sheet — see the `heightRatio` note in GoalSheet's
-// own return.
 const DEBT_HEIGHT_RATIO = 0.83;
 const SAVINGS_NEW_HEIGHT_RATIO = 0.62;
 const SAVINGS_EDIT_HEIGHT_RATIO = 0.56;
+
+// Reserved, up front, for whatever row's panel opens.
+//
+// A row's panel is deliberately allowed to grow past the sheet's own sizing
+// — see the row list's own comment — which is fine for a row with real
+// slack below it: the rows under it just reflow down, still inside the
+// scroll view. It stops being fine once there's no slack left to reflow
+// INTO — most visibly for the last row in the list (EMI debt's "First EMI",
+// a DateRow whose day/month/year wheel is ~200px tall), which has nothing
+// below it to push out of the way at all, but the same cliff is there for
+// any row once the one still above the sheet's own bottom edge opens: with
+// the sheet sized to exactly its collapsed content, there's nothing to grow
+// into, and the opened panel (or whatever it pushed down) goes invisible the
+// instant it opens, not just once scrolled past. Since only one row is ever
+// open at a time (see `openField`), reserving the single tallest panel a
+// form can show is enough to cover every row in it, not just the last one.
+//
+// One constant per form, sized to that form's own tallest expanding row —
+// EMI debt's DateRow wheel is taller than its MonthsRulerRow ruler, so it
+// sets EMI's reserve; Savings' only expanding row is "Where it's kept"
+// (OptionsRow's own, shorter, 3-row wheel: WHEEL_H + its 8px padding).
+// Flexible debt has nothing past a plain text row, which never expands, so
+// it needs no reserve at all.
+const EMI_LAST_ROW_RESERVE = 210;
+const SAVINGS_LOCATION_RESERVE = 130;
 
 // A new debt goal's own first question, before it even asks for a name —
 // everything past this depends on the answer (see GoalSheet's own return
@@ -657,7 +675,10 @@ function DebtTypeOption({ label, description, onPress, light }) {
 
 function DebtTypeStep({ onSelect, light }) {
   return (
-    <View style={{ paddingHorizontal: 20 }}>
+    // Natural height, for the same reason the field rows are (see their own
+    // comment): this step's own height is what the sheet is sized to, so
+    // there is no gap above or below the two tiles to begin with.
+    <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
       <Text style={{ fontSize: 15, color: textColor(light).secondary, marginBottom: 12 }}>What kind of debt is this?</Text>
       <View style={{ gap: 12 }}>
         <DebtTypeOption
@@ -747,7 +768,22 @@ function LoanSummaryCard({ target, emiAmount, tenureMonths, light }) {
 function MonthsRulerRow({ label, value, onChange, session, light, open, onOpen, onClose, maxMonths, tintCompleted = false }) {
   const months = parseInt(value, 10) || 0;
   const unit = months === 1 ? 'month' : 'months';
-  const scale = useMemo(() => monthsScale(maxMonths), [maxMonths]);
+  // Only built while this row is actually open. "EMIs already paid" is
+  // capped at the tenure, so dragging the OTHER ruler changes this one's
+  // `maxMonths` on every tick — and rebuilding the scale re-walks every
+  // month of the loan into two SVG path strings, hundreds of segments,
+  // dozens of times a second, on the same JS thread that drag's own tick
+  // reports are queued on. Closed, there is nothing on screen to build it
+  // for; open, the other ruler is necessarily closed (one panel at a time),
+  // so `maxMonths` is sitting still anyway.
+  const scale = useMemo(() => (open ? monthsScale(maxMonths) : null), [open, maxMonths]);
+  // The ruler reports its value out and never takes one back in (see
+  // AmountRuler's own comment), so it is handed the value this row held when
+  // it OPENED, not the live one it is itself driving. Feeding the live value
+  // back changed `initialValue` on every tick, which defeated the memo around
+  // AmountRuler and re-rendered its whole tick/label SVG mid-drag.
+  const openedValue = useRef(months);
+  if (!open) openedValue.current = months;
   return (
     <FieldCard light={light}>
       <RowHeader label={label} light={light} onPress={open ? onClose : onOpen}>
@@ -763,12 +799,21 @@ function MonthsRulerRow({ label, value, onChange, session, light, open, onOpen, 
           </View>
           <AmountRuler
             scale={scale}
-            initialValue={months}
+            initialValue={openedValue.current}
             sessionKey={session}
             onChange={onChange}
             light={light}
-            surface={light ? '#FAFAF8' : '#161616'}
+            surface={light ? FIELD_CARD_SURFACE.light : FIELD_CARD_SURFACE.dark}
             tintCompleted={tintCompleted}
+            // 'fast', not the amount ruler's own 'normal' — a loan runs at
+            // most a few hundred months, every one of them a real tick
+            // (nothing here is banded the way the amount ruler's own big
+            // numbers are), so the same flick that barely dents a lakh-sized
+            // amount carries for seconds across this much shorter, denser
+            // scale — reading as the ruler spinning on past where the finger
+            // actually meant to let go, rather than settling on the month
+            // right under it.
+            decelerationRate="fast"
           />
         </View>
       )}
@@ -800,6 +845,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
   // good the moment it's created — same as `kind` itself, this isn't
   // something an edit can change.
   const [debtType, setDebtType] = useState(null);
+  const isEmiType = kind === 'debt' && debtType === 'emi';
   const [tenureMonths, setTenureMonths] = useState('');
   // Bumped alongside the field-reset effect below, each time the sheet
   // actually opens — tells both month rulers (AmountRuler's own `sessionKey`)
@@ -808,6 +854,12 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
   // reset together, at the moment the sheet opens.
   const [rulerSession, setRulerSession] = useState(0);
   const [emisPaidBefore, setEmisPaidBefore] = useState('');
+  // Stable identities, not inline arrows — these reach AmountRuler, which is
+  // memo'd, and GoalSheet re-renders on every tick of a drag (the value lives
+  // in its state). A fresh function each render defeated that memo, so the
+  // ruler rebuilt its whole SVG on every month it crossed.
+  const handleTenureChange = useCallback(v => setTenureMonths(String(v)), []);
+  const handleEmisPaidChange = useCallback(v => setEmisPaidBefore(String(v)), []);
   // Dragging the tenure ruler down below however many EMIs were already
   // marked paid would otherwise leave that field pointing at a month the
   // loan no longer has (its own ruler, built off this same tenure, would
@@ -821,6 +873,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
   }, [tenureMonths, emisPaidBefore]);
   const [firstEmiDate, setFirstEmiDate] = useState('');
   const [emiAmount, setEmiAmount] = useState(0);
+  const [emiEdited, setEmiEdited] = useState(false);
   const [startingAmount, setStartingAmount] = useState(0);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -829,7 +882,12 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
   // shows (opening Height's wheel closes Date of Birth's), not each row
   // managing its own independent expand state.
   const [openField, setOpenField] = useState(null);
-  const openRow = (key) => setOpenField(key);
+  // Dismisses the keyboard, not just whatever text field happened to be
+  // focused — opening a ruler or a wheel is switching to a NON-keyboard
+  // control, so the keyboard should go the same way tapping blank space
+  // already sends it away, not linger on screen until something later
+  // happens to blur the text field for an unrelated reason.
+  const openRow = (key) => { Keyboard.dismiss(); setOpenField(key); };
   const closeRow = () => setOpenField(null);
 
   // See DEBT_HEIGHT_RATIO's own comment — matches how many rows render
@@ -851,13 +909,48 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
     closeRow();
   }, []);
 
-  // No keyboard-avoidance machinery here any more: this sheet used to
-  // measure "EMIs already paid" as it took focus and lift the sheet by that
-  // row's own overlap with the number pad, because it sat low enough to be
-  // covered outright. Both month fields are drag rulers now, so the only
-  // keyboard fields left (name, the amount rows) sit high enough to never be
-  // covered, and the lift — along with the measuring and the `extraLift`
-  // InlineSheet took — has nothing left to do.
+  // Keyboard avoidance is InlineSheet's job now, for every sheet rather than
+  // this one alone — see its own comment on lifting by what it takes and no
+  // more.
+
+  // How tall this sheet's content actually is, handed to InlineSheet so it
+  // can size itself to exactly that instead of to a hand-tuned share of the
+  // screen. Two pieces, measured separately and added together (plus the
+  // title's own marginBottom, which its own layout height excludes): the
+  // title is a fixed header outside the scroll, and the row list below it
+  // renders inside a GestureScrollView (see its own comment on why a plain
+  // View stopped being enough), so its DESIRED height has to come from
+  // `onContentSizeChange` — the content's own full size — rather than
+  // `onLayout`, which on a scroll view reports the bounded VIEWPORT it was
+  // actually given, not what its content would take if nothing clipped it.
+  // Either number updates only while every row is COLLAPSED: an expanding
+  // row deliberately outgrows the scroll viewport instead of resizing the
+  // sheet to fit it (see the row list's own comment on why), so letting its
+  // bigger height feed back here would defeat that on every single tap.
+  const [titleH, setTitleH] = useState(0);
+  const [bodyH, setBodyH] = useState(0);
+  const openFieldRef = useRef(openField);
+  openFieldRef.current = openField;
+  const onTitleLayout = useCallback((e) => {
+    const h = e.nativeEvent.layout.height;
+    setTitleH(prev => (Math.abs(prev - h) < 0.5 ? prev : h));
+  }, []);
+  // The type-selector step (DebtTypeStep) is plain content, not scrollable —
+  // two tiles, short enough on any screen that it never needs to be — so it
+  // measures the ordinary way.
+  const onStepLayout = useCallback((e) => {
+    if (openFieldRef.current) return;
+    const h = e.nativeEvent.layout.height;
+    setBodyH(prev => (Math.abs(prev - h) < 0.5 ? prev : h));
+  }, []);
+  const onRowsContentSize = useCallback((_w, h) => {
+    if (openFieldRef.current) return;
+    setBodyH(prev => (Math.abs(prev - h) < 0.5 ? prev : h));
+  }, []);
+  const rowReserve = isEmiType ? EMI_LAST_ROW_RESERVE : kind !== 'debt' ? SAVINGS_LOCATION_RESERVE : 0;
+  const contentH = titleH > 0 && bodyH > 0
+    ? titleH + 12 + bodyH + rowReserve
+    : 0;
 
   // Same reasoning as AmountEntrySheet's own `positionReady` — held off for
   // exactly InlineSheet's open animation before any field row is allowed to
@@ -888,18 +981,54 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
     setTenureMonths(goal?.tenureMonths ? String(goal.tenureMonths) : '12');
     setRulerSession(n => n + 1);
     setEmisPaidBefore(goal?.emisPaidBefore ? String(goal.emisPaidBefore) : '');
-    setFirstEmiDate(goal?.firstEmiDate || '');
+    // Today, not blank, for a new loan. Left unset this field reads as
+    // optional, but nothing downstream works without it: no first EMI means
+    // no schedule to hang dates off, so the circle tracker doesn't render at
+    // all and "Next payment" stays hidden. Most loans are added around the
+    // time they start, so today is both the likeliest answer and one less
+    // field to go and fill in; it is still a plain editable row.
+    setFirstEmiDate(goal?.firstEmiDate || today());
     setEmiAmount(goal?.emiAmount ?? 0);
+    // An existing loan's EMI is its own — never recomputed under the user.
+    // A new one's follows the borrowed amount and tenure until it is typed
+    // over (see the effect below).
+    setEmiEdited(!!goal?.emiAmount);
     setStartingAmount(0);
     setOpenField(null);
     setError('');
     setSubmitting(false);
   }, [open, goal, initialName]);
 
+  // EMI debt's own three fields, required — not because a blank one looks
+  // wrong, but because nothing downstream works without it. Tenure already
+  // can't go blank (the ruler always sits on a value) and First EMI already
+  // defaults to today (see its own reset-effect comment), so in practice
+  // this only ever stops the one field that CAN be cleared out: Monthly EMI.
+  // Leaving it blank used to submit fine and then go silently wrong — every
+  // EMI logged against the loan divides by this to count as a whole
+  // payment (see useSavings.js's own `emisPaid`), so a null EMI amount
+  // meant payments kept landing in history while "remaining", "% paid" and
+  // the tracker never moved, with nothing on screen saying why.
+  const emiFieldsReady = !isEmiType || (parseInt(tenureMonths, 10) > 0 && emiAmount > 0 && !!firstEmiDate);
   const canSubmit = name.trim().length > 0 && amount > 0
-    && (kind !== 'debt' || isEdit || !!debtType);
+    && (kind !== 'debt' || isEdit || !!debtType)
+    && emiFieldsReady;
 
-  const isEmiType = kind === 'debt' && debtType === 'emi';
+  // Monthly EMI, filled in from the borrowed amount spread over the tenure,
+  // for as long as it hasn't been typed over. Left at "Not set" it isn't a
+  // blank the user can simply skip — the EMI amount is what every figure on
+  // the loan's page is built from ("left to pay", the paid count, the
+  // tracker), so an unset one quietly produces a loan page with nothing on
+  // it. A flat division ignores interest, which is exactly why it's only a
+  // starting point: the Loan Summary card right below shows what it adds up
+  // to, so a real EMI off the loan paperwork can be typed straight over it.
+  const handleEmiAmountChange = useCallback((v) => { setEmiEdited(true); setEmiAmount(v); }, []);
+  useEffect(() => {
+    if (!isEmiType || emiEdited) return;
+    const tenure = parseInt(tenureMonths, 10) || 0;
+    setEmiAmount(tenure > 0 && amount > 0 ? Math.round(amount / tenure) : 0);
+  }, [isEmiType, emiEdited, amount, tenureMonths]);
+
   const handleSubmit = useCallback(async () => {
     if (!canSubmit || submitting) return;
     setSubmitting(true);
@@ -950,35 +1079,22 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
     // gesture is removed outright rather than trusting threshold tuning to
     // arbitrate it (which failed repeatedly for the ruler).
     //
-    // `heightRatio` is NOT gated on `openField` — it used to jump higher the
-    // moment any field opened, so there was room for that field's panel with
-    // the outer scroll disabled (below). But InlineSheet is a bottom sheet
-    // (`bottom: 0`, height grows upward), so growing it pushes its TOP up by
-    // however much it grew — and every row lives at a fixed offset from
-    // that top, so the whole card (the row just tapped included) slid up
-    // the screen right as it was tapped, away from the finger that opened
-    // it. Fixed per `sheetHeightRatio` above instead — sized to how many
-    // rows this kind/isEdit combination actually renders, not to whichever
-    // field happens to be open — so opening or closing a field never
-    // resizes the sheet at all: only the tapped row's own height changes
-    // (see FIELD_LAYOUT_TRANSITION below), reflowing the rows under it
-    // rather than moving the sheet itself. A field whose panel doesn't fit
-    // in what's left just pushes the rows below it past the sheet's own
-    // bottom edge — the row list has no scrolling at all any more (below),
-    // so that content is simply not reachable until the field is closed
-    // again, on purpose: the alternative is the sheet growing to guarantee
-    // it always fits, which is exactly the resize this comment just tore
-    // out.
+    // `heightRatio` is only the fallback for the one frame before the real
+    // measurement lands (see contentH above) — the sheet is sized to its
+    // content now, not to a guessed share of the screen, so there's nothing
+    // left here to gate on `openField`.
     <InlineSheet
       open={open}
       onClose={onClose}
       onClosed={onClosed}
       light={light}
       heightRatio={sheetHeightRatio}
+      contentHeight={contentH || null}
       dismissible={!submitting && !openField}
       footer={footer}
     >
-      <View style={{ minHeight: 22, justifyContent: 'center', marginBottom: 12, paddingHorizontal: 20 }}>
+      <View style={{ flex: 1 }}>
+      <View onLayout={onTitleLayout} style={{ minHeight: 22, justifyContent: 'center', marginBottom: 12, paddingHorizontal: 20 }}>
         <Text className="text-center font-semibold" style={{ fontSize: 17, color: textColor(light).primary }}>
           {isEdit ? copy.sheetTitleEdit : copy.sheetTitleNew}
         </Text>
@@ -1005,45 +1121,54 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
         )}
       </View>
 
-      {/* A plain View, not a ScrollView — this row list never scrolls, full
-          stop, not even while nothing is expanded. It used to be a
-          ScrollView with scrolling switched off only while a field was
-          open: dragging inside an open field's own dropdown (OptionsRow's
-          wheel) or ruler could still get partly claimed by this scroller
-          underneath it (react-native-gesture-handler arbitrates the two
-          gestures, and it didn't always resolve the way either control
-          wanted — see the wheel/ruler's own PanResponder comments on losing
-          that fight before), which felt like the card stack "jumping"
-          under a selection gesture. Removing the ScrollView outright is
-          what actually guarantees that can never happen again: there is no
-          scroll gesture left in this tree to contend for a touch, on any
-          field, at any time — not something tuned to usually not trigger.
-
-          The sheet's own height is fixed (heightRatio, sized on
-          InlineSheet above) and never grows for an expanded field, so a
-          field whose panel doesn't fit in what's left — or, collapsed,
-          whichever row happens to be last if a kind's fields don't all fit
-          — just runs past this View's own bottom edge and is invisible
-          until that field closes again. On purpose: see heightRatio's own
-          comment for why growing the sheet to guarantee a fit isn't the
-          answer here either.
-
-          Each field is its own Card, not rows sharing one — a separate
-          rounded card per field with a gap between them, matching the
-          reference screenshot's own Filters sheet (Location/Price/Dates/
-          Time each their own card) rather than one grouped list with
-          internal hairlines. */}
-      {/* Pressable, not View — a tap that lands on empty space between/
-          around the cards (rather than on a row, which claims the touch for
-          itself first) dismisses whichever field's keyboard is up. Without
-          this, a number-pad field only closed via its own "Done" key or by
-          focusing a different field; tapping the sheet's own blank space
-          did nothing. */}
       {kind === 'debt' && !isEdit && !debtType ? (
-        <DebtTypeStep onSelect={setDebtType} light={light} />
+        <View onLayout={onStepLayout}>
+          <DebtTypeStep onSelect={setDebtType} light={light} />
+        </View>
       ) : (
-      <Pressable style={{ flex: 1, paddingHorizontal: 20, paddingBottom: 12 }} onPress={Keyboard.dismiss}>
-        <View style={{ gap: 12 }}>
+      // A GestureScrollView, not a plain View — the row list used to never
+      // scroll, full stop, on purpose: a nested ScrollView's own vertical
+      // drag can contest a wheel/ruler's own gesture for the same touch (see
+      // the wheel/ruler's own PanResponder comments on losing that fight
+      // before), and removing it outright was what guaranteed that could
+      // never happen again. But a kind/state combination whose rows simply
+      // don't fit even fully COLLAPSED — EMI debt's six fields plus the Loan
+      // Summary card, on a shorter screen — had no scroll to fall back on
+      // either, so its last rows (EMIs already paid, First EMI) rendered
+      // past the sheet's own edge with no way to reach them at all. Scoped
+      // narrowly to avoid reopening the old conflict: `scrollEnabled` is off
+      // the instant any row opens its own panel, which is exactly the state
+      // that drags a wheel or a ruler, so this scroller is never live at the
+      // same time as one of those gestures — only in the plain "tap a
+      // collapsed row" state, same as every tap on this list already was.
+      //
+      // From gesture-handler, like AmountRuler's own scroller — plain
+      // React Native's ScrollView is invisible to the arena InlineSheet's
+      // own swipe-to-dismiss pan negotiates in (see AmountRuler's comment
+      // for the long version), so this is what lets a drag inside the list
+      // properly contest that pan instead of losing to it outright.
+      //
+      // `onContentSizeChange`, not a wrapping `onLayout` — this view's own
+      // rendered height is now bounded to whatever space is actually left
+      // (`flex: 1`, resolved against the sheet InlineSheet computed), which
+      // can be smaller than its content; the content's own full size is
+      // what the sizing calculation above needs, and only the scroll
+      // view's own callback reports that regardless of how it's bounded.
+      //
+      // Each field is its own Card, not rows sharing one — a separate
+      // rounded card per field with a gap between them, matching the
+      // reference screenshot's own Filters sheet (Location/Price/Dates/
+      // Time each their own card) rather than one grouped list with
+      // internal hairlines.
+      <GestureScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12, gap: 12 }}
+        scrollEnabled={!openField}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={Keyboard.dismiss}
+        onContentSizeChange={onRowsContentSize}
+      >
           <ReanimatedView.View layout={rowsReady ? FIELD_LAYOUT_TRANSITION : undefined} style={{ overflow: 'hidden' }}>
           <FieldCard light={light}>
             <TextRow
@@ -1095,7 +1220,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
                 <MonthsRulerRow
                   label="Total EMIs"
                   value={tenureMonths}
-                  onChange={v => setTenureMonths(String(v))}
+                  onChange={handleTenureChange}
                   session={rulerSession}
                   light={light}
                   open={openField === 'tenure'}
@@ -1108,7 +1233,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
                 <AmountTextRow
                   label="Monthly EMI"
                   value={emiAmount}
-                  onChangeValue={setEmiAmount}
+                  onChangeValue={handleEmiAmountChange}
                   placeholder="Not set"
                   light={light}
                   onFocusRow={() => focusField('emiAmount')}
@@ -1119,7 +1244,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
                 <MonthsRulerRow
                   label="EMIs already paid"
                   value={emisPaidBefore}
-                  onChange={v => setEmisPaidBefore(String(v))}
+                  onChange={handleEmisPaidChange}
                   session={rulerSession}
                   light={light}
                   open={openField === 'emisPaid'}
@@ -1166,9 +1291,9 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
             </FieldCard>
             </ReanimatedView.View>
           )}
-        </View>
-      </Pressable>
+      </GestureScrollView>
       )}
+      </View>
     </InlineSheet>
   );
 }
@@ -1181,13 +1306,41 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
 // just the one entry, which also skips AddModal's toggle entirely.
 const DEBT_MONEY_MODES = ['add'];
 
-export function MoneySheet({ open, onClose, onClosed, goalName, entry, initialType = 'add', maxWithdraw = 0, onSubmit, light = false, kind = 'savings' }) {
+export function MoneySheet({ open, onClose, onClosed, goalName, goal, entry, initialType = 'add', maxWithdraw = 0, onSubmit, closeEarly = false, light = false, kind = 'savings' }) {
   const isEdit = !!entry;
 
   // AddModal's own {type, amount, date, description} shape, mapped to and
   // from this sheet's {type, amount, date, note} — a savings/debt entry has
   // a "note", not a "description", everywhere else it's used.
   const editData = entry ? { type: entry.type, amount: entry.amount, date: entry.date, description: entry.note } : null;
+
+  // A brand-new EMI payment already has a known amount — the loan's own
+  // monthly EMI, or, for a pre-closure (`closeEarly`), the loan's own
+  // `remaining` — and a description that's just the loan's name, same as
+  // what `useEmiExpenseConfirm` already writes to Home's expense list for
+  // this exact payment. Filled in so logging a payment is mostly a confirm,
+  // not a re-type of numbers already on file; only for a fresh entry
+  // (`isEdit` false — an edit already has its own real values via
+  // `editData` above) and only for EMI debt, which is the only kind with
+  // these fields at all.
+  //
+  // `remaining` is a SUGGESTION here, not a lock the way the monthly EMI
+  // amount effectively is — a real foreclosure figure almost never matches
+  // `emisRemaining × emiAmount` exactly (a bank's own fee or discount isn't
+  // something this app's schedule math knows about), so it has to stay
+  // freely editable, not just prefilled.
+  //
+  // The date defaults to today, not the loan's own schedule-derived
+  // `nextEmiDate`. A loan whose paid count sits behind its schedule has a
+  // `nextEmiDate` in a past month, and this payment is the one being made
+  // right now — it belongs in the current month, not in whichever month the
+  // schedule is still catching up to. Which EMI it settles doesn't depend on
+  // this date anyway: the count comes from the money (see useSavings.js's
+  // `emisPaid`), and the tracker fills in schedule order.
+  const isEmiDebt = kind === 'debt' && goal?.debtType === 'emi';
+  const prefill = !isEdit && isEmiDebt
+    ? { amount: (closeEarly ? goal.remaining : goal.emiAmount) || 0, date: today(), description: goalName }
+    : undefined;
   const handleAdd = useCallback(({ type, amount, date, description }) => (
     onSubmit({ type, amount, date, note: description })
   ), [onSubmit]);
@@ -1213,6 +1366,7 @@ export function MoneySheet({ open, onClose, onClosed, goalName, entry, initialTy
       onAdd={handleAdd}
       onEdit={handleEdit}
       editData={editData}
+      prefill={prefill}
       modes={kind === 'debt' ? DEBT_MONEY_MODES : MONEY_MODES}
       labels={MONEY_LABELS}
       // Just wide enough to fit "Withdraw" in full without the reel's own

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, useWindowDimensions } from 'react-native';
 import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedScrollHandler, useAnimatedStyle, runOnJS } from 'react-native-reanimated';
@@ -63,7 +63,7 @@ const DONE_MAJOR = 'rgba(74,222,128,0.90)';
 // more expensive to lay out than a Path segment) and was the actual cause
 // of the sheet hanging on open. Ticks (Path, cheap) can stay dense; labels
 // (SvgText, not cheap) are picked by rupee spacing instead, ~45 total here.
-export const AMOUNT_BANDS = [
+const AMOUNT_BANDS = [
   { upTo: 100000, step: 100, labelEvery: 5000 },
   { upTo: 1000000, step: 1000, labelEvery: 50000 },
   { upTo: 5000000, step: 10000, labelEvery: 500000 },
@@ -82,7 +82,7 @@ function shortLabel(v) {
 // tick values, and every tick as two path strings (one for the short ones, one
 // for the tall) so the whole ruler is two native nodes instead of a few
 // hundred. The ruler is otherwise the same at every size and in every theme.
-export function createScale(bands) {
+function createScale(bands) {
   const ticks = [0];
   // Every tick, tagged with which band produced it — needed below to know
   // that tick's own `labelEvery`, since bands can differ once ticks are
@@ -128,21 +128,16 @@ export function createScale(bands) {
     minorPath: minor,
     majorPath: major,
     labels,
-    min: ticks[1],
-    max: ticks[count - 1],
     nearestTickIndex,
   };
 }
 
 const AnimatedScrollView = Animated.createAnimatedComponent(GestureScrollView);
 
+// One shared currency scale. `BUDGET_SCALE` is the name its one outside
+// caller imports it by; everything in here uses it as the default `scale`.
 const AMOUNT_SCALE = createScale(AMOUNT_BANDS);
-// Kept as two names for the call sites that already import them (a savings
-// goal vs. a budget line) — both now point at the identical scale.
-export const GOAL_SCALE = AMOUNT_SCALE;
 export const BUDGET_SCALE = AMOUNT_SCALE;
-
-export const MIN_TARGET = GOAL_SCALE.min;
 
 // One edge of the ruler dissolving into the sheet, so ticks arrive and leave
 // rather than being cut off at a hard border.
@@ -169,12 +164,46 @@ function EdgeFade({ side, color }) {
 // `sessionKey` changing means "start again from initialValue" — the sheet
 // reopening, say. The scroll position is the source of truth the rest of the
 // time, so the value is reported out rather than pushed in.
-function AmountRuler({ initialValue, sessionKey, onChange, light = false, surface, scale = GOAL_SCALE, tintCompleted = false }) {
+function AmountRuler({ initialValue, sessionKey, onChange, light = false, surface, scale = AMOUNT_SCALE, tintCompleted = false, decelerationRate = 'normal' }) {
   const { width } = useWindowDimensions();
+  // The ruler's OWN width, measured — not the window's.
+  //
+  // Which tick sits under the centre line is pure arithmetic: the content is
+  // padded by half the viewport at each end, so tick i lands under the line
+  // at exactly `i * SPACING` of scroll — but only if the half-viewport used
+  // for that padding is the same box the line is drawn at 50% of. This used
+  // to assume the two were the same thing, which held while every ruler bled
+  // to the screen edges (BudgetSetupModal's still does). The month rulers in
+  // the debt sheet deliberately don't any more — they sit inside that
+  // sheet's own 20px gutters — so the padding was overshooting by 20px and
+  // the value read off the scroll was a little over two ticks away from the
+  // tick actually under the line. Measuring makes it exact either way.
+  const [viewportW, setViewportW] = useState(width);
+  const onViewportLayout = useCallback((e) => {
+    const w = e.nativeEvent.layout.width;
+    // Sub-pixel layout noise would otherwise re-render on every pass.
+    setViewportW(prev => (Math.abs(prev - w) < 0.5 ? prev : w));
+  }, []);
   // Pulled out as plain values: the scroll handler below is a worklet, and
   // capturing the whole scale would copy every tick across to the UI thread.
   const { ticks, count, trackWidth, minorPath, majorPath, labels, nearestTickIndex } = scale;
   const scrollRef = useRef(null);
+  // Captured once, at mount, and never handed a new object again.
+  //
+  // `contentOffset` is a NATIVE prop: React Native pushes it back down into
+  // the scroll view every time it changes, mid-gesture included. And
+  // `initialValue` is the live value this ruler is itself driving (the
+  // sheet's own state, set from `onChange` below), so building this inline
+  // meant every tick crossed during a drag shoved a fresh offset into a
+  // scroll that was still moving — and a stale one at that, since it had
+  // been round-tripping through `runOnJS` → setState → re-render while the
+  // finger kept going. That fight is what read as the ruler jumping back to
+  // where it started, and as a fling that alternately raced and stalled.
+  //
+  // Repositioning after mount is `sessionKey`'s job alone, through the
+  // imperative scrollTo below — safe precisely because it only fires when
+  // the sheet says to start over, never while a drag is in flight.
+  const initialOffset = useRef({ x: nearestTickIndex(initialValue) * SPACING, y: 0 }).current;
   const lastIndex = useSharedValue(nearestTickIndex(initialValue));
   // Only read by the `tintCompleted` overlay below, and only on the UI
   // thread — the tint has to follow the finger frame for frame, so it can't
@@ -229,7 +258,7 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
   // tracks the scroll on the UI thread, so the colour boundary stays glued
   // to the line through a slow drag and a fast fling alike.
   const tintStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: width / 2 - PAD - scrollX.value }],
+    transform: [{ translateX: viewportW / 2 - PAD - scrollX.value }],
   }));
 
   const tickColor = light ? 'rgba(0,0,0,0.22)' : 'rgba(255,255,255,0.20)';
@@ -237,19 +266,19 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
   const labelColor = textColor(light).disabled;
 
   return (
-    <View style={{ height: HEIGHT }}>
+    <View style={{ height: HEIGHT }} onLayout={onViewportLayout}>
       <AnimatedScrollView
         ref={scrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         snapToInterval={SPACING}
-        decelerationRate="normal"
+        decelerationRate={decelerationRate}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
-        // Half the screen of empty space at each end, so the first and last
+        // Half the ruler of empty space at each end, so the first and last
         // ticks can still reach the centre line.
-        contentContainerStyle={{ paddingHorizontal: width / 2 - PAD }}
-        contentOffset={{ x: nearestTickIndex(initialValue) * SPACING, y: 0 }}
+        contentContainerStyle={{ paddingHorizontal: viewportW / 2 - PAD }}
+        contentOffset={initialOffset}
       >
         <Svg width={trackWidth} height={HEIGHT}>
           <Path d={minorPath} stroke={tickColor} strokeWidth="1.5" strokeLinecap="round" />
@@ -290,8 +319,8 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
 
 export default memo(AmountRuler);
 
-export const MONTHS_MIN = 0;
-export const MONTHS_MAX = 300;
+const MONTHS_MIN = 0;
+const MONTHS_MAX = 300;
 
 // A plain 1-tick-per-month scale for a duration ruler (EMI tenure, and EMIs
 // already paid, in GoalSheet) — shaped exactly like `createScale`'s own
@@ -349,8 +378,6 @@ export function monthsScale(max = MONTHS_MAX) {
   const clampedMax = Math.max(MONTHS_MIN, Math.min(MONTHS_MAX, Math.round(max) || MONTHS_MAX));
   return { ticks: Array.from({ length: clampedMax - MONTHS_MIN + 1 }, (_, i) => MONTHS_MIN + i), ...buildMonthsScale(clampedMax) };
 }
-
-export const MONTHS_SCALE = monthsScale(MONTHS_MAX);
 
 const figureFormat = new Intl.NumberFormat('en-IN');
 

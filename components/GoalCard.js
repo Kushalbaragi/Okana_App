@@ -13,10 +13,9 @@ import { TABULAR } from '../utils/type';
 // place, so the removal is something you see happen.
 const REMOVE_MS = 240;
 
-// A goal on the list, as a card of its own: the name with its percent and the
-// arrow that says it opens, the amount saved as the big number with "of goal"
-// beside it, then a plain bar. Deliberately nothing else — the rest is on the
-// goal's own page.
+// A goal on the list, as a card of its own: name and status line on top, the
+// headline amount as the big number below it, then a thin bar. Deliberately
+// nothing else — the rest is on the goal's own page.
 //
 // Swiping it left reveals a delete button, which asks `onDelete` right away (the
 // caller confirms — a goal takes its history with it). `registerSwipeable`,
@@ -37,17 +36,22 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
   }, [goal.id, onPress, onCardPress]);
 
   const isDebt = goal.kind === 'debt';
+  const isEmiDebt = isDebt && goal.debtType === 'emi';
 
-  // Debt and Savings share the exact same card shape — a name row, then the
-  // headline figure with its "of X" caption (debt's own reads "left of X",
-  // since the headline there is what's still owed rather than what's been
-  // saved), then the bar — differing only in which numbers and words go
-  // into it, so those are picked once here rather than building two
-  // near-identical trees.
+  // Debt and Savings share the exact same card shape — name, a status line
+  // (percent for savings and flexible debt, EMIs left for EMI debt), the
+  // headline amount, then a thin bar. Nothing else: no location caption, no
+  // secondary amount line — `goal.emisRemaining` is the schedule-derived
+  // count useSavings.js already computes for EMI debt (see its own comment
+  // on why that can't be read off `percent` or `remaining` instead).
   const headlineAmount = isDebt ? goal.remaining : goal.saved;
-  const caption = isDebt
-    ? (goal.location ? `left from ${goal.location}` : `left of ${money(goal.target)}`)
-    : (goal.location ? `saved in ${goal.location}` : `of ${money(goal.target)}`);
+  // An EMI loan with no tenure set has no EMI count to speak of (it was
+  // reading "null EMIs left"), so it falls back to the percent like any other.
+  const statusText = isEmiDebt && goal.emisRemaining != null
+    ? `${goal.emisRemaining} EMIs left`
+    : isDebt
+      ? `${goal.percent}% paid`
+      : `${money(goal.remaining)} left`;
   const accessibilityLabel = done
     ? `${goal.name}, ${isDebt ? 'cleared' : 'completed'}`
     : isDebt ? `${goal.name}, ${money(goal.remaining)} left` : goal.name;
@@ -58,29 +62,31 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
         variant="field"
         pressScale={false}
         onPress={handlePress}
-        style={{ padding: 16 }}
+        style={{ padding: 20 }}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
       >
+        {/* items-center, not items-baseline. A done card leads this row with
+            the CheckIcon, and an SVG has no text baseline to align to — Yoga
+            falls back to its height, which pushed the name out of the card's
+            padded box and left a cleared loan showing nothing but a tick. The
+            name and the status line are the same size and weight anyway, so
+            centring puts them on the same line regardless. */}
         <View className="flex-row items-center justify-between" style={{ gap: 12 }}>
           <View className="flex-row items-center flex-1" style={{ gap: 8 }}>
             {done && <CheckIcon size={14} color={POSITIVE} />}
-            <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 17, fontWeight: '400', color: done ? dim(light, 0.5) : textColor(light).primary }}>{goal.name}</Text>
+            <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 15, fontWeight: '400', color: done ? dim(light, 0.5) : textColor(light).tertiary }}>{goal.name}</Text>
           </View>
-          {!done && <Text className="text-[13px] font-medium" style={{ color: textColor(light).tertiary }}>{goal.percent}% {isDebt ? 'paid' : 'saved'}</Text>}
+          {!done && <Text style={{ fontSize: 15, fontWeight: '400', color: textColor(light).tertiary }}>{statusText}</Text>}
         </View>
         {!done && (
           <>
-            <View style={{ marginTop: 10, marginBottom: 10 }}>
-              <ProgressBar percent={goal.percent} height={8} light={light} trackColor="rgba(74,222,128,0.12)" />
-            </View>
-            <View className="flex-row items-baseline" style={{ gap: 6 }}>
-              <Text style={{ fontSize: 13, fontWeight: '400', color: done ? dim(light, 0.5) : textColor(light).disabled, ...TABULAR }}>
-                {money(headlineAmount)}
-              </Text>
-              <Text style={{ fontSize: 13, flexShrink: 1, color: textColor(light).disabled }} numberOfLines={1}>
-                {caption}
-              </Text>
+            <Text style={{ fontSize: 24, fontWeight: '600', marginTop: 10, color: textColor(light).primary, ...TABULAR }}>
+              {money(headlineAmount)}
+              <Text style={{ fontSize: 15, fontWeight: '400', color: textColor(light).tertiary }}> {isDebt ? 'left' : 'saved'}</Text>
+            </Text>
+            <View style={{ marginTop: 14 }}>
+              <ProgressBar percent={goal.percent} height={5} light={light} trackColor={dim(light, 0.1)} />
             </View>
           </>
         )}

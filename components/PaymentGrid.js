@@ -1,5 +1,6 @@
-import { memo } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import { View, Text } from 'react-native';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { dim } from './savingsShared';
 import { textColor } from '../utils/colors';
 
@@ -14,17 +15,36 @@ const LABEL_W = 38;
 const FILLED = '#4ade80';
 
 function Dot({ paid, inRange, light }) {
-  // Months before the loan started tracking, or past its tenure — barely
-  // there at all, just enough to keep the grid's own shape (every year a
-  // full 12 columns) without drawing the eye to a month that was never
-  // actually part of the loan.
+  // 0 = outline only, 1 = filled. A dot that turns paid while on screen fills
+  // in slowly with one soft ring spreading off it; one that is already paid
+  // when the grid appears is simply drawn filled.
+  const fill = useSharedValue(paid ? 1 : 0);
+  const ring = useSharedValue(0);
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (!mounted.current) { mounted.current = true; return; }
+    fill.value = withTiming(paid ? 1 : 0, { duration: 900, easing: Easing.out(Easing.cubic) });
+    if (paid) {
+      ring.value = 0;
+      ring.value = withTiming(1, { duration: 1200, easing: Easing.out(Easing.quad) });
+    }
+  }, [paid, fill, ring]);
+  const fillStyle = useAnimatedStyle(() => ({ opacity: fill.value, transform: [{ scale: 0.4 + 0.6 * fill.value }] }));
+  const ringStyle = useAnimatedStyle(() => ({ opacity: 0.4 * (1 - ring.value) * (ring.value > 0 ? 1 : 0), transform: [{ scale: 1 + ring.value * 1.1 }] }));
+
+  // Months before the loan started tracking, or past its tenure — no
+  // circle at all, just the column's own empty space, so the grid shows
+  // only months that were actually part of the loan.
   if (!inRange) {
-    return <View style={{ width: DOT, height: DOT, borderRadius: DOT / 2, backgroundColor: dim(light, 0.02) }} />;
+    return <View style={{ width: DOT, height: DOT }} />;
   }
-  if (paid) {
-    return <View style={{ width: DOT, height: DOT, borderRadius: DOT / 2, backgroundColor: FILLED }} />;
-  }
-  return <View style={{ width: DOT, height: DOT, borderRadius: DOT / 2, borderWidth: 1.5, borderColor: dim(light, 0.18) }} />;
+  return (
+    <View style={{ width: DOT, height: DOT, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ position: 'absolute', width: DOT, height: DOT, borderRadius: DOT / 2, borderWidth: 1.5, borderColor: dim(light, 0.18) }} />
+      <Animated.View pointerEvents="none" style={[{ position: 'absolute', width: DOT, height: DOT, borderRadius: DOT / 2, backgroundColor: FILLED }, ringStyle]} />
+      <Animated.View style={[{ width: DOT, height: DOT, borderRadius: DOT / 2, backgroundColor: FILLED }, fillStyle]} />
+    </View>
+  );
 }
 
 // A year-by-month grid of paid/unpaid EMIs, read like a habit tracker rather

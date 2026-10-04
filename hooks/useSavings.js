@@ -17,16 +17,34 @@ function goalFromRow(row) {
     target:       parseFloat(row.target_amount),
     location:     row.location || '',
     kind:         row.kind || 'savings',
-    // Debt only: total number of EMIs the loan runs for. Optional — a loan
-    // added without one still tracks payments and shows its grid, just with
-    // no "of N" count or "left" figure.
+    // Debt only. Which shape this loan is: 'emi' (a fixed schedule — car,
+    // bike, home, personal loan) or 'flexible' (no schedule — a friend,
+    // family, informal borrowing). Null for a debt goal saved before this
+    // split existed; `derived` below infers one for it (EMI-shaped data on
+    // file means 'emi', otherwise 'flexible') rather than needing every old
+    // goal migrated by hand. Always null for a savings goal.
+    debtType:     row.debt_type ?? null,
+    // EMI debt only: total number of EMIs the loan runs for — this is what
+    // "Total repayment" (Monthly EMI × this) is worked out from in
+    // `derived` below, not a snapshot of the loan's current state.
     tenureMonths: row.tenure_months ?? null,
-    // Debt only: EMIs already paid before the loan was added here (most
-    // loans aren't added on day one). Backdates the grid's start by this
-    // many months and counts toward `paidCount` without needing an entry of
-    // its own for each — logging 34 backdated payments to say "34 already
-    // paid" would be exactly the kind of data entry this grid is meant to avoid.
+    // EMI debt only. A plain count, typed in directly — not derived from a
+    // date. Whether the loan is done, how many EMIs are left, and "left to
+    // pay" all come straight from this (see `derived` below).
     emisPaidBefore: row.emis_paid || 0,
+    // EMI debt only, optional. When the first EMI was/is due — used only to
+    // put a real calendar date on "Next payment" (this plus `emisPaidBefore`
+    // months forward) and "Estimated finish" (this plus the full tenure),
+    // not to work out the count itself any more (see `derived`).
+    firstEmiDate: row.first_emi_date ?? null,
+    // EMI debt only. Shown as-is for reference; "Total repayment"/"left to
+    // pay" both multiply this by an EMI count (see `derived`) rather than
+    // this being read against a separately-tracked balance — there's no such
+    // balance any more (see the removed `outstandingBalance`'s own history:
+    // asking for a current balance directly, then estimating one from this,
+    // both came and went before landing here — a loan's own schedule turned
+    // out to be the one thing that needs no maintenance to stay right).
+    emiAmount: row.emi_amount != null ? parseFloat(row.emi_amount) : null,
     completedAt:  row.completed_at,
     createdAt:    row.created_at,
   }
@@ -218,7 +236,7 @@ export function useSavings(onEntryLogged) {
   // borrowed rather than what's being saved toward, and `saved` (below,
   // still just summed from entries) is what's been paid off rather than
   // what's been set aside. Nothing else about the read/write path changes.
-  const addGoal = useCallback(async ({ name, target, location, kind = 'savings', tenureMonths = null, emisPaidBefore = 0 }) => {
+  const addGoal = useCallback(async ({ name, target, location, kind = 'savings', debtType = null, tenureMonths = null, emisPaidBefore = 0, firstEmiDate = null, emiAmount = null }) => {
     // Client-generated so the optimistic row and the server row share an id.
     const id = Crypto.randomUUID()
     const goal = {
@@ -227,15 +245,22 @@ export function useSavings(onEntryLogged) {
       target:       parseFloat(target),
       location:     (location || '').trim(),
       kind,
+      debtType,
       tenureMonths,
       emisPaidBefore,
+      firstEmiDate,
+      emiAmount,
       completedAt:  null,
       createdAt:    new Date().toISOString(),
     }
     const result = await write({
       apply: () => setStore(s => ({ ...s, goals: [...s.goals, goal] })),
       request: () => supabase.from('savings_goals')
-        .insert({ id, user_id: user.id, name: goal.name, target_amount: goal.target, location: goal.location, kind, tenure_months: tenureMonths, emis_paid: emisPaidBefore })
+        .insert({
+          id, user_id: user.id, name: goal.name, target_amount: goal.target, location: goal.location, kind,
+          debt_type: debtType, tenure_months: tenureMonths, emis_paid: emisPaidBefore,
+          first_emi_date: firstEmiDate, emi_amount: emiAmount,
+        })
         .select().single(),
       rollback: () => setStore(s => ({ ...s, goals: s.goals.filter(g => g.id !== id) })),
       onSuccess: row => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? goalFromRow(row) : g) })),
@@ -248,15 +273,21 @@ export function useSavings(onEntryLogged) {
     return result
   }, [write, user, posthog])
 
-  const editGoal = useCallback(async (id, { name, target, location, tenureMonths = null, emisPaidBefore = 0 }) => {
+  const editGoal = useCallback(async (id, { name, target, location, tenureMonths = null, emisPaidBefore = 0, firstEmiDate = null, emiAmount = null }) => {
     const prev = storeRef.current.goals.find(g => g.id === id)
     if (!prev) return { success: false, error: FALLBACK_MESSAGE }
-    const next = { ...prev, name: name.trim(), target: parseFloat(target), location: (location || '').trim(), tenureMonths, emisPaidBefore }
+    // `debtType` is deliberately not editable — set once when the goal is
+    // created (see GoalSheet's own type-selector step) and left alone here,
+    // the same way `kind` itself never changes after a goal exists.
+    const next = { ...prev, name: name.trim(), target: parseFloat(target), location: (location || '').trim(), tenureMonths, emisPaidBefore, firstEmiDate, emiAmount }
     const saved = netFor(storeRef.current.entries, id)
     const result = await write({
       apply: () => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? next : g) })),
       request: () => supabase.from('savings_goals')
-        .update({ name: next.name, target_amount: next.target, location: next.location, tenure_months: tenureMonths, emis_paid: emisPaidBefore })
+        .update({
+          name: next.name, target_amount: next.target, location: next.location,
+          tenure_months: tenureMonths, emis_paid: emisPaidBefore, first_emi_date: firstEmiDate, emi_amount: emiAmount,
+        })
         .eq('id', id).eq('user_id', user.id),
       rollback: () => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? prev : g) })),
     })
@@ -500,13 +531,13 @@ export function useSavings(onEntryLogged) {
   // same derived-from-entries number either way, so it's computed once here
   // rather than requiring every caller to redo `target - saved` itself.
   const splitByStatus = (goals) => {
-    // Closest to done first. Compared on the exact ratio rather than the
-    // rounded percent the list shows, so two goals both at "61%" (or both capped
-    // at 100%) still order by who is really further along; a dead heat keeps the
+    // Closest to done first, by the same `percent` the list itself shows (a
+    // count ratio for EMI debt, a money ratio for everything else — see
+    // `derived`'s own comment on why those differ); a dead heat keeps the
     // order the goals were created in.
     const active = goals
       .filter(g => !g.completedAt)
-      .sort((x, y) => (y.saved / y.target) - (x.saved / x.target) || x.createdAt.localeCompare(y.createdAt))
+      .sort((x, y) => y.percent - x.percent || x.createdAt.localeCompare(y.createdAt))
     const completed = goals.filter(g => g.completedAt).sort((a, b) => b.completedAt.localeCompare(a.completedAt))
     return { all: goals, active, completed, total: active.reduce((sum, g) => sum + g.saved, 0) }
   }
@@ -519,10 +550,109 @@ export function useSavings(onEntryLogged) {
     }
     const all = store.goals.map(g => {
       const entries = (entriesByGoal.get(g.id) || []).slice().sort(byDateDesc)
-      const saved = Math.max(0, entries.reduce((sum, e) => sum + (e.type === 'add' ? e.amount : -e.amount), 0))
-      const percent = g.target > 0 ? Math.min(100, Math.round((saved / g.target) * 100)) : 0
-      const remaining = Math.max(0, g.target - saved)
-      return { ...g, entries, saved, percent, remaining, reached: saved >= g.target }
+
+      // A debt goal saved before the EMI/Flexible split existed has no
+      // `debtType` on file — inferred here rather than needing every old
+      // goal migrated by hand: EMI-shaped data (a tenure or an EMI amount)
+      // means it was being tracked like a fixed-schedule loan, so treat it
+      // as 'emi'; otherwise it was always just a plain running balance, so
+      // 'flexible'. A savings goal never has one either way.
+      const debtType = g.kind !== 'debt' ? null
+        : g.debtType || (g.tenureMonths != null || g.emiAmount != null ? 'emi' : 'flexible')
+
+      // Both dates below are plain "YYYY-MM-DD"/ISO strings — sliced
+      // directly rather than built into Date objects, since a native Date
+      // constructor parses "YYYY-MM-DD" as UTC midnight, which can land a
+      // day early in the local timezone right at a month boundary.
+      const monthIndex = (s) => Number(s.slice(0, 4)) * 12 + Number(s.slice(5, 7)) - 1
+      // Keeps the SAME day-of-month `firstEmiDate` itself has (an EMI is
+      // due the same date each month) rather than resetting to the 1st —
+      // "Next payment" should read "5 Oct", not "1 Oct", for a loan whose
+      // first EMI was actually on the 5th.
+      const dateFromMonthIndex = (idx) => `${Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, '0')}-${g.firstEmiDate.slice(8, 10)}`
+
+      // EMI debt's whole model, in order — a schedule measured in EMIs, not
+      // a tracked balance (there's no such balance any more; see emiAmount's
+      // own comment on why that was tried and dropped). Everything below is
+      // built from Monthly EMI, Total EMIs and `emisPaid` — how many of
+      // those EMIs are behind the loan, which is the typed-in head start
+      // plus whatever has actually been paid since (see its own comment). No
+      // part of it is worked out from a date: First EMI only labels the
+      // calendar, see nextEmiDate/estimatedFinishDate below.
+      //  - totalRepayment: what the loan costs altogether, on schedule.
+      //  - extraToPay: how much MORE than was borrowed that schedule adds
+      //    up to. Never called "interest" — the gap can include other
+      //    charges too, and this app doesn't know the split either way.
+      //  - emisRemaining / remaining ("left to pay"): what's still owed
+      //    going by the SCHEDULE, not a running balance — this is why
+      //    `remaining` can be more than `target` for a loan early in its
+      //    life; a schedule includes what's still to come, not just
+      //    principal.
+      //  - percent: EMIs paid over the total, a plain count ratio — not a
+      //    money ratio, since "money paid / money owed" would undercount
+      //    progress for the same reason `remaining` runs ahead of `target`.
+      const entriesSaved = Math.max(0, entries.reduce((sum, e) => sum + (e.type === 'add' ? e.amount : -e.amount), 0))
+
+      const totalRepayment = debtType === 'emi' && g.tenureMonths != null && g.emiAmount != null
+        ? g.emiAmount * g.tenureMonths
+        : null
+      const extraToPay = totalRepayment != null ? Math.max(0, totalRepayment - g.target) : null
+
+      // How many EMIs are actually behind this loan: the count typed in when
+      // it was added ("EMIs already paid" — the ones that predate this app
+      // tracking it) plus every whole EMI's worth of money logged against it
+      // since.
+      //
+      // Derived, never stored — the same rule everything else here follows
+      // (see this hook's own note on a goal's saved amount), so correcting or
+      // deleting a mistaken payment can't leave a stale count behind. And
+      // counting by the money a payment actually carries, rather than by one
+      // per entry, is what lets a single lump sum settle the months it really
+      // covers: clearing the whole balance in one go clears the loan, instead
+      // of registering as a single month.
+      //
+      // The epsilon is for the float division alone: an EMI that doesn't
+      // divide cleanly (₹8,333.33) can land a whole number of payments a
+      // hair under the integer they should make, and floor would eat one.
+      const emisFromPayments = debtType === 'emi' && g.emiAmount > 0
+        ? Math.floor(entriesSaved / g.emiAmount + 1e-6)
+        : 0
+      const emisPaidRaw = debtType === 'emi' ? g.emisPaidBefore + emisFromPayments : 0
+      const emisPaid = g.tenureMonths != null ? Math.min(g.tenureMonths, emisPaidRaw) : emisPaidRaw
+      const emisRemaining = debtType === 'emi' && g.tenureMonths != null ? Math.max(0, g.tenureMonths - emisPaid) : null
+      // Null once there's nothing left to pay, or the schedule itself is
+      // incomplete (no first-EMI date, or a tenure that's already run out).
+      const nextEmiDate = debtType === 'emi' && g.firstEmiDate && emisRemaining > 0
+        ? dateFromMonthIndex(monthIndex(g.firstEmiDate) + emisPaid)
+        : null
+      const estimatedFinishDate = debtType === 'emi' && g.firstEmiDate && g.tenureMonths != null
+        ? dateFromMonthIndex(monthIndex(g.firstEmiDate) + g.tenureMonths - 1)
+        : null
+
+      // Flexible debt (and every savings goal) is the plain running total of
+      // entries logged through this app — there's no schedule to read
+      // instead, that total simply IS the whole truth.
+      let saved = entriesSaved
+      let percent = g.target > 0 ? Math.min(100, Math.round((saved / g.target) * 100)) : 0
+      let remaining = Math.max(0, g.target - saved)
+      let reached = saved >= g.target
+      if (debtType === 'emi') {
+        saved = emisPaid * (g.emiAmount ?? 0)
+        percent = g.tenureMonths > 0 ? Math.min(100, Math.round((emisPaid / g.tenureMonths) * 100)) : 0
+        remaining = emisRemaining != null && g.emiAmount != null ? emisRemaining * g.emiAmount : Math.max(0, g.target - saved)
+        reached = g.tenureMonths != null && emisPaid >= g.tenureMonths
+      }
+      // `debtType` here overrides the raw stored one on the spread, so a goal
+      // that predates the EMI/Flexible split reads as its inferred type
+      // everywhere without needing a migration. `emisPaidBefore` is left
+      // alone on purpose: it stays the raw typed-in seed, because that's what
+      // the edit sheet puts back in its own "EMIs already paid" field — the
+      // true running count is `emisPaid` beside it, and writing that back as
+      // the seed would double-count every payment already logged.
+      return {
+        ...g, entries, debtType, totalRepayment, extraToPay, emisPaid, emisRemaining, nextEmiDate, estimatedFinishDate,
+        saved, percent, remaining, reached,
+      }
     })
     return {
       savings: splitByStatus(all.filter(g => g.kind !== 'debt')),

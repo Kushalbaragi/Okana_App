@@ -482,6 +482,7 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
                       detailGoalId={detailGoalId}
                       onOpenGoal={openGoal}
                       onCloseGoal={closeGoal}
+                      showToast={showPlanToast}
                     />
                   </SavingsBoundary>
                 )}
@@ -499,6 +500,7 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
                       detailGoalId={detailDebtId}
                       onOpenGoal={openDebt}
                       onCloseGoal={closeDebt}
+                      showToast={showPlanToast}
                     />
                   </SavingsBoundary>
                 )}

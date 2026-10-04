@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AccessibilityInfo, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { reportError } from '../utils/errors';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { darkText } from '../utils/colors';
 
 // How long the message stays up. A tap anywhere ends it sooner.
@@ -113,7 +114,11 @@ export default function Celebration({ title, subtitle, note, onDone }) {
             {!reduceMotion && bursting && pieces.map((p, i) => <Piece key={i} t={t} {...p} />)}
           </View>
           <Animated.View style={[{ position: 'absolute', alignItems: 'center', paddingHorizontal: 32 }, textStyle]}>
-            <Text style={{ fontSize: 24, fontWeight: '600', letterSpacing: -0.3, color: '#ffffff', textAlign: 'center' }}>{title}</Text>
+            <Svg width={26} height={26} viewBox="0 0 92 92" fill="none">
+              <Circle cx={46} cy={46} r={46} fill="#4ade80" />
+              <Path d="M27 47l13 13 25-27" stroke="#000000" strokeWidth={8} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+            <Text style={{ fontSize: 24, fontWeight: '600', letterSpacing: -0.3, color: '#ffffff', textAlign: 'center', marginTop: 14 }}>{title}</Text>
             {!!subtitle && <Text numberOfLines={1} style={{ fontSize: 15, color: 'rgba(255,255,255,0.65)', marginTop: 6 }}>{subtitle}</Text>}
             {!!note && <Text style={{ fontSize: 12, color: darkText.tertiary, marginTop: 10, textAlign: 'center' }}>{note}</Text>}
           </Animated.View>

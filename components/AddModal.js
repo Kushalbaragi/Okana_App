@@ -98,6 +98,13 @@ function AddModal({
   fieldPlaceholder = 'Description',
   fieldRequired = true,
   extraValidate,
+  // Starting values for a brand-new (non-edit) entry — an EMI payment's own
+  // amount/date/description known in advance from the loan itself. Unlike
+  // `editData`, this never flips the sheet into edit mode (still calls
+  // `onAdd`, still says "Add") — it just seeds the fields with real values
+  // instead of the usual blank ones, all still freely editable before
+  // submitting.
+  prefill,
 }) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -252,9 +259,9 @@ function AddModal({
       setDescription(editData.description);
     } else {
       setType(defaultMode);
-      setAmountProgrammatically('');
-      setDate(today());
-      setDescription('');
+      setAmountProgrammatically(prefill?.amount ? String(prefill.amount) : '');
+      setDate(prefill?.date || today());
+      setDescription(prefill?.description || '');
     }
     setCalOpen(false);
     setError('');

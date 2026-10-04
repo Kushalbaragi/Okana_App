@@ -29,7 +29,6 @@ export const KIND_COPY = {
     emptyTitle: 'Start your first goal',
     emptyBody: "Track what you're setting aside for a bike, a home, or a rainy day.",
     namePlaceholder: 'Goal name',
-    wherePlaceholder: 'Bank, liquid fund... (optional)',
     amountFieldLabel: '',
     sheetTitleNew: 'Add saving goal',
     sheetTitleEdit: 'Edit goal',
@@ -40,7 +39,6 @@ export const KIND_COPY = {
     historyTitle: 'History',
     historyEmpty: 'Nothing added yet.',
     monthlyTitle: 'Monthly savings',
-    monthlyAvgSuffix: 'average per month',
     completedLabel: 'Completed',
     reachedLabel: 'Goal reached',
     markDoneLabel: 'Mark as done',
@@ -52,13 +50,12 @@ export const KIND_COPY = {
     depositWord: 'deposit',
   },
   debt: {
-    sectionTotal: 'Total Owed',
+    sectionTotal: 'Total Debt',
     listLabel: 'Track new loan',
     newLabel: 'New loan',
     emptyTitle: 'Track your first loan',
     emptyBody: 'Car loan, personal loan, an EMI, money from a friend — anything you owe, in one place.',
     namePlaceholder: 'Loan name',
-    wherePlaceholder: "Bank, friend's name... (optional)",
     amountFieldLabel: 'Amount paid',
     sheetTitleNew: 'New loan',
     sheetTitleEdit: 'Edit loan',
@@ -69,7 +66,6 @@ export const KIND_COPY = {
     historyTitle: 'Payments',
     historyEmpty: 'No payments logged yet.',
     monthlyTitle: 'EMI tracker',
-    monthlyAvgSuffix: 'EMI paid',
     completedLabel: 'Cleared',
     reachedLabel: 'Loan cleared',
     markDoneLabel: 'Mark as cleared',
@@ -94,11 +90,11 @@ export const dim = (light, a = 0.4) => (light ? `rgba(0,0,0,${a})` : `rgba(255,2
 // measuring is needed. `color` overrides the usual green, for a caller that
 // wants this same bar in a different state's colour (Budget's own status
 // bar draws its own instead, rather than using this one).
-export function ProgressBar({ percent, height = 6, light, color = FILL_COLOR, trackColor }) {
+export function ProgressBar({ percent, height = 6, light, color = FILL_COLOR, trackColor, duration = 420 }) {
   const progress = useSharedValue(0);
   useEffect(() => {
-    progress.value = withTiming(percent / 100, { duration: 420, easing: SETTLE_EASING });
-  }, [percent, progress]);
+    progress.value = withTiming(percent / 100, { duration, easing: SETTLE_EASING });
+  }, [percent, progress, duration]);
   const fillStyle = useAnimatedStyle(() => ({ width: `${progress.value * 100}%` }));
 
   return (
