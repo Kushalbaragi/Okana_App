@@ -14,6 +14,9 @@ const RED_TONE   = { active: EXPENSE, dim: EXPENSE_DIM };
 
 const BAR_HEIGHT = 110;
 const CHART_W    = 264;
+// The chart's box is always this shape (width / height) — SummaryCard reserves
+// the same box for the Overview line chart so the page doesn't shift between tabs.
+export const BAR_CHART_ASPECT = CHART_W / (BAR_HEIGHT + 22);
 // Fixed edge inset for the bar row, independent of how many bars there are.
 // Centering each bar within an equal GROUP_W slot (the old approach) left a
 // margin that grew with the slot size whenever there were few bars — e.g.

@@ -3,7 +3,7 @@ import { View, Text } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { parseISO } from 'date-fns';
-import BarChart from './BarChart';
+import BarChart, { BAR_CHART_ASPECT } from './BarChart';
 import LineChart from './LineChart';
 import { GlassPressable } from './Glass';
 import { ChevronRight } from './icons';
@@ -185,12 +185,12 @@ function RangeSelector({ value, onChange, light }) {
 }
 
 // What the headline figure is OF, as one caption under it — just the period
-// ("september"). Which of expense/income/overview it's a period OF is
+// ("September"). Which of expense/income/overview it's a period OF is
 // Header's ModeSwitch job, at the very top of the screen; this caption only
 // ever names the period itself.
 function PeriodCaption({ periodLabel, light }) {
   return (
-    <Text style={[CAPTION, { color: textColor(light).tertiary }]}>{periodLabel.toLowerCase()}</Text>
+    <Text style={[CAPTION, { color: textColor(light).tertiary }]}>{periodLabel.charAt(0).toUpperCase() + periodLabel.slice(1).toLowerCase()}</Text>
   );
 }
 
@@ -200,10 +200,11 @@ function PeriodCaption({ periodLabel, light }) {
 // every glance the way the period or the amount itself are. fontSize 12,
 // under CAPTION's 13, keeps it reading as the smallest thing on the card.
 function AverageCaption({ info, light }) {
-  if (!info) return null;
+  // Always takes its line: Overview has no average, and without a stand-in the
+  // chart below slid up by that much every time the tab changed.
   return (
     <Text style={{ fontSize: 12, fontWeight: '400', marginTop: 4, color: textColor(light).disabled }}>
-      {info.label} – {formatCurrency(info.value)}
+      {info ? `${info.label} – ${formatCurrency(info.value)}` : '\u00A0'}
     </Text>
   );
 }
@@ -626,6 +627,10 @@ function SummaryCard({
                 // spans the full 12 months (or padded year slots), but the
                 // lines themselves stop at the last real point instead of
                 // dropping to zero and running flat through the future.
+                // Sits at the bottom of the same box the bar chart fills, so
+                // its axis labels land where the bars' do and nothing below it
+                // moves when the tab changes; any spare room is above it.
+                <View style={{ width: '100%', aspectRatio: BAR_CHART_ASPECT, justifyContent: 'flex-end' }}>
                 <LineChart
                   incomeData={chartData.income}
                   expenseData={chartData.expense}
@@ -641,6 +646,7 @@ function SummaryCard({
                   instant={chartInstant}
                   light={light}
                 />
+                </View>
               ) : (
                 // No onBarClick/onDeselect: this chart isn't a drill-down at
                 // any range. Omitting them is what removes the interaction —
