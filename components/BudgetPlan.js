@@ -7,7 +7,7 @@ import AmountEntrySheet from './AmountEntrySheet';
 import { Card, cardFill, dim, money } from './savingsShared';
 import { CheckIcon, PlusIcon } from './icons';
 import { textColor } from '../utils/colors';
-import { BODY } from '../utils/type';
+import { BODY, FONT } from '../utils/type';
 
 // This is the space the calendar's Budget section used to give a heatmap
 // (see WalletPage's own comment on that being cut) — now a plan for
@@ -150,7 +150,7 @@ function BudgetPlan({ plan, onAddPress, onEditItem, onItemChecked, onRequestChec
               that would just be asking to clear nothing. */}
           {items.length > 0 && (
             <Pressable onPress={onRequestClear} accessibilityRole="button" accessibilityLabel="Clear plan list" hitSlop={8}>
-              <Text style={{ fontSize: 13, color: textColor(light).tertiary }}>Clear list</Text>
+              <Text style={{ fontSize: FONT.caption, color: textColor(light).tertiary }}>Clear list</Text>
             </Pressable>
           )}
           <Pressable
@@ -167,7 +167,7 @@ function BudgetPlan({ plan, onAddPress, onEditItem, onItemChecked, onRequestChec
       <Card light={light}>
         <View style={{ paddingVertical: 8 }}>
         {items.length === 0 ? (
-          <Text style={[ROW_PAD, { fontSize: 14, lineHeight: 20, color: textColor(light).tertiary }]}>
+          <Text style={[ROW_PAD, { fontSize: FONT.caption, lineHeight: 20, color: textColor(light).tertiary }]}>
             Decide where your salary needs to spend before it arrives.
           </Text>
         ) : (
@@ -192,7 +192,7 @@ function BudgetPlan({ plan, onAddPress, onEditItem, onItemChecked, onRequestChec
                 { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: dim(light, 0.08) },
               ]}
             >
-              <Text style={{ fontSize: 15, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}>{money(total)}</Text>
+              <Text style={{ fontSize: FONT.body, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}>{money(total)}</Text>
             </View>
           </>
         )}

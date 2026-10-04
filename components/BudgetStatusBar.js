@@ -4,7 +4,7 @@ import { formatCurrency, currentMonthYear } from '../utils/format';
 import { textColor as textColorTone, EXPENSE, EXPENSE_HEX } from '../utils/colors';
 import { Card, ProgressBar, dim } from './savingsShared';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
-import { TABULAR } from '../utils/type';
+import { TABULAR, FONT } from '../utils/type';
 
 // Same shape as a Savings/Debt goal card (see GoalCard.js): a name/status
 // row, the headline amount below it, then a thin bar. The amount is what's
@@ -22,8 +22,8 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, 
     return (
       <Card light={light}>
         <Pressable onPress={onSetup} className="flex-row items-center justify-between" style={{ padding: 20 }}>
-          <Text style={{ fontSize: 15, fontWeight: '400', color: dimmerColor }}>{monthLabel}</Text>
-          <Text style={{ fontSize: 15, color: dimmerColor }}>Set a budget ›</Text>
+          <Text style={{ fontSize: FONT.body, fontWeight: '400', color: dimmerColor }}>{monthLabel}</Text>
+          <Text style={{ fontSize: FONT.body, color: dimmerColor }}>Set a budget ›</Text>
         </Pressable>
       </Card>
     );
@@ -36,18 +36,18 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, 
     <Card light={light}>
       <View style={{ padding: 20 }}>
         <View className="flex-row items-baseline justify-between">
-          <Text style={{ fontSize: 15, fontWeight: '400', color: dimmerColor }}>{monthLabel}</Text>
+          <Text style={{ fontSize: FONT.body, fontWeight: '400', color: dimmerColor }}>{monthLabel}</Text>
           {/* Solid hex here, not the alpha EXPENSE the bar fill uses below —
               blended over this row's plain card background at 0.92 alpha it
               read as a visibly duller red than the same value filling the
               bar (which sits over the lighter track). The opaque hex reads
               as the one consistent red regardless of what's under it. */}
-          <Text style={{ fontSize: 15, fontWeight: '400', color: isOver ? EXPENSE_HEX : dimmerColor }}>{Math.round(percent)}% used</Text>
+          <Text style={{ fontSize: FONT.body, fontWeight: '400', color: isOver ? EXPENSE_HEX : dimmerColor }}>{Math.round(percent)}% used</Text>
         </View>
 
-        <Text style={{ fontSize: 24, fontWeight: '600', marginTop: 10, color: primaryColor, ...TABULAR }}>
+        <Text style={{ fontSize: FONT.amount, fontWeight: '600', marginTop: 10, color: primaryColor, ...TABULAR }}>
           {formatCurrency(Math.abs(amount - spent))}
-          <Text style={{ fontSize: 15, fontWeight: '400', color: isOver ? EXPENSE_HEX : dimmerColor }}> {isOver ? `over ${formatCurrency(amount)} budget` : `left of ${formatCurrency(amount)}`}</Text>
+          <Text style={{ fontSize: FONT.body, fontWeight: '400', color: isOver ? EXPENSE_HEX : dimmerColor }}> {isOver ? `over ${formatCurrency(amount)} budget` : `left of ${formatCurrency(amount)}`}</Text>
         </Text>
 
         <View style={{ marginTop: 14 }}>

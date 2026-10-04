@@ -18,7 +18,7 @@ import GoalCard from './GoalCard';
 import { SwipeDeleteAction, useSwipeDelete, useSwipeGroup } from './SwipeDeleteAction';
 import { Card, ProgressBar, POSITIVE, cardFill, dim, money, KIND_COPY } from './savingsShared';
 import { textColor } from '../utils/colors';
-import { TABULAR } from '../utils/type';
+import { TABULAR, FONT } from '../utils/type';
 import { CheckIcon, ChevronRight, EditIcon, PlusIcon } from './icons';
 import { currentMonthYear, dateBoxParts, formatDateFull, today } from '../utils/format';
 import { hapticAdded } from '../utils/haptics';
@@ -474,7 +474,7 @@ function ListHeader({ label, onPress, addLabel, light }) {
           name text inside the card rather than sitting flush with the
           card's bare left edge — same alignment BudgetPlan's own header
           gives its "Plan your next salary" label. */}
-      <Text style={{ fontSize: 15, color: textColor(light).tertiary, marginLeft: 16 }}>{label}</Text>
+      <Text style={{ fontSize: FONT.body, color: textColor(light).tertiary, marginLeft: 16 }}>{label}</Text>
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
@@ -515,11 +515,11 @@ function EmptyState({ onNew, light, kind = 'savings' }) {
   return (
     <View className="items-center" style={{ paddingTop: 96, paddingHorizontal: 16 }}>
       <Text className="text-xl font-semibold text-center" style={{ color: light ? '#111111' : '#ffffff' }}>{copy.emptyTitle}</Text>
-      <Text className="text-[15px] text-center" style={{ color: textColor(light).tertiary, marginTop: 8, marginBottom: 24, lineHeight: 22 }}>
+      <Text className="text-[16px] text-center" style={{ color: textColor(light).tertiary, marginTop: 8, marginBottom: 24, lineHeight: 22 }}>
         {copy.emptyBody}
       </Text>
       <GlassPressable variant="active" radius={9999} onPress={() => onNew('')} style={{ paddingHorizontal: 32, paddingVertical: 12, alignItems: 'center' }}>
-        <Text className="text-black text-[15px] font-semibold">{copy.emptyAction}</Text>
+        <Text className="text-black text-[16px] font-semibold">{copy.emptyAction}</Text>
       </GlassPressable>
     </View>
   );
@@ -753,8 +753,8 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
         >
           {/* EMI debt: the amount below is the focus, so the name steps back. */}
           <Text numberOfLines={1} style={isEmiDebt
-            ? { fontSize: 16, fontWeight: '500', color: textColor(light).secondary }
-            : { fontSize: 22, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}
+            ? { fontSize: FONT.body, fontWeight: '500', color: textColor(light).secondary }
+            : { fontSize: FONT.title, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}
           >{goal.name}</Text>
         </Pressable>
         {/* The same sheet the title opens, but findable without knowing the
@@ -769,7 +769,7 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
         </Pressable>
       </View>
       {!!goal.location && (
-        <Text className="text-xs text-center" numberOfLines={1} style={{ marginTop: 4, color: textColor(light).tertiary }}>
+        <Text className="text-[13px] text-center" numberOfLines={1} style={{ marginTop: 4, color: textColor(light).tertiary }}>
           {kind === 'debt' ? 'from' : 'in'} {goal.location}
         </Text>
       )}
@@ -779,8 +779,8 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
         // lives in the tracker below, the loan's other numbers in the tracker's
         // footer and the edit sheet, and the monthly EMI on the slider.
         <View style={{ marginTop: 24, marginBottom: 12, alignItems: 'center' }}>
-          <Text style={{ fontSize: 42, fontWeight: '400', letterSpacing: -1.5, color: light ? '#111111' : '#ffffff', ...TABULAR }}>{money(barG.remaining)}</Text>
-          <Text style={{ fontSize: 13, color: textColor(light).tertiary, marginTop: 6 }}>left to pay</Text>
+          <Text style={{ fontSize: FONT.display, fontWeight: '400', letterSpacing: -1.5, color: light ? '#111111' : '#ffffff', ...TABULAR }}>{money(barG.remaining)}</Text>
+          <Text style={{ fontSize: FONT.caption, color: textColor(light).tertiary, marginTop: 6 }}>left to pay</Text>
         </View>
       ) : (
         // Savings and flexible debt: the same card shape as GoalCard's list row
@@ -792,10 +792,10 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
             <View style={{ padding: 20 }}>
               <View className="flex-row items-baseline justify-between" style={{ gap: 12, marginBottom: 12 }}>
                 <View className="flex-row items-baseline flex-1" style={{ gap: 6 }}>
-                  <Text style={{ fontSize: 24, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}>
+                  <Text style={{ fontSize: FONT.amount, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}>
                     {money(kind === 'debt' ? barG.remaining : goal.saved)}
                   </Text>
-                  <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 13, color: light ? '#111111' : '#ffffff' }}>
+                  <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: FONT.caption, color: light ? '#111111' : '#ffffff' }}>
                     of {money(goal.target)}
                   </Text>
                 </View>
@@ -864,10 +864,10 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
               <View style={{ paddingVertical: 16, paddingHorizontal: 20 }}>
                 {dotG.emisRemaining != null && (
                   <Text style={{ marginBottom: 14 }}>
-                    <Text style={{ fontSize: 26, fontWeight: '600', letterSpacing: -0.5, color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.90)' }}>
+                    <Text style={{ fontSize: FONT.amount, fontWeight: '600', letterSpacing: -0.5, color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.90)' }}>
                       {dotG.emisRemaining}
                     </Text>
-                    <Text style={{ fontSize: 13, fontWeight: '400', color: textColor(light).tertiary }}>
+                    <Text style={{ fontSize: FONT.caption, fontWeight: '400', color: textColor(light).tertiary }}>
                       {' '}EMI remaining
                     </Text>
                   </Text>
@@ -894,10 +894,10 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
               // bars slide right out to the card's edge.
               <View style={{ paddingVertical: 16 }}>
                 <View style={{ paddingHorizontal: 20, marginBottom: 6 }}>
-                  <Text style={{ color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.90)', fontSize: 26, fontWeight: '600', letterSpacing: -0.5 }}>
+                  <Text style={{ color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.90)', fontSize: FONT.amount, fontWeight: '600', letterSpacing: -0.5 }}>
                     {chart.average < 0 ? '−' : ''}{money(Math.abs(chart.average))}
                   </Text>
-                  <Text className="text-sm" style={{ color: dim(light, 0.5), marginTop: 2 }}>average per month</Text>
+                  <Text className="text-[13px]" style={{ color: dim(light, 0.5), marginTop: 2 }}>average per month</Text>
                 </View>
                 <MonthSlider key={goal.id} months={chart.months} initialIndex={chart.initialIndex} light={light} />
               </View>
@@ -915,7 +915,7 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
             loan is done. */}
         {isEmiDebt && !goal.completedAt && !goal.reached && (
           <Pressable onPress={openCloseEarly} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close loan early" style={{ paddingRight: 16 }}>
-            <Text style={{ fontSize: 13, fontWeight: '500', color: textColor(light).secondary }}>Close early</Text>
+            <Text style={{ fontSize: FONT.caption, fontWeight: '500', color: textColor(light).secondary }}>Close early</Text>
           </Pressable>
         )}
       </View>
@@ -1065,12 +1065,12 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
           ) : (
             <>
               <View className="items-center" style={{ paddingTop: 16, paddingBottom: 22 }}>
-                <Text className="text-sm" style={{ color: textColor(light).tertiary, marginBottom: 6 }}>{copy.sectionTotal}</Text>
+                <Text className="text-[13px]" style={{ color: textColor(light).tertiary, marginBottom: 6 }}>{copy.sectionTotal}</Text>
                 {/* Same size/weight as Home's own headline figure
                     (SummaryCard's HEADLINE_TEXT_STYLE) — this is the same
                     kind of number, just on a different screen. */}
                 <Text
-                  style={{ fontSize: 44, lineHeight: 52, fontWeight: '400', letterSpacing: -1.75, color: light ? '#111111' : '#ffffff', ...TABULAR }}
+                  style={{ fontSize: FONT.display, lineHeight: 52, fontWeight: '400', letterSpacing: -1.75, color: light ? '#111111' : '#ffffff', ...TABULAR }}
                 >
                   {money(totalSaved)}
                 </Text>
@@ -1089,7 +1089,7 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
                     accessibilityRole="button"
                     accessibilityLabel={`${copy.completedLabel} ${kind === 'debt' ? 'loans' : 'goals'}`}
                   >
-                    <Text className="text-sm" style={{ color: textColor(light).tertiary }}>{copy.completedLabel} · {completedGoals.length}</Text>
+                    <Text className="text-[13px]" style={{ color: textColor(light).tertiary }}>{copy.completedLabel} · {completedGoals.length}</Text>
                     <View style={{ transform: [{ rotate: showCompleted ? '90deg' : '0deg' }] }}>
                       <ChevronRight color={textColor(light).disabled} />
                     </View>

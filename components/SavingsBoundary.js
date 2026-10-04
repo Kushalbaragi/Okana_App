@@ -6,12 +6,12 @@ import { dim } from './savingsShared';
 function SavingsFallback({ onRetry, light }) {
   return (
     <View className="flex-1 items-center justify-center px-8">
-      <Text className="text-lg font-semibold text-center" style={{ color: light ? '#111111' : '#ffffff' }}>Couldn't load your savings</Text>
+      <Text className="text-xl font-semibold text-center" style={{ color: light ? '#111111' : '#ffffff' }}>Couldn't load your savings</Text>
       <Text className="text-center" style={{ color: dim(light, 0.5), marginTop: 8, marginBottom: 24, lineHeight: 22 }}>
         Your data is safe. Try again, and if it keeps happening, restart the app.
       </Text>
       <GlassPressable variant="active" radius={9999} onPress={onRetry} accessibilityRole="button" style={{ paddingHorizontal: 32, paddingVertical: 12, alignItems: 'center' }}>
-        <Text className="text-black text-[15px] font-semibold">Try again</Text>
+        <Text className="text-black text-[16px] font-semibold">Try again</Text>
       </GlassPressable>
     </View>
   );

@@ -3,6 +3,7 @@ import { View, Text } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { dim } from './savingsShared';
 import { textColor } from '../utils/colors';
+import { FONT } from '../utils/type';
 
 const MONTH_LETTERS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
 // Bigger than before, now that the month columns flex to fill the card's
@@ -60,7 +61,7 @@ function PaymentGrid({ years, light }) {
       <View style={{ flexDirection: 'row', marginBottom: 10 }}>
         <View style={{ width: LABEL_W }} />
         {MONTH_LETTERS.map((letter, i) => (
-          <Text key={i} style={{ flex: 1, textAlign: 'center', fontSize: 11, color: textColor(light).disabled }}>{letter}</Text>
+          <Text key={i} style={{ flex: 1, textAlign: 'center', fontSize: FONT.label, color: textColor(light).disabled }}>{letter}</Text>
         ))}
       </View>
       {years.map(({ year, cells }) => (
@@ -68,7 +69,7 @@ function PaymentGrid({ years, light }) {
           {/* paddingRight, not a wider LABEL_W alone — keeps the year clear
               of the first dot's column without shifting every month column
               after it out of line with its own header letter above. */}
-          <Text style={{ width: LABEL_W, paddingRight: 8, fontSize: 12, color: textColor(light).tertiary }}>{year}</Text>
+          <Text style={{ width: LABEL_W, paddingRight: 8, fontSize: FONT.caption, color: textColor(light).tertiary }}>{year}</Text>
           {cells.map((cell, i) => (
             <View key={i} style={{ flex: 1, alignItems: 'center' }}>
               <Dot paid={cell.paid} inRange={cell.inRange} light={light} />

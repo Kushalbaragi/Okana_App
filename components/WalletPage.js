@@ -14,6 +14,7 @@ import SavingsBoundary from './SavingsBoundary';
 import ErrorBoundary from './ErrorBoundary';
 import { SETTLE_EASING } from '../utils/motion';
 import { formatCurrency } from '../utils/format';
+import { FONT } from '../utils/type';
 
 // The page has three sections, switched from the header: the budget bar it
 // always was, savings goals, and debt (loans tracked the same way as a
@@ -574,7 +575,7 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
                     backgroundColor: light ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.92)',
                   }}
                 >
-                  <Text numberOfLines={1} style={{ color: light ? '#ffffff' : '#111111', fontSize: 13, fontWeight: '600' }}>{planToastText}</Text>
+                  <Text numberOfLines={1} style={{ color: light ? '#ffffff' : '#111111', fontSize: FONT.caption, fontWeight: '600' }}>{planToastText}</Text>
                 </View>
               </Animated.View>
             )}

@@ -283,7 +283,7 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
                 <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.2)' }} />
               </View>
 
-              <Text className="text-white text-lg font-semibold text-center mb-2 px-6">
+              <Text className="text-white text-xl font-semibold text-center mb-2 px-6">
                 Set your {MONTH_NAMES[currMonth]} budget
               </Text>
               <Text className="text-white/50 text-base text-center mb-6 px-6" style={{ lineHeight: 22 }}>
@@ -321,9 +321,9 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
                       backgroundColor: 'rgba(0,0,0,0.18)', borderColor: 'rgba(255,255,255,0.07)',
                     }}
                   >
-                    <Text className="text-white/35 text-xs font-semibold uppercase tracking-wide mb-1.5">Last month</Text>
+                    <Text className="text-white/35 text-[13px] font-semibold uppercase tracking-wide mb-1.5">Last month</Text>
                     <Text className="text-white text-base font-medium mb-1">{recap.stat}</Text>
-                    <Text className="text-sm" style={{ color: recap.color, lineHeight: 18 }}>{recap.hint}</Text>
+                    <Text className="text-[13px]" style={{ color: recap.color, lineHeight: 18 }}>{recap.hint}</Text>
                   </View>
                 </View>
               )}
@@ -357,7 +357,7 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
                 {confirmDelta.greeting ? (
                   <>
                     <SuccessBadge style={{ marginBottom: 24 }} />
-                    <Text className="text-white text-lg font-semibold text-center" style={{ lineHeight: 26 }}>
+                    <Text className="text-white text-xl font-semibold text-center" style={{ lineHeight: 26 }}>
                       You set {formatCurrency(confirmDelta.amount)} budget{'\n'}for {MONTH_NAMES[currMonth]}. Stick with it!
                     </Text>
                   </>
@@ -369,7 +369,7 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, 
                     >
                       <TrendArrowIcon up={confirmDelta.up} color={confirmColor} size={28} />
                     </View>
-                    <Text className="text-white text-lg font-semibold text-center" style={{ lineHeight: 26 }}>
+                    <Text className="text-white text-xl font-semibold text-center" style={{ lineHeight: 26 }}>
                       You decided to spend{'\n'}{formatCurrency(confirmDelta.diff)} {confirmDelta.up ? 'more' : 'less'} this month
                     </Text>
                   </>

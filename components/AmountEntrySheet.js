@@ -11,6 +11,7 @@ import { NumericKeypad, DIGIT_ONLY_KEYPAD_ROWS } from './NumericKeypad';
 import { textColor } from '../utils/colors';
 import { SPRING_QUICK, layoutTransition } from '../utils/motion';
 import { CloseIcon } from './icons';
+import { FONT } from '../utils/type';
 
 // The chips row (below) mounting/unmounting above the amount section is
 // what actually moves it down/up — ordinary layout reflow from a sibling
@@ -201,7 +202,7 @@ export default function AmountEntrySheet({
         {!!title && (
           <Text
             className="text-center font-semibold"
-            style={{ fontSize: 17, color: textColor(light).primary, marginBottom: 14 }}
+            style={{ fontSize: FONT.body, color: textColor(light).primary, marginBottom: 14 }}
           >
             {title}
           </Text>
@@ -295,7 +296,7 @@ export default function AmountEntrySheet({
                   accessibilityLabel={suggestion}
                   style={{ paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)' }}
                 >
-                  <Text className="text-sm" style={{ color: light ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.65)' }}>{suggestion}</Text>
+                  <Text className="text-[13px]" style={{ color: light ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.65)' }}>{suggestion}</Text>
                 </GlassPressable>
               ))}
             </ScrollView>
@@ -304,7 +305,7 @@ export default function AmountEntrySheet({
 
         {extraFields}
 
-        {!!error && <Text className="text-red-400 text-sm text-center mx-5 mt-2">{error}</Text>}
+        {!!error && <Text className="text-red-400 text-[13px] text-center mx-5 mt-2">{error}</Text>}
 
         {/* flex:1 + center for every caller but Budget's own boxed sheet —
             that's what lets the amount vertically centre in whatever room
@@ -330,10 +331,10 @@ export default function AmountEntrySheet({
             : { flex: 1, justifyContent: 'center', alignItems: 'center' }}
         >
           {!!amountLabel && (
-            <Text className="text-center" style={{ fontSize: 13, color: muted }}>{amountLabel}</Text>
+            <Text className="text-center" style={{ fontSize: FONT.caption, color: muted }}>{amountLabel}</Text>
           )}
           {!!amountHint && (
-            <Text className="text-center" style={{ fontSize: 11, color: muted, opacity: 0.6, marginTop: 2 }}>{amountHint}</Text>
+            <Text className="text-center" style={{ fontSize: FONT.label, color: muted, opacity: 0.6, marginTop: 2 }}>{amountHint}</Text>
           )}
           <Animated.View key={resetKey} style={[{ marginTop: 4 }, boxedNameField ? null : { alignItems: 'center' }, amountShake.style, amountScaleStyle]}>
             <AmountRow

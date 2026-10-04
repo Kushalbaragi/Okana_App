@@ -20,7 +20,7 @@ import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { ChevronRight } from './icons';
 import { hapticTick } from '../utils/haptics';
 import { textColor } from '../utils/colors';
-import { TABULAR } from '../utils/type';
+import { TABULAR, FONT } from '../utils/type';
 import { SPRING_QUICK, layoutTransition } from '../utils/motion';
 import { KIND_COPY, dim, money } from './savingsShared';
 
@@ -112,7 +112,7 @@ function RowHeader({ label, light, onPress, children }) {
       onPress={onPress}
       style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: ROW_V_PAD, paddingHorizontal: ROW_H_PAD }}
     >
-      <Text style={{ fontSize: 16, color: textColor(light).primary }}>{label}</Text>
+      <Text style={{ fontSize: FONT.body, color: textColor(light).primary }}>{label}</Text>
       {children}
     </Pressable>
   );
@@ -120,7 +120,7 @@ function RowHeader({ label, light, onPress, children }) {
 
 function RowValueText({ value, placeholder, light }) {
   return (
-    <Text numberOfLines={1} style={{ fontSize: 16, maxWidth: 190, color: value ? textColor(light).secondary : textColor(light).tertiary }}>
+    <Text numberOfLines={1} style={{ fontSize: FONT.body, maxWidth: 190, color: value ? textColor(light).secondary : textColor(light).tertiary }}>
       {value || placeholder}
     </Text>
   );
@@ -162,7 +162,7 @@ const TextRow = memo(function TextRow({ label, value, onChangeText, placeholder,
           returnKeyType="done"
           onSubmitEditing={() => { Keyboard.dismiss(); setEditing(false); onBlurRow?.(); }}
           onBlur={() => { setEditing(false); onBlurRow?.(); }}
-          style={[INPUT_TEXT_STYLE, { fontSize: 16, textAlign: 'right', color: textColor(light).primary, minWidth: 120, paddingVertical: 0 }]}
+          style={[INPUT_TEXT_STYLE, { fontSize: FONT.body, textAlign: 'right', color: textColor(light).primary, minWidth: 120, paddingVertical: 0 }]}
         />
       ) : (
         <RowValueText value={value} placeholder={placeholder} light={light} />
@@ -223,7 +223,7 @@ function WheelRow({ offset, index, label, primaryColor }) {
 
   return (
     <ReanimatedView.View style={[{ height: WHEEL_ITEM_H, alignItems: 'center', justifyContent: 'center' }, style]}>
-      <Text numberOfLines={1} style={{ fontSize: 19, color: primaryColor }}>
+      <Text numberOfLines={1} style={{ fontSize: FONT.title, color: primaryColor }}>
         {label}
       </Text>
     </ReanimatedView.View>
@@ -372,7 +372,7 @@ const OptionsRow = memo(function OptionsRow({ label, value, onChangeText, option
             returnKeyType="done"
             onSubmitEditing={() => { Keyboard.dismiss(); setEditingCustom(false); onClose(); }}
             onBlur={() => { setEditingCustom(false); onClose(); }}
-            style={[INPUT_TEXT_STYLE, { fontSize: 16, textAlign: 'right', color: textColor(light).primary, minWidth: 120, paddingVertical: 0 }]}
+            style={[INPUT_TEXT_STYLE, { fontSize: FONT.body, textAlign: 'right', color: textColor(light).primary, minWidth: 120, paddingVertical: 0 }]}
           />
         ) : (
           <RowValueText value={value} placeholder={placeholder} light={light} />
@@ -596,7 +596,7 @@ const AmountTextRow = memo(function AmountTextRow({ label, value, onChangeValue,
           returnKeyType="done"
           onSubmitEditing={() => { Keyboard.dismiss(); setEditing(false); onBlurRow?.(); }}
           onBlur={() => { setEditing(false); onBlurRow?.(); }}
-          style={[INPUT_TEXT_STYLE, { fontSize: 16, textAlign: 'right', color: textColor(light).primary, minWidth: 100, paddingVertical: 0 }]}
+          style={[INPUT_TEXT_STYLE, { fontSize: FONT.body, textAlign: 'right', color: textColor(light).primary, minWidth: 100, paddingVertical: 0 }]}
         />
       ) : (
         <RowValueText value={display} placeholder={placeholder} light={light} />
@@ -662,8 +662,8 @@ function DebtTypeOption({ label, description, onPress, light }) {
   return (
     <FieldCard light={light}>
       <GlassPressable variant="field" pressScale={false} onPress={onPress} style={{ padding: 16 }} accessibilityRole="button" accessibilityLabel={label}>
-        <Text style={{ fontSize: 15, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}>{label}</Text>
-        <Text style={{ fontSize: 12, marginTop: 6, color: textColor(light).tertiary }}>{description}</Text>
+        <Text style={{ fontSize: FONT.body, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}>{label}</Text>
+        <Text style={{ fontSize: FONT.caption, marginTop: 6, color: textColor(light).tertiary }}>{description}</Text>
       </GlassPressable>
     </FieldCard>
   );
@@ -675,7 +675,7 @@ function DebtTypeStep({ onSelect, light }) {
     // comment): this step's own height is what the sheet is sized to, so
     // there is no gap above or below the two tiles to begin with.
     <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
-      <Text style={{ fontSize: 15, color: textColor(light).secondary, marginBottom: 12 }}>What kind of debt is this?</Text>
+      <Text style={{ fontSize: FONT.body, color: textColor(light).secondary, marginBottom: 12 }}>What kind of debt is this?</Text>
       <View style={{ gap: 12 }}>
         <DebtTypeOption
           label="EMI / Loan"
@@ -714,20 +714,20 @@ function LoanSummaryCard({ target, emiAmount, tenureMonths, light }) {
     <ReanimatedView.View layout={FIELD_LAYOUT_TRANSITION} entering={FadeIn} style={{ overflow: 'hidden' }}>
       <FieldCard light={light}>
         <View style={{ padding: 16 }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', color: textColor(light).disabled, marginBottom: 12 }}>
+          <Text style={{ fontSize: FONT.label, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', color: textColor(light).disabled, marginBottom: 12 }}>
             Loan summary
           </Text>
           <View className="flex-row items-baseline justify-between" style={{ marginBottom: 8 }}>
-            <Text style={{ fontSize: 13, color: textColor(light).tertiary }}>You borrowed</Text>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: primary, ...TABULAR }}>{money(target)}</Text>
+            <Text style={{ fontSize: FONT.caption, color: textColor(light).tertiary }}>You borrowed</Text>
+            <Text style={{ fontSize: FONT.caption, fontWeight: '600', color: primary, ...TABULAR }}>{money(target)}</Text>
           </View>
           <View className="flex-row items-baseline justify-between" style={{ marginBottom: 8 }}>
-            <Text style={{ fontSize: 13, color: textColor(light).tertiary }}>You'll repay</Text>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: primary, ...TABULAR }}>{money(totalRepayment)}</Text>
+            <Text style={{ fontSize: FONT.caption, color: textColor(light).tertiary }}>You'll repay</Text>
+            <Text style={{ fontSize: FONT.caption, fontWeight: '600', color: primary, ...TABULAR }}>{money(totalRepayment)}</Text>
           </View>
           <View className="flex-row items-baseline justify-between">
-            <Text style={{ fontSize: 13, color: textColor(light).tertiary }}>Extra you'll pay</Text>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: primary, ...TABULAR }}>{money(extra)}</Text>
+            <Text style={{ fontSize: FONT.caption, color: textColor(light).tertiary }}>Extra you'll pay</Text>
+            <Text style={{ fontSize: FONT.caption, fontWeight: '600', color: primary, ...TABULAR }}>{money(extra)}</Text>
           </View>
         </View>
       </FieldCard>
@@ -788,9 +788,9 @@ function MonthsRulerRow({ label, value, onChange, session, light, open, onOpen, 
       {!!open && (
         <View style={{ paddingBottom: 14 }}>
           <View className="items-center mb-2">
-            <Text style={{ fontSize: 42, lineHeight: 50, fontWeight: '300', letterSpacing: -1, color: light ? '#111111' : '#ffffff', ...TABULAR }}>
+            <Text style={{ fontSize: FONT.display, lineHeight: 50, fontWeight: '300', letterSpacing: -1, color: light ? '#111111' : '#ffffff', ...TABULAR }}>
               {months}
-              <Text style={{ fontSize: 20, fontWeight: '400', color: textColor(light).disabled }}> {unit}</Text>
+              <Text style={{ fontSize: FONT.title, fontWeight: '400', color: textColor(light).disabled }}> {unit}</Text>
             </Text>
           </View>
           <AmountRuler
@@ -1061,7 +1061,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
   const insets = useSafeAreaInsets();
   const footer = (
     <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: insets.bottom + 10 }}>
-      {!!error && <Text className="text-red-400 text-sm text-center mb-2">{error}</Text>}
+      {!!error && <Text className="text-red-400 text-[13px] text-center mb-2">{error}</Text>}
       <GlassPressable
         variant="active"
         radius={14}
@@ -1099,7 +1099,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
     >
       <View style={{ flex: 1 }}>
       <View onLayout={onTitleLayout} style={{ minHeight: 22, justifyContent: 'center', marginBottom: 12, paddingHorizontal: 20 }}>
-        <Text className="text-center font-semibold" style={{ fontSize: 17, color: textColor(light).primary }}>
+        <Text className="text-center font-semibold" style={{ fontSize: FONT.body, color: textColor(light).primary }}>
           {isEdit ? copy.sheetTitleEdit : copy.sheetTitleNew}
         </Text>
         {/* Only reachable past the type-selector step, for a brand-new debt
