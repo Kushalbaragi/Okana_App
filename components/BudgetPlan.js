@@ -210,9 +210,8 @@ function BudgetPlan({ plan, onAddPress, onEditItem, onItemChecked, onRequestChec
 // line rather than starting a new one — its own name and amount become the
 // starting point instead of the blank/default ones, the title and button
 // say "Edit"/"Save" instead of "Add", and submitting calls `onEdit` with its
-// id instead of `onAdd`. Suggestion chips are an add-only shortcut — a line
-// already has a name once you're editing it.
-export function AddBudgetItemSheet({ open, onClose, onClosed, onAdd, onEdit, editItem, suggestions = [], light = false }) {
+// id instead of `onAdd`.
+export function AddBudgetItemSheet({ open, onClose, onClosed, onAdd, onEdit, editItem, light = false }) {
   const isEdit = !!editItem;
   return (
     <AmountEntrySheet
@@ -222,13 +221,9 @@ export function AddBudgetItemSheet({ open, onClose, onClosed, onAdd, onEdit, edi
       light={light}
       namePlaceholder="e.g. Rent, EMI, investment"
       initialName={editItem?.name || ''}
-      nameSuggestions={isEdit ? [] : suggestions}
       initialAmount={editItem?.amount ?? 0}
-      // Fixed, not left to AmountEntrySheet's own default — that default
-      // grows the sheet (and with it, the name field's position on
-      // screen) the moment focusing the name field reveals the
-      // suggestion chips. Sized as if the chips were always showing, so
-      // that growth never happens: the name field stays put.
+      // Fixed, not left to AmountEntrySheet's own default, so the sheet's size
+      // (and with it the name field's position) never changes.
       //
       // 0.72 — the same COMPACT_RATIO every other caller falls back to,
       // not a smaller value. Tried 0.62 for a more compact feel, but

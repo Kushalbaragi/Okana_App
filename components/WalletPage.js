@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, InteractionManager, View, Text, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, Easing } from 'react-native-reanimated';
@@ -126,15 +126,6 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
   const [editingItem, setEditingItem] = useState(null);
   const openEditItem = useCallback((item) => setEditingItem(item), []);
   const closeItemSheet = useCallback(() => { setAddItemOpen(false); setEditingItem(null); }, []);
-  // What a plan line is most often for: a couple of common fixed bills, plus
-  // anything already tracked as a loan or a savings goal so its name is one
-  // tap away instead of retyped. Active ones only — a cleared loan or a
-  // finished goal isn't something you're still planning to pay into.
-  const planSuggestions = useMemo(
-    () => [...new Set(['Rent', 'Credit card', ...(savings?.debts || []), ...(savings?.goals || [])].map(g => g.name || g))],
-    [savings?.debts, savings?.goals]
-  );
-
   // Deleting a Budget Plan line asks first, same as every other delete in
   // the app (Home's own transaction delete, Savings/Debt's goal and entry
   // delete) — the dialog closes the instant "Delete" is tapped, and the
@@ -564,7 +555,6 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
                   onAdd={budgetPlan.addItem}
                   onEdit={budgetPlan.updateItem}
                   editItem={editingItem}
-                  suggestions={planSuggestions}
                   light={light}
                 />
               </ErrorBoundary>
