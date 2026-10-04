@@ -146,7 +146,7 @@ function BudgetPlan({ plan, onAddPress, onEditItem, onItemChecked, onRequestChec
         </Text>
         <View className="flex-row items-center" style={{ gap: 14 }}>
           {/* Only once there's something TO clear — an empty list already
-              says "Nothing planned yet" below, so a clear action next to
+              explains itself below, so a clear action next to
               that would just be asking to clear nothing. */}
           {items.length > 0 && (
             <Pressable onPress={onRequestClear} accessibilityRole="button" accessibilityLabel="Clear plan list" hitSlop={8}>
@@ -167,7 +167,9 @@ function BudgetPlan({ plan, onAddPress, onEditItem, onItemChecked, onRequestChec
       <Card light={light}>
         <View style={{ paddingVertical: 8 }}>
         {items.length === 0 ? (
-          <Text style={[ROW_PAD, { fontSize: 14, color: textColor(light).tertiary }]}>Nothing planned yet.</Text>
+          <Text style={[ROW_PAD, { fontSize: 14, lineHeight: 20, color: textColor(light).tertiary }]}>
+            Decide where your salary needs to spend before it arrives.
+          </Text>
         ) : (
           <>
             {sortedItems.map((item, i) => (
