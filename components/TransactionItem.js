@@ -2,15 +2,12 @@ import { memo, useCallback, useEffect, useRef } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
-import { dateBoxParts, formatCurrencyPlain } from '../utils/format';
+import { formatCurrencyPlain } from '../utils/format';
 import { SwipeDeleteAction, useSwipeDelete } from './SwipeDeleteAction';
 import { CARD_COLOR } from './Glass';
 import { textColor, INCOME_TEXT } from '../utils/colors';
-import { BODY, TABULAR, FONT } from '../utils/type';
+import { BODY, TABULAR } from '../utils/type';
 import { LEDGER_PILL_INSET } from '../utils/spacing';
-
-// The date chip plus the room after it.
-const DATE_COL_WIDTH = 40;
 
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard — see the matching comment in Header.js.
@@ -58,8 +55,6 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
   }, [tx.description, tx.amount, tx.date, isIncome, contentOpacity]);
   const contentStyle = useAnimatedStyle(() => ({ opacity: contentOpacity.value }));
 
-  const { day, month } = dateBoxParts(tx.date);
-
   const row = (
     <Pressable
       onPress={handleCardPress}
@@ -69,17 +64,9 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
       // above it rather than further left at the raw list edge.
       style={{ backgroundColor: cardColor, paddingLeft: LEDGER_PILL_INSET, paddingRight: LEDGER_PILL_INSET }}
     >
-      {/* The day it happened as a small stacked day-over-month chip (the same one
-          Savings' history rows use), the description, and the amount at
-          the far end. The date's slot is a fixed width, so every row's
-          description starts at the same x whatever the date's own length. */}
+      {/* Just the description and the amount, like a line in a note — the day
+          is said once above a run of rows (see TransactionList), not on each. */}
       <Animated.View className="flex-row items-center" style={contentStyle}>
-        <View style={{ width: DATE_COL_WIDTH }}>
-          <View style={{ width: 26, height: 28, borderRadius: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.06)' }}>
-            <Text style={[TABULAR, { fontSize: FONT.label, fontWeight: '500', lineHeight: 12, color: textColor(light).tertiary }]}>{day}</Text>
-            <Text style={{ fontSize: 7, lineHeight: 8, marginTop: 1, letterSpacing: 0.3, color: textColor(light).disabled }}>{month}</Text>
-          </View>
-        </View>
         {/* Not yet synced to the server — sitting in the offline queue, or
             an insert/update still in flight. */}
         {tx._pending && (

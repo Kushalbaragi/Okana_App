@@ -1,16 +1,18 @@
 import { memo, useEffect, useRef, Fragment } from 'react';
 import Svg, { Line, Rect, Circle, Path, Text as SvgText } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedProps, withDelay, withTiming, Easing } from 'react-native-reanimated';
-import { textColor, EXPENSE, EXPENSE_DIM, INCOME, INCOME_DIM } from '../utils/colors';
+import { textColor, EXPENSE, INCOME } from '../utils/colors';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
-// The two bar colours; isIncome picks which one a chart uses. See the data
-// colour block in utils/colors.js for what they mean and why these two are
-// the only colours in the app.
-const GREEN_TONE = { active: INCOME, dim: INCOME_DIM };
-const RED_TONE   = { active: EXPENSE, dim: EXPENSE_DIM };
+// The two bar colours; isIncome picks which one a chart uses. Only the current
+// bar is at full strength; every other one is at 40% opacity, so the chart
+// reads as one figure with a quiet history behind it. See the data colour block
+// in utils/colors.js for what the colours mean and why these two are the only
+// colours in the app.
+const GREEN_TONE = { active: INCOME, dim: 'rgba(74,222,128,0.4)' };
+const RED_TONE   = { active: EXPENSE, dim: 'rgba(255,75,75,0.4)' };
 
 const BAR_HEIGHT = 110;
 const CHART_W    = 264;
@@ -24,7 +26,13 @@ export const BAR_CHART_ASPECT = CHART_W / (BAR_HEIGHT + 22);
 // a wide slot. A small fixed inset plus evenly-spaced bar edges keeps that
 // margin the same regardless of bar count, so the chart lines up with the
 // cards around it instead of framing itself in whitespace on wide slots.
-const CHART_EDGE_PAD = 6;
+const CHART_EDGE_PAD = 16;
+// The slimmest a bar gets.
+const THIN_BAR_W = 6;
+// The width of a bar in the Year tab, whose twelve bars are the app's monthly
+// candles. A tab with only a few bars (All Time) asks for this width, so a
+// candle looks the same size wherever it is.
+export const MONTHLY_BAR_W = Math.min(19, Math.max(THIN_BAR_W, CHART_W / 12 - 8));
 // A flat per-bar step (capped, not spread proportionally across a fixed
 // total budget) — spreading a fixed budget across the bar count shrinks the
 // gap between consecutive bars as there are more of them (e.g. 120ms over
@@ -171,10 +179,10 @@ function toneFor(v, isIncome) {
   return v < 0 ? RED_TONE : (isIncome ? GREEN_TONE : RED_TONE);
 }
 
-function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, instant = false }) {
+function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, instant = false, barWidth }) {
   const n       = values.length;
   const GROUP_W = CHART_W / n;
-  const BAR_W   = Math.min(19, Math.max(6, GROUP_W - 8));
+  const BAR_W   = barWidth ?? Math.min(19, Math.max(THIN_BAR_W, GROUP_W - 8));
   const usableW = CHART_W - 2 * CHART_EDGE_PAD;
   const barStep = n > 1 ? (usableW - BAR_W) / (n - 1) : 0;
   // Height is driven by magnitude regardless of sign — a period that

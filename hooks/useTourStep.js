@@ -18,6 +18,12 @@ const DAY_MS = 86400000;
 //
 // `seen` starts true (hidden) until that is worked out, so a step never flashes
 // on-screen for a returning user while still loading.
+// A development build (the dev client running off Metro) shows every step
+// every time, to any account, so a step can be tried on a real device without
+// resetting anything. `__DEV__` is false in every release build, so this has no
+// effect for real users and there is nothing to switch off.
+const ALWAYS_SHOW = __DEV__;
+
 export function useTourStep(userId, stepKey) {
   const { user } = useAuth();
   const [seen, setSeen] = useState(true);
@@ -28,6 +34,7 @@ export function useTourStep(userId, stepKey) {
 
   useEffect(() => {
     if (!key) return undefined;
+    if (ALWAYS_SHOW) { setSeen(false); return undefined; }
     if (!isNewAccount || seenOnAccount) { setSeen(true); return undefined; }
     let cancelled = false;
     AsyncStorage.getItem(key)
@@ -38,6 +45,7 @@ export function useTourStep(userId, stepKey) {
 
   const markSeen = useCallback(() => {
     setSeen(true);
+    if (ALWAYS_SHOW) return;
     if (key) AsyncStorage.setItem(key, '1').catch(() => {});
     // Best-effort: offline or failing, the device flag still holds for now.
     if (user && !seenOnAccount) {

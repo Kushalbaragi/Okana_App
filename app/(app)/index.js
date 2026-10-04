@@ -51,6 +51,10 @@ const PARALLAX_DIM = 0.4;
 // How long after a first transaction lands before the one-off swipe-to-
 // delete demo plays (see the effect near swipeTour below).
 const SWIPE_DEMO_DELAY_MS = 2000;
+// If no row can be swiped yet when it is time, how soon to look again, and how
+// many more times.
+const SWIPE_DEMO_RETRY_MS = 400;
+const SWIPE_DEMO_TRIES = 8;
 
 // How long after a delete is confirmed it goes ahead even if the dialog never
 // reports having closed (see flushDelete): longer than its close animation.
@@ -216,9 +220,9 @@ export default function Dashboard() {
   const [timeRange, setTimeRange] = useState('year');
   const [year, setYear] = useState(currYear);
   const [selectedMonth, setSelectedMonth] = useState(currMonth);
-  // Header's Expense/Income/Overview dots — a direct tap to whichever one,
-  // not a cycle. Always starts on Expense, and nothing persists it, so a
-  // fresh load always opens the same way.
+  // Header's Expense/Income/Overview pill — each tap moves to the next, round
+  // again. Always starts on Expense, and nothing persists it, so a fresh load
+  // always opens the same way.
   const [mode, setMode] = useState('expense');
   const [selectedDay, setSelectedDay] = useState(null);
 
@@ -535,6 +539,10 @@ export default function Dashboard() {
     setHoldReveal(true);
   }, [trialInfo.status, transactions]);
 
+  // What the Wallet page uses for anything new it can't add without a
+  // subscription (a goal, a loan, a plan line).
+  const walletLocked = trialInfo.status === 'expired' || trialInfo.status === 'not_started';
+  const openProRequired = useCallback(() => setProRequired(true), []);
   const closeProRequired = useCallback(() => setProRequired(false), []);
   const subscribeFromProRequired = useCallback(() => {
     setProRequired(false);
@@ -635,6 +643,14 @@ export default function Dashboard() {
   // firing within the same session before that write resolves.
   const swipeTour = useTourStep(user?.id, 'swipe_delete');
   const swipeDemoShownRef = useRef(false);
+  const swipeDemoTimerRef = useRef(null);
+  // `swipeTour` is a new object every render, so it can't be an effect
+  // dependency whose cleanup cancels the timer: any re-render in the two seconds
+  // (and adding a transaction causes plenty) cleared the timer, and the demo
+  // never played. The timer is kept in a ref and only cleared on unmount.
+  const markSwipeSeenRef = useRef(swipeTour.markSeen);
+  markSwipeSeenRef.current = swipeTour.markSeen;
+  useEffect(() => () => clearTimeout(swipeDemoTimerRef.current), []);
   useEffect(() => {
     if (swipeTour.seen || swipeDemoShownRef.current) return;
     // Waits for the add sheet to have actually finished closing (same
@@ -642,12 +658,17 @@ export default function Dashboard() {
     // in this file) and for there to be a real row to demo on.
     if (transactions.length === 0 || !addModalClosed) return;
     swipeDemoShownRef.current = true;
-    const t = setTimeout(() => {
-      transactionListRef.current?.demoSwipe();
-      swipeTour.markSeen();
-    }, SWIPE_DEMO_DELAY_MS);
-    return () => clearTimeout(t);
-  }, [transactions.length, addModalClosed, swipeTour]);
+    // Rows only become swipeable a moment after the list paints, so if the first
+    // try finds none it tries again shortly; the demo only counts as shown (and
+    // so never repeats) once it has actually played.
+    const attempt = (delay, triesLeft) => {
+      swipeDemoTimerRef.current = setTimeout(() => {
+        if (transactionListRef.current?.demoSwipe()) markSwipeSeenRef.current();
+        else if (triesLeft > 0) attempt(SWIPE_DEMO_RETRY_MS, triesLeft - 1);
+      }, delay);
+    };
+    attempt(SWIPE_DEMO_DELAY_MS, SWIPE_DEMO_TRIES);
+  }, [transactions.length, addModalClosed, swipeTour.seen]);
 
   // Stable no-arg toggles for the modal props below — each was previously
   // an inline arrow function created fresh every render, which defeated
@@ -763,6 +784,7 @@ export default function Dashboard() {
         onClose={closeBudgetSetup}
         onClosed={handleBudgetSetupClosed}
         onSubmit={submitSetupBudget}
+        currentAmount={budget.amount}
         lastMonthAmount={budget.lastMonthAmount}
         lastMonthSpent={budget.lastMonthSpent}
       />
@@ -787,7 +809,7 @@ export default function Dashboard() {
           <Text style={{ fontSize: 30 }} className="mb-3">🔒</Text>
           <Text className="text-white font-semibold text-base mb-2 text-center">Subscription Required</Text>
           <Text className="text-white/50 text-base text-center mb-6" style={{ lineHeight: 22 }}>
-            Your existing transactions are still here. Subscribe to Okana Plus to keep adding new ones.
+            Everything you've added is still here. Subscribe to Okana Plus to keep adding new things.
           </Text>
           <Pressable onPress={subscribeFromProRequired} className="w-full py-[11px] rounded-full items-center" style={{ backgroundColor: 'rgba(74,222,128,0.25)' }}>
             <Text className="text-base font-semibold" style={{ color: '#4ade80' }}>Subscribe Now</Text>
@@ -832,6 +854,8 @@ export default function Dashboard() {
       light={LIGHT_HOME}
       userId={user?.id}
       slideX={calendarSlideX}
+      locked={walletLocked}
+      onLocked={openProRequired}
     />
     </View>
   );

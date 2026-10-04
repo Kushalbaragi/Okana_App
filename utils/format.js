@@ -258,11 +258,10 @@ const MIN_YEAR_SLOTS = 5
 
 export function getLifetimeYearly(transactions, earliestDateStr) {
   const currYear = new Date().getFullYear()
-  // A new account (or one with only this year's data) has just one year of
-  // history — LineChart needs at least 2 points to draw a line, so the
-  // range always spans at least currYear-1..currYear, padded with zeros.
+  // A new account has no history yet: this year at the left, padded forward
+  // with the empty years after it.
   if (!transactions.length) {
-    const earliest = currYear - 1
+    const earliest = currYear
     const endYear  = Math.max(currYear, earliest + MIN_YEAR_SLOTS - 1)
     const years    = Array.from({ length: endYear - earliest + 1 }, (_, i) => earliest + i)
     return { income: new Array(years.length).fill(0), expense: new Array(years.length).fill(0), labels: years.map(String), years }
@@ -287,50 +286,4 @@ export function getLifetimeYearly(transactions, earliestDateStr) {
     }
   })
   return { income, expense, labels: years.map(String), years }
-}
-
-// Monthly data from first transaction month to now — used for "All Time"
-// while the user's history is still short, since yearly bars would be too
-// coarse to be useful that early on. getLifetimeYearly takes over once
-// there's enough history (see SummaryCard's LIFETIME_YEARLY_THRESHOLD).
-// `earliestDateStr` — see the matching comment on getLifetimeYearly above.
-export function getLifetimeMonthly(transactions, earliestDateStr) {
-  const now = new Date()
-  const currYear = now.getFullYear()
-  const currMonth = now.getMonth()
-  if (!transactions.length) {
-    const prevMonth = currMonth === 0 ? 11 : currMonth - 1
-    const prevYear = currMonth === 0 ? currYear - 1 : currYear
-    return {
-      income: [0, 0], expense: [0, 0],
-      labels: [`${MONTHS[prevMonth]} ${String(prevYear).slice(2)}`, `${MONTHS[currMonth]} ${String(currYear).slice(2)}`],
-      months: [{ year: prevYear, month: prevMonth }, { year: currYear, month: currMonth }],
-    }
-  }
-  const earliest = earliestDateStr
-    ? parseISO(earliestDateStr)
-    : transactions.reduce((min, tx) => {
-        const d = parseISO(tx.date); return d < min ? d : min
-      }, now)
-  const startYear  = earliest.getFullYear()
-  const startMonth = earliest.getMonth()
-  const totalMonths = (currYear - startYear) * 12 + (currMonth - startMonth) + 1
-  const income  = new Array(totalMonths).fill(0)
-  const expense = new Array(totalMonths).fill(0)
-  // Parallel to labels — the actual {year, month} each bar represents, so
-  // callers can filter/select by real calendar date instead of array index.
-  const months  = Array.from({ length: totalMonths }, (_, i) => ({
-    year: startYear + Math.floor((startMonth + i) / 12),
-    month: (startMonth + i) % 12,
-  }))
-  const labels  = months.map(({ year, month }) => `${MONTHS[month]} ${String(year).slice(2)}`)
-  transactions.forEach(tx => {
-    const d = parseISO(tx.date)
-    const idx = (d.getFullYear() - startYear) * 12 + (d.getMonth() - startMonth)
-    if (idx >= 0 && idx < totalMonths) {
-      if (tx.type === 'income') income[idx] += tx.amount
-      else expense[idx] += tx.amount
-    }
-  })
-  return { income, expense, labels, months }
 }

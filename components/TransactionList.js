@@ -1,13 +1,14 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { View, Text, FlatList, Pressable, InteractionManager } from 'react-native';
 import Animated, {
+  FadeIn,
   withTiming,
 } from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
 import TransactionItem from './TransactionItem';
-import { formatCurrency } from '../utils/format';
+import { formatCurrency, shiftDate, today } from '../utils/format';
 import { textColor, INCOME_TEXT } from '../utils/colors';
-import { BODY, TABULAR } from '../utils/type';
+import { BODY, TABULAR, FONT } from '../utils/type';
 import { GUTTER, LEDGER_PILL_INSET } from '../utils/spacing';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { SETTLE_EASING, SPRING_SMOOTH, layoutTransition } from '../utils/motion';
@@ -32,8 +33,13 @@ function rowEntering() {
   };
 }
 
-// How long the tour's demo swipe holds the delete button in view before closing.
+// The space between the last row of an open month and the next month's header.
+const MONTH_GAP = 32;
+
+// How long the tour's demo swipe holds the delete button in view before closing,
+// and how long the row rests shut before it swipes again.
 const DEMO_SWIPE_HOLD_MS = 1300;
+const DEMO_SWIPE_PAUSE_MS = 1100;
 
 // One running ledger — every month that has anything in it, newest first,
 // each with a total; every transaction under its own month, newest first.
@@ -68,7 +74,7 @@ function MonthHeader({ label, amount, light, isOpen, isIncome, onPress }) {
       >
         <Text numberOfLines={1} style={[BODY, { color: textColor(light).primary }]}>{label}</Text>
         {amount != null && (
-          <Text style={[BODY, TABULAR, { color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>{formatCurrency(amount)}</Text>
+          <Text style={[BODY, TABULAR, { color: isIncome ? INCOME_TEXT : textColor(light).primary }]}>{formatCurrency(amount)}</Text>
         )}
         {/* At the far right, out past the amount rather than taking room from it
             (into the list's side margin), so the amounts still end where a row's
@@ -80,6 +86,35 @@ function MonthHeader({ label, amount, light, isOpen, isIncome, onPress }) {
         </View>
       </View>
     </Pressable>
+  );
+}
+
+// "Today", "Yesterday", or "2 Oct".
+function dayLabel(dateStr, todayStr, yesterdayStr) {
+  if (dateStr === todayStr) return 'Today';
+  if (dateStr === yesterdayStr) return 'Yesterday';
+  const d = parseISO(dateStr);
+  return `${d.getDate()} ${MONTH_NAMES[d.getMonth()].slice(0, 3)}`;
+}
+
+// The small muted label above a run of rows from the same day.
+function DayLabel({ label, light }) {
+  return (
+    <Text style={{ fontSize: FONT.label, color: textColor(light).disabled, paddingHorizontal: LEDGER_PILL_INSET, marginTop: 14, marginBottom: 2 }}>
+      {label}
+    </Text>
+  );
+}
+
+// The line under the first transaction while the swipe demo is playing.
+function DemoHint({ light }) {
+  return (
+    <Animated.Text
+      entering={FadeIn.duration(500)}
+      style={{ fontSize: FONT.caption, color: textColor(light).tertiary, textAlign: 'center', marginTop: 8, marginBottom: 4 }}
+    >
+      Try swiping left to delete
+    </Animated.Text>
   );
 }
 
@@ -116,11 +151,26 @@ function TransactionList({
     else swipeRefs.current.delete(id);
   }, []);
 
+  // The swipe demo (see demoSwipe below) repeats until the user touches the
+  // screen; `demoOn` is what shows the line under the first transaction.
+  const [demoOn, setDemoOn] = useState(false);
+  const demoOnRef = useRef(false);
+  const demoTimerRef = useRef(null);
+  const endDemo = useCallback(() => {
+    if (!demoOnRef.current) return;
+    demoOnRef.current = false;
+    clearTimeout(demoTimerRef.current);
+    setDemoOn(false);
+  }, []);
+
+  // Any touch anywhere reaches this (see the capture handler on Home), so it is
+  // also what stops the demo.
   const closeOpenRow = useCallback(() => {
+    endDemo();
     const id = openIdRef.current;
     if (id) swipeRefs.current.get(id)?.close();
     openIdRef.current = null;
-  }, []);
+  }, [endDemo]);
 
   const onSwipeOpen = useCallback(id => {
     const prevId = openIdRef.current;
@@ -139,25 +189,33 @@ function TransactionList({
     return true;
   }, [closeOpenRow]);
 
-  // Slides the first row open to show its delete button, holds a moment, and
-  // slides it shut — the tour uses it to show what swiping a transaction does.
+  // Slides the first row open to show its delete button, holds a moment, slides
+  // it shut, rests, and does it again — over and over until a touch ends it (see
+  // closeOpenRow). The tour uses it to show what swiping a transaction does.
   // Says whether there was a row to do it on (rows only become swipeable a moment
   // after a list paints, so the first try can find none).
-  const demoTimerRef = useRef(null);
   useEffect(() => () => clearTimeout(demoTimerRef.current), []);
+  const firstTxIdRef = useRef(null);
   const demoSwipe = useCallback(() => {
-    const first = swipeRefs.current.entries().next();
-    if (first.done) return false;
-    const [id, swipeable] = first.value;
-    swipeable.openRight();
-    openIdRef.current = id;
-    clearTimeout(demoTimerRef.current);
-    demoTimerRef.current = setTimeout(() => {
-      swipeable.close();
-      if (openIdRef.current === id) openIdRef.current = null;
-    }, DEMO_SWIPE_HOLD_MS);
+    if (demoOnRef.current) return true;
+    if (!firstTxIdRef.current || !swipeRefs.current.get(firstTxIdRef.current)) return false;
+    demoOnRef.current = true;
+    setDemoOn(true);
+    const run = () => {
+      const id = firstTxIdRef.current;
+      const swipeable = id && swipeRefs.current.get(id);
+      if (!swipeable) { endDemo(); return; }
+      swipeable.openRight();
+      openIdRef.current = id;
+      demoTimerRef.current = setTimeout(() => {
+        swipeable.close();
+        if (openIdRef.current === id) openIdRef.current = null;
+        demoTimerRef.current = setTimeout(run, DEMO_SWIPE_PAUSE_MS);
+      }, DEMO_SWIPE_HOLD_MS);
+    };
+    run();
     return true;
-  }, []);
+  }, [endDemo]);
 
   useImperativeHandle(ref, () => ({ closeOpenRow, demoSwipe }), [closeOpenRow, demoSwipe]);
 
@@ -211,13 +269,16 @@ function TransactionList({
   //
   const flatData = useMemo(() => {
     const out = [];
-    let gapAdded = false;
+    const todayStr = today();
+    const yesterdayStr = shiftDate(todayStr, -1);
+    let hintPlaced = false;
     for (const g of groups) {
       const isCurrent = g.key === currentMonthKey;
-      // Room between the current month's rows and the first past month's header.
-      if (!isCurrent && !gapAdded) {
-        gapAdded = true;
-        if (out.length > 0) out.push({ type: 'gap', key: 'gap' });
+      // Room before a month's header whenever the rows of an open month sit right
+      // above it (the current month's, or one the user expanded), so one month
+      // visibly ends before the next begins.
+      if (!isCurrent && out.length > 0 && out[out.length - 1].type === 'tx') {
+        out.push({ type: 'gap', key: `gap-${g.key}` });
       }
       const isOpen = isCurrent || g.key === expandedKey;
       // No header at all for the current month — everything it would have
@@ -240,13 +301,24 @@ function TransactionList({
         });
       }
       if (isOpen) {
+        // A small day label above each run of rows from the same day, so the
+        // date is said once instead of on every row.
+        let prevDate = null;
         for (const { tx } of g.items) {
+          if (tx.date !== prevDate) {
+            prevDate = tx.date;
+            out.push({ type: 'day', key: `d-${tx.date}-${g.key}`, label: dayLabel(tx.date, todayStr, yesterdayStr) });
+          }
           out.push({ type: 'tx', key: tx.id, tx });
+          // The demo's line sits right under the first transaction.
+          if (demoOn && !hintPlaced) { hintPlaced = true; out.push({ type: 'hint', key: 'swipe-hint' }); }
         }
       }
     }
     return out;
-  }, [groups, currentMonthKey, expandedKey, mode]);
+  }, [groups, currentMonthKey, expandedKey, mode, demoOn]);
+
+  firstTxIdRef.current = flatData.find(item => item.type === 'tx')?.key ?? null;
 
   // False for the first commit only, true once it has settled. Gates the
   // two per-row costs that profiling showed dominate a first paint —
@@ -286,7 +358,9 @@ function TransactionList({
   ), [settled, justAddedId, cardColor, onEdit, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light]);
 
   const renderItem = useCallback(({ item }) => {
-    if (item.type === 'gap') return <View style={{ height: 24 }} />;
+    if (item.type === 'gap') return <View style={{ height: MONTH_GAP }} />;
+    if (item.type === 'day') return <DayLabel label={item.label} light={light} />;
+    if (item.type === 'hint') return <DemoHint light={light} />;
     if (item.type === 'header') {
       return (
         <MonthHeader

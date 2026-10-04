@@ -1,17 +1,17 @@
-import { memo, useCallback, useState, useEffect, useRef } from 'react';
+import { memo, useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { Modal, View, Text, TextInput, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, Easing } from 'react-native-reanimated';
 import { today, formatDayLabel } from '../utils/format';
-import CalendarPicker from './CalendarPicker';
+import { DateWheelPicker } from './wheel';
 import { GlassPressable, INPUT_TEXT_STYLE, POPUP_RADIUS, SMOOTH } from './Glass';
 import { NumericKeypad } from './NumericKeypad';
 import { useAmountEntry } from '../hooks/useAmountEntry';
 import { AmountRow } from './AmountField';
 import { useShake } from '../hooks/useShake';
 import { hapticHeavy } from '../utils/haptics';
-import { ReelSlider } from './ReelSlider';
+import SegmentedSwitch from './SegmentedSwitch';
 import { CalendarIcon } from './icons';
 import { FONT } from '../utils/type';
 
@@ -55,9 +55,9 @@ const DRAG_CLOSE_EASING = Easing.out(Easing.cubic);
 const DISMISS_DISTANCE = 120;
 const DISMISS_VELOCITY = 800;
 
-// Expense/Income modes for the ReelSlider below (see its own comment for
-// the shared sliding-reel design this and Savings' Add/Withdraw toggle and
-// the Home header's own Expense/Income/Overview switch all use).
+// Expense/Income modes for the SegmentedSwitch below — the same sliding-pill
+// switch the Budget / Savings / Debt page uses, shared by this sheet's
+// Expense/Income toggle and Savings' Add/Withdraw toggle.
 const TYPE_MODES = ['expense', 'income'];
 const TYPE_LABELS = { expense: 'Expense', income: 'Income' };
 
@@ -73,7 +73,7 @@ const TYPE_LABELS = { expense: 'Expense', income: 'Income' };
 // tenure — stays on AmountEntrySheet's own boxed-name design instead, the
 // same one Budget's own "Add plan" sheet uses; only the money-entry sheet
 // reuses this one.)
-// - `modes`/`labels` swap what the ReelSlider offers (Add/Withdraw instead
+// - `modes`/`labels` swap what the SegmentedSwitch offers (Add/Withdraw instead
 //   of Expense/Income); a single mode skips the toggle entirely (debt only
 //   ever logs a payment, so there's nothing to pick between).
 // - `initialMode` is the mode a fresh (non-edit) open starts on, default
@@ -90,10 +90,6 @@ function AddModal({
   open, onClose, onClosed, onAdd, onEdit, editData, light = false,
   modes = TYPE_MODES,
   labels = TYPE_LABELS,
-  // Passed straight through to ReelSlider — see its own comment on why
-  // Savings/Debt's longer "Withdraw" label asks for a wider slot than
-  // Home's own Expense/Income default.
-  sliderSlot,
   initialMode,
   subtitle,
   fieldPlaceholder = 'Description',
@@ -108,6 +104,7 @@ function AddModal({
   prefill,
 }) {
   const insets = useSafeAreaInsets();
+  const switchOptions = useMemo(() => modes.map(id => ({ id, label: labels[id] })), [modes, labels]);
   const { height: windowHeight } = useWindowDimensions();
   const defaultMode = initialMode ?? modes[0];
 
@@ -158,10 +155,6 @@ function AddModal({
   // is empty; the shake is just what draws the eye to it.
   const amountShake = useShake();
   const descriptionShake = useShake();
-  // Stable reference — CalendarPicker is memo()-wrapped, and AddModal
-  // re-renders on every keystroke in the amount/description fields, so an
-  // inline arrow here would defeat that memo the whole time the calendar
-  // overlay is open.
   const closeCalendar = useCallback(() => setCalOpen(false), []);
 
   // RN's built-in Modal animationType only animates the WHOLE modal content
@@ -469,7 +462,7 @@ function AddModal({
                 pick between, so the toggle itself is skipped rather than
                 shown with nothing to slide to. */}
             {modes.length > 1 && (
-              <ReelSlider modes={modes} labels={labels} value={type} onSelect={setType} light={light} slot={sliderSlot} />
+              <SegmentedSwitch options={switchOptions} value={type} onChange={setType} trackColor="#262626" light={light} />
             )}
             {!!subtitle && (
               <Text numberOfLines={1} style={{ marginTop: modes.length > 1 ? 10 : 0, fontSize: FONT.body, fontWeight: '600', color: light ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)' }}>
@@ -593,7 +586,11 @@ function AddModal({
                 }
                 setCalOpen(true);
               }}
+              // A generous tap target: the row is small text and an icon, easy to
+              // miss with a thumb, so the touchable area reaches out around it.
+              hitSlop={{ top: 14, bottom: 14, left: 14, right: 28 }}
               className="flex-row items-center"
+              style={{ paddingVertical: 10, paddingRight: 8 }}
             >
               <CalendarIcon color={light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'} />
               <Text className="text-[16px] ml-1.5" style={{ color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>
@@ -660,7 +657,16 @@ function AddModal({
                 calendarCardStyle,
               ]}
             >
-              <CalendarPicker value={date} onChange={setDate} onClose={closeCalendar} light={light} />
+              {/* The day, month and year as three wheels, like iOS's own date
+                  picker. A wheel has no single "pick" moment the way tapping a
+                  day on a calendar did, so it closes with Done (or a tap
+                  outside), and the date follows the wheels as they turn. */}
+              <View style={{ alignItems: 'flex-end', paddingHorizontal: 24, paddingBottom: 4 }}>
+                <Pressable onPress={closeCalendar} hitSlop={10} accessibilityRole="button" accessibilityLabel="Done">
+                  <Text style={{ fontSize: FONT.body, fontWeight: '500', color: light ? '#111111' : '#ffffff' }}>Done</Text>
+                </Pressable>
+              </View>
+              <DateWheelPicker value={date} onChange={setDate} light={light} />
             </Animated.View>
           )}
         </View>
