@@ -10,13 +10,16 @@ import { NumericKeypad, DIGIT_ONLY_KEYPAD_ROWS } from '../../components/NumericK
 import { BackIcon } from '../../components/icons';
 import { useShake } from '../../hooks/useShake';
 import { hapticAdded, hapticTick } from '../../utils/haptics';
+import { AuthBackground, AuthTitle, useTitleTop } from '../../components/AuthKit';
+import { darkText } from '../../utils/colors';
+import { GUTTER } from '../../utils/spacing';
+import { FONT } from '../../utils/type';
 
 // Must match the "Email OTP Length" set in Supabase Dashboard ->
 // Authentication -> Sign In / Providers -> Email, or auto-submit fires
 // early/late on a mismatched code length.
 const CODE_LENGTH = 6;
 const RESEND_COOLDOWN_S = 60; // matches Supabase's own per-email OTP rate limit
-const HORIZONTAL_PADDING = 64; // matches the px-8 (32 each side) on the containing View
 
 export default function OtpScreen() {
   const router = useRouter();
@@ -26,14 +29,10 @@ export default function OtpScreen() {
   const { verifyOtp, sendOtp } = useAuth();
   const { isOnline, notifyOffline } = useNetwork();
 
-  // Scales box size/gap down for longer codes so 8 boxes still fit on
-  // narrow phones instead of wrapping or overflowing.
-  const boxGap = CODE_LENGTH <= 6 ? 10 : 6;
-  const boxSize = Math.max(30, Math.min(44, Math.floor(
-    (width - HORIZONTAL_PADDING - boxGap * (CODE_LENGTH - 1)) / CODE_LENGTH
-  )));
-  const boxHeight = boxSize + 10;
-  const digitFontSize = boxSize >= 40 ? 20 : boxSize >= 34 ? 18 : 16;
+  // One slot per digit, narrower on a small screen so all of them fit.
+  const slotGap = 14;
+  const slotWidth = Math.min(40, Math.floor((width - 2 * GUTTER - slotGap * (CODE_LENGTH - 1)) / CODE_LENGTH));
+  const top = useTitleTop();
 
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
@@ -109,49 +108,46 @@ export default function OtpScreen() {
   }
 
   return (
-    <View className="flex-1 bg-bg">
-      <View className="flex-row items-center px-4" style={{ paddingTop: insets.top + 8, paddingBottom: 8 }}>
+    <View style={{ flex: 1, backgroundColor: '#000000' }}>
+      <AuthBackground />
+      <View style={{ position: 'absolute', top: insets.top + 12, left: GUTTER, height: 36, justifyContent: 'center', zIndex: 1 }}>
         <Pressable
           // Same canGoBack() guard as account.js/subscription.js's back
           // buttons — a reload or a direct deep-link to /otp would
           // otherwise leave back() silently doing nothing.
           onPress={() => (router.canGoBack() ? router.back() : router.replace('/(auth)/login'))}
           className="w-9 h-9 items-center justify-center rounded-xl"
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
         >
           <BackIcon />
         </Pressable>
       </View>
 
-      <View className="flex-1 items-center justify-center px-8">
-        <Text className="text-white text-[20px] font-semibold mb-2 text-center">Enter the code</Text>
-        <Text className="text-white/50 text-base text-center mb-10">
-          We sent a {CODE_LENGTH}-digit code to{'\n'}
-          <Text className="text-white/60">{email}</Text>
-        </Text>
+      <View style={{ flex: 1, paddingTop: top }}>
+        <AuthTitle title="Enter the code" sub={`Sent to ${email}`} />
 
-        <Animated.View className="flex-row" style={[{ gap: boxGap }, shakeStyle]}>
+        <Animated.View style={[{ flexDirection: 'row', justifyContent: 'center', gap: slotGap, marginTop: 48 }, shakeStyle]}>
           {Array.from({ length: CODE_LENGTH }).map((_, i) => (
             <View
               key={i}
-              className="items-center justify-center"
               style={{
-                width: boxSize, height: boxHeight, borderRadius: 12,
-                borderWidth: 1,
-                borderColor: error ? 'rgba(248,113,113,0.5)' : code.length === i ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.14)',
-                backgroundColor: 'transparent',
+                width: slotWidth, height: 40, alignItems: 'center', justifyContent: 'center',
+                borderBottomWidth: 1.5,
+                borderBottomColor: error ? 'rgba(248,113,113,0.6)' : code[i] ? 'rgba(255,255,255,0.7)' : code.length === i ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.18)',
               }}
             >
-              <Text className="text-white font-semibold" style={{ fontSize: digitFontSize }}>{code[i] || ''}</Text>
+              <Text style={{ fontSize: FONT.amount, fontWeight: '600', color: '#ffffff' }}>{code[i] || ''}</Text>
             </View>
           ))}
         </Animated.View>
 
-        <Text className="text-red-400 text-[13px] text-center mt-5" style={{ minHeight: 18 }} numberOfLines={1}>
+        <Text numberOfLines={1} style={{ fontSize: FONT.caption, color: 'rgba(248,113,113,0.9)', textAlign: 'center', marginTop: 20, minHeight: 18 }}>
           {error}
         </Text>
 
-        <Pressable onPress={handleResend} disabled={cooldown > 0 || resending || verifying} className="mt-3 py-1">
-          <Text className="text-white/50 text-base">
+        <Pressable onPress={handleResend} disabled={cooldown > 0 || resending || verifying} style={{ alignSelf: 'center', marginTop: 8, paddingVertical: 4 }}>
+          <Text style={{ fontSize: FONT.caption, color: darkText.tertiary }}>
             {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
           </Text>
         </Pressable>

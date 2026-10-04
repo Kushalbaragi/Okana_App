@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
-import { View, Text, Platform, Keyboard, Pressable } from 'react-native';
+import { useState } from 'react';
+import { View, Text, Keyboard, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
 import { isConnectivityError, reportError } from '../../utils/errors';
-import { GlassTextInput, GlassPressable } from '../../components/Glass';
-import { Spinner } from '../../components/icons';
+import { AuthBackground, AuthTitle, AuthField, PersonIcon, PillButton, useKeyboardLift, useTitleTop } from '../../components/AuthKit';
+import { GUTTER } from '../../utils/spacing';
+import { FONT } from '../../utils/type';
 
 // Only reached once, right after a brand-new account's first OTP
 // verification — the old signup form used to collect this alongside a
@@ -18,20 +19,8 @@ export default function NameScreen() {
   const [name, setNameInput] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const keyboardOffset = useSharedValue(0);
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, e => setKeyboardHeight(e.endCoordinates.height));
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
-    return () => { showSub.remove(); hideSub.remove(); };
-  }, []);
-  useEffect(() => {
-    keyboardOffset.value = withTiming(keyboardHeight, { duration: 250, easing: Easing.out(Easing.cubic) });
-  }, [keyboardHeight, keyboardOffset]);
-  const containerStyle = useAnimatedStyle(() => ({ paddingBottom: keyboardOffset.value }));
+  const top = useTitleTop();
+  const lift = useKeyboardLift();
 
   async function handleContinue() {
     // Belt-and-suspenders alongside the button's own `disabled` prop — see
@@ -54,51 +43,30 @@ export default function NameScreen() {
   }
 
   return (
-    <Pressable onPress={Keyboard.dismiss} style={{ flex: 1 }}>
-      <Animated.View className="flex-1 bg-bg justify-center px-6" style={containerStyle}>
-        <View className="w-full max-w-[400px] self-center">
-          <View className="items-center mb-10">
-            <Text className="text-white text-[20px] font-semibold mb-1">Okana</Text>
-            <Text className="text-white/50 text-base">Your money, beautifully tracked.</Text>
-          </View>
-
-          <Text className="text-white text-2xl font-semibold mb-8 text-center">What should we call you?</Text>
-
-          <View className="gap-4">
-            <View>
-              <Text className="text-white text-[16px] font-medium mb-2">Name</Text>
-              <GlassTextInput
-                autoFocus
-                value={name}
-                onChangeText={t => { setNameInput(t); setError(''); }}
-                placeholder="Full Name"
-                autoComplete="name"
-                textContentType="name"
-                onSubmitEditing={handleContinue}
-                maxLength={60}
-              />
-            </View>
-
-            {!!error && <Text className="text-red-400 text-base text-center">{error}</Text>}
-
-            <GlassPressable
-              variant="active"
-              radius={9999}
-              onPress={handleContinue}
-              disabled={saving || !name.trim()}
-              className="w-full py-[14px] mt-2 flex-row items-center justify-center gap-2"
-            >
-              {saving ? (
-                <>
-                  <Spinner color="#000000" trackColor="rgba(0,0,0,0.25)" />
-                  <Text className="text-black text-base font-semibold">Saving…</Text>
-                </>
-              ) : (
-                <Text className="text-black text-base font-semibold">Continue</Text>
-              )}
-            </GlassPressable>
-          </View>
+    <Pressable onPress={Keyboard.dismiss} style={{ flex: 1, backgroundColor: '#000000' }}>
+      <AuthBackground />
+      <Animated.View style={[{ flex: 1, paddingTop: top }, lift]}>
+        <AuthTitle title="What should we call you?" />
+        <View style={{ marginTop: 40 }}>
+          <AuthField
+            icon={<PersonIcon />}
+            value={name}
+            onChangeText={t => { setNameInput(t); setError(''); }}
+            onClear={() => { setNameInput(''); setError(''); }}
+            placeholder="Full name"
+            autoFocus
+            autoComplete="name"
+            textContentType="name"
+            returnKeyType="done"
+            onSubmitEditing={handleContinue}
+            maxLength={60}
+          />
+          <Text numberOfLines={1} style={{ fontSize: FONT.caption, color: 'rgba(248,113,113,0.9)', textAlign: 'center', marginTop: 14, minHeight: 18, paddingHorizontal: GUTTER }}>
+            {error}
+          </Text>
         </View>
+        <View style={{ flex: 1 }} />
+        <PillButton label="Continue" onPress={handleContinue} loading={saving} loadingLabel="Saving…" dim={!name.trim()} />
       </Animated.View>
     </Pressable>
   );

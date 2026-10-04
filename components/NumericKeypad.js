@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { View, Pressable } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
-import { TABULAR, FONT } from '../utils/type';
+import { TABULAR } from '../utils/type';
 import { BackspaceIcon } from './icons';
 
 // Default layout — Amount entry (digits + decimal point). Screens that only
@@ -36,6 +36,11 @@ export function nextAmountValue(prev, key) {
   if (prev.replace('.', '').length >= 8) return prev; // sane upper bound
   return prev + key;
 }
+
+// Not on the type scale, on purpose: the keys are the one thing on a keypad
+// screen to be read at a glance and hit by thumb, so they sit larger and heavier
+// than an amount.
+const KEY_FONT = 27;
 
 // Flat, no per-key box — just the digit sitting on the page background.
 // Feedback on tap comes from a Reanimated scale+dim on the label itself
@@ -73,10 +78,10 @@ function KeypadKey({ label, onPress, color = '#ffffff' }) {
     >
       {label === 'backspace' ? (
         <Animated.View style={animStyle}>
-          <BackspaceIcon size={24} color={color} />
+          <BackspaceIcon size={26} color={color} />
         </Animated.View>
       ) : (
-        <Animated.Text style={[{ color, fontSize: FONT.amount, fontWeight: '400', ...TABULAR }, animStyle]}>
+        <Animated.Text style={[{ color, fontSize: KEY_FONT, fontWeight: '600', ...TABULAR }, animStyle]}>
           {label}
         </Animated.Text>
       )}
