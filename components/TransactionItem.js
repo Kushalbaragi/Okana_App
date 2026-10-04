@@ -6,7 +6,7 @@ import { dateBoxParts, formatCurrencyPlain } from '../utils/format';
 import { SwipeDeleteAction, useSwipeDelete } from './SwipeDeleteAction';
 import { CARD_COLOR } from './Glass';
 import { textColor, INCOME_TEXT } from '../utils/colors';
-import { BODY, TABULAR } from '../utils/type';
+import { BODY, TABULAR, FONT } from '../utils/type';
 import { LEDGER_PILL_INSET } from '../utils/spacing';
 
 // The date chip plus the room after it.
@@ -76,7 +76,7 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
       <Animated.View className="flex-row items-center" style={contentStyle}>
         <View style={{ width: DATE_COL_WIDTH }}>
           <View style={{ width: 26, height: 28, borderRadius: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.06)' }}>
-            <Text style={[TABULAR, { fontSize: 10, fontWeight: '500', lineHeight: 12, color: textColor(light).tertiary }]}>{day}</Text>
+            <Text style={[TABULAR, { fontSize: FONT.label, fontWeight: '500', lineHeight: 12, color: textColor(light).tertiary }]}>{day}</Text>
             <Text style={{ fontSize: 7, lineHeight: 8, marginTop: 1, letterSpacing: 0.3, color: textColor(light).disabled }}>{month}</Text>
           </View>
         </View>

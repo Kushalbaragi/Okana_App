@@ -19,7 +19,7 @@ import {
   formatCurrency,
 } from '../utils/format';
 import { textColor } from '../utils/colors';
-import { CAPTION, TABULAR } from '../utils/type';
+import { CAPTION, TABULAR, FONT } from '../utils/type';
 
 const LIFETIME_YEARLY_THRESHOLD = 2; // years of history before "All Time" switches from monthly to yearly bars
 import { MONTH_NAMES } from '../utils/monthlyRecap';
@@ -92,7 +92,7 @@ const HEADLINE_TEXT_STYLE = {
   left: 0,
   right: 0,
   textAlign: 'center',
-  fontSize: 44,
+  fontSize: FONT.display,
   lineHeight: HEADLINE_HEIGHT,
   // A touch heavier than the original hairline (300) — still not semibold,
   // but the figure was reading as a little thin at this size.
@@ -203,7 +203,7 @@ function AverageCaption({ info, light }) {
   // Always takes its line: Overview has no average, and without a stand-in the
   // chart below slid up by that much every time the tab changed.
   return (
-    <Text style={{ fontSize: 12, fontWeight: '400', marginTop: 4, color: textColor(light).disabled }}>
+    <Text style={{ fontSize: FONT.caption, fontWeight: '400', marginTop: 4, color: textColor(light).disabled }}>
       {info ? `${info.label} – ${formatCurrency(info.value)}` : '\u00A0'}
     </Text>
   );

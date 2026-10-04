@@ -60,7 +60,7 @@ function CalendarPicker({ value, onChange, onClose, light = false }) {
     <View className="py-4 w-full" style={{ paddingHorizontal: 24 }}>
       <View className="flex-row items-center justify-between mb-4">
         <GlassPressable variant="glass" radius={9999} onPress={prev} className="w-8 h-8 items-center justify-center" style={light ? { backgroundColor: 'rgba(0,0,0,0.05)' } : null}>
-          <Text className="text-lg" style={{ color: dim(0.6) }}>‹</Text>
+          <Text className="text-xl" style={{ color: dim(0.6) }}>‹</Text>
         </GlassPressable>
         <Text className="text-base font-semibold" style={{ color: light ? '#111111' : '#ffffff' }}>{MONTHS[month]} {year}</Text>
         <GlassPressable
@@ -71,14 +71,14 @@ function CalendarPicker({ value, onChange, onClose, light = false }) {
           className="w-8 h-8 items-center justify-center"
           style={light ? { backgroundColor: 'rgba(0,0,0,0.05)' } : null}
         >
-          <Text className="text-lg" style={{ color: isCurrentMonth ? textColor(light).disabled : dim(0.6) }}>›</Text>
+          <Text className="text-xl" style={{ color: isCurrentMonth ? textColor(light).disabled : dim(0.6) }}>›</Text>
         </GlassPressable>
       </View>
 
       <View className="flex-row mb-1">
         {DAYS.map(d => (
           <View key={d} className="flex-1 items-center py-1">
-            <Text className="text-xs font-medium" style={{ color: textColor(light).tertiary }}>{d}</Text>
+            <Text className="text-[13px] font-medium" style={{ color: textColor(light).tertiary }}>{d}</Text>
           </View>
         ))}
       </View>

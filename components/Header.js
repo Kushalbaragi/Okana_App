@@ -5,6 +5,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-na
 import { HamburgerIcon, WalletIcon } from './icons';
 import { textColor } from '../utils/colors';
 import { SPRING_SMOOTH } from '../utils/motion';
+import { FONT } from '../utils/type';
 
 // The three labels sit on one fixed-order track (Expense, Income, Overview,
 // always in that order); tapping Expense or Overview directly is what moves
@@ -60,7 +61,7 @@ function DimReel({ trackStyle, light, onSelectMode }) {
     >
       {MODES.map(m => (
         <Pressable key={m} onPress={() => onSelectMode(m)} style={{ width: SLOT, height: '100%', alignItems: 'center', justifyContent: 'center' }}>
-          <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: '500', color: textColor(light).disabled, letterSpacing: 0.1 }}>
+          <Text numberOfLines={1} style={{ fontSize: FONT.caption, fontWeight: '500', color: textColor(light).disabled, letterSpacing: 0.1 }}>
             {MODE_LABELS[m]}
           </Text>
         </Pressable>
@@ -125,7 +126,7 @@ function ModeSlider({ mode, onSelectMode, light }) {
                   (position, fill, weight, uppercase) already says which
                   one is selected; red/green stay reserved for the chart
                   and don't need repeating here too. */}
-              <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase', color: textColor(light).primary }}>
+              <Text numberOfLines={1} style={{ fontSize: FONT.caption, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase', color: textColor(light).primary }}>
                 {MODE_LABELS[m]}
               </Text>
             </View>

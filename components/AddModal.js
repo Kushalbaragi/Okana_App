@@ -13,6 +13,7 @@ import { useShake } from '../hooks/useShake';
 import { hapticHeavy } from '../utils/haptics';
 import { ReelSlider } from './ReelSlider';
 import { CalendarIcon } from './icons';
+import { FONT } from '../utils/type';
 
 // Height of the description field. Shared by its wrapper and the input
 // inside it, so both are centring text within the exact same box.
@@ -471,7 +472,7 @@ function AddModal({
               <ReelSlider modes={modes} labels={labels} value={type} onSelect={setType} light={light} slot={sliderSlot} />
             )}
             {!!subtitle && (
-              <Text numberOfLines={1} style={{ marginTop: modes.length > 1 ? 10 : 0, fontSize: 17, fontWeight: '600', color: light ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)' }}>
+              <Text numberOfLines={1} style={{ marginTop: modes.length > 1 ? 10 : 0, fontSize: FONT.body, fontWeight: '600', color: light ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)' }}>
                 {subtitle}
               </Text>
             )}
@@ -595,7 +596,7 @@ function AddModal({
               className="flex-row items-center"
             >
               <CalendarIcon color={light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'} />
-              <Text className="text-[15px] ml-1.5" style={{ color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>
+              <Text className="text-[16px] ml-1.5" style={{ color: light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>
                 {formatDayLabel(date)}
               </Text>
             </Pressable>
@@ -607,7 +608,7 @@ function AddModal({
               onPress={handleSubmit}
               className="px-8 py-3 items-center"
             >
-              <Text className="text-black text-[15px] font-semibold">
+              <Text className="text-black text-[16px] font-semibold">
                 {isEdit ? 'Update' : 'Save'}
               </Text>
             </GlassPressable>
