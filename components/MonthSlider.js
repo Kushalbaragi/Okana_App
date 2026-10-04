@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, View, Text, Pressable } from 'react-native';
 import Animated, { runOnJS, useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
-import { hapticTick } from '../utils/haptics';
+import { hapticScrollTick } from '../utils/haptics';
 import { reportError } from '../utils/errors';
 import { POSITIVE, dim, money } from './savingsShared';
 import { textColor } from '../utils/colors';
@@ -73,7 +73,7 @@ function MonthSlider({ months, initialIndex, light = false }) {
 
   const select = useCallback((i) => {
     setSelected(i);
-    hapticTick();
+    hapticScrollTick();
   }, []);
 
   const lastMonth = months.length - 1;

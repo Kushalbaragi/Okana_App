@@ -1,9 +1,9 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { View, Text, useWindowDimensions } from 'react-native';
 import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedScrollHandler, useAnimatedStyle, runOnJS } from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient, Stop, Path, Rect, Text as SvgText } from 'react-native-svg';
-import { hapticTick } from '../utils/haptics';
+import { hapticScrollTick } from '../utils/haptics';
 import { textColor } from '../utils/colors';
 import { TABULAR, FONT } from '../utils/type';
 
@@ -161,10 +161,16 @@ function EdgeFade({ side, color }) {
   );
 }
 
+// The most often a moving ruler tells its caller what it is on. Fast enough that
+// a figure elsewhere on the form keeps up, slow enough that a form rebuilding
+// itself can never be what the scroll is waiting on. The ruler's OWN readout
+// (see `figure`) is not throttled — it updates on every tick.
+const COMMIT_MS = 110;
+
 // `sessionKey` changing means "start again from initialValue" — the sheet
 // reopening, say. The scroll position is the source of truth the rest of the
 // time, so the value is reported out rather than pushed in.
-function AmountRuler({ initialValue, sessionKey, onChange, light = false, surface, scale = AMOUNT_SCALE, tintCompleted = false, decelerationRate = 'normal' }) {
+function AmountRuler({ initialValue, sessionKey, onChange, light = false, surface, scale = AMOUNT_SCALE, tintCompleted = false, decelerationRate = 'normal', figure = null }) {
   const { width } = useWindowDimensions();
   // The ruler's OWN width, measured — not the window's.
   //
@@ -209,20 +215,40 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
   // thread — the tint has to follow the finger frame for frame, so it can't
   // go through the JS-side value `onChange` reports.
   const scrollX = useSharedValue(nearestTickIndex(initialValue) * SPACING);
-  const lastHapticRef = useRef(0);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
+  // The readout above the ticks, when this ruler is drawing its own (see
+  // LiveFigure) — told about every tick, since it is one line of text.
+  const figureRef = useRef(null);
+  // The caller, on the other hand, hears about the value at most every
+  // COMMIT_MS while the ruler is moving, and once more the moment it stops. A
+  // caller's `onChange` is its own setState, and that re-renders a whole form.
+  const commitTimer = useRef(null);
+  const lastCommit = useRef(0);
+  const latest = useRef(initialValue);
+  const commit = useCallback(() => {
+    clearTimeout(commitTimer.current);
+    commitTimer.current = null;
+    lastCommit.current = Date.now();
+    onChangeRef.current(latest.current);
+  }, []);
+  // Whatever the ruler settled on always reaches the caller, however the scroll
+  // ended — a flick's own momentum, a finger let go without one, or a drag that
+  // never moved far enough to start one.
+  const settle = useCallback(() => { if (commitTimer.current) commit(); }, [commit]);
+  useEffect(() => () => clearTimeout(commitTimer.current), []);
+
   const report = useCallback((index) => {
-    onChangeRef.current(ticks[index]);
-    // A fast fling crosses ticks quicker than a tap can be felt as separate;
-    // spacing them out keeps the ruler buzzing rather than mushing.
+    const value = ticks[index];
+    latest.current = value;
+    figureRef.current?.set(value);
     const now = Date.now();
-    if (now - lastHapticRef.current > 24) {
-      lastHapticRef.current = now;
-      hapticTick();
-    }
-  }, [ticks]);
+    const wait = COMMIT_MS - (now - lastCommit.current);
+    if (wait <= 0) commit();
+    else if (!commitTimer.current) commitTimer.current = setTimeout(commit, wait);
+    hapticScrollTick();
+  }, [ticks, commit]);
 
   useEffect(() => {
     const index = nearestTickIndex(initialValue);
@@ -230,6 +256,9 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
     // agreeing with it up front keeps the jump silent — no haptic, and no
     // overwriting an exact value that doesn't sit on a tick.
     lastIndex.value = index;
+    latest.current = initialValue;
+    // The exact value, not the nearest tick's — same reason as above.
+    figureRef.current?.set(initialValue);
     scrollRef.current?.scrollTo({ x: index * SPACING, animated: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionKey]);
@@ -265,7 +294,7 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
   const majorColor = light ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.38)';
   const labelColor = textColor(light).disabled;
 
-  return (
+  const track = (
     <View style={{ height: HEIGHT }} onLayout={onViewportLayout}>
       <AnimatedScrollView
         ref={scrollRef}
@@ -275,6 +304,10 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
         decelerationRate={decelerationRate}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
+        // Whatever the ruler is left on reaches the caller even if the last tick
+        // it crossed is still inside COMMIT_MS — see `settle`.
+        onMomentumScrollEnd={settle}
+        onScrollEndDrag={settle}
         // Half the ruler of empty space at each end, so the first and last
         // ticks can still reach the centre line.
         contentContainerStyle={{ paddingHorizontal: viewportW / 2 - PAD }}
@@ -313,6 +346,19 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
           width: 2.5, height: MAJOR_H + 8, borderRadius: 2, backgroundColor: '#4ade80',
         }}
       />
+    </View>
+  );
+
+  // Nothing around the track unless this ruler draws its own readout — the
+  // callers that pass `figure` would otherwise each need their own wrapper for
+  // it, and the overlays above are positioned against the track's own box.
+  if (!figure) return track;
+  return (
+    <View>
+      <View style={{ alignItems: 'center', marginBottom: 8 }}>
+        <LiveFigure ref={figureRef} initial={initialValue} kind={figure} light={light} />
+      </View>
+      {track}
     </View>
   );
 }
@@ -382,15 +428,35 @@ export function monthsScale(max = MONTHS_MAX) {
 
 const figureFormat = new Intl.NumberFormat('en-IN');
 
-// The readout that goes above the ruler: the amount it is currently on, big,
-// with a dimmed rupee sign.
-export function RulerFigure({ value, light = false }) {
+// The readout above the ruler, kept live BY HAND rather than from a prop.
+//
+// It used to be the caller's own state, set from `onChange` on every tick the
+// ruler crossed — which re-rendered the whole sheet or modal around it, dozens
+// of times a second, while a scroll was in flight. That is what the dragging
+// actually felt like: the ruler itself runs on the UI thread and never stuttered
+// on its own, it was starved by the JS thread rebuilding a form behind it.
+//
+// So the ruler pushes each value straight in here instead (see `figureRef`), and
+// the only thing React re-renders per tick is this one line of text. The caller
+// still hears about it through `onChange`, just not on every single tick — see
+// COMMIT_MS.
+const LiveFigure = forwardRef(function LiveFigure({ initial, kind, light }, ref) {
+  const [value, setValue] = useState(initial);
+  useImperativeHandle(ref, () => ({ set: setValue }), []);
+  const big = { fontSize: FONT.display, lineHeight: 50, fontWeight: '300', letterSpacing: -1, color: light ? '#111111' : '#ffffff', ...TABULAR };
+  const unit = { fontSize: FONT.title, fontWeight: '400', color: textColor(light).disabled };
+  if (kind === 'months') {
+    return (
+      <Text style={big}>
+        {value}
+        <Text style={unit}> {value === 1 ? 'month' : 'months'}</Text>
+      </Text>
+    );
+  }
   return (
-    <Text
-      style={{ fontSize: FONT.display, lineHeight: 50, fontWeight: '300', letterSpacing: -1, color: light ? '#111111' : '#ffffff', ...TABULAR }}
-    >
+    <Text style={big}>
       <Text style={{ fontSize: FONT.amount, fontWeight: '400', color: textColor(light).disabled }}>₹ </Text>
       {figureFormat.format(value)}
     </Text>
   );
-}
+});

@@ -195,9 +195,9 @@ export default function JarMoment({ type, name, savedBefore, savedAfter, target,
   const isAdd = type === 'add';
   const { shown, slots, absorbed } = useMemo(() => plan(type, savedBefore, savedAfter, target, complete), [type, savedBefore, savedAfter, target, complete]);
 
-  // The timeline, in ms. Coins start after the jar has settled in; the number
+  // The timeline, in ms. The jar comes in quickly; coins start once it has settled in; the number
   // rolls once the last one is down; the text goes first, then the dark wash.
-  const FIRST = 900;
+  const FIRST = 600;
   // Few coins fall slowly; a big deposit (a whole goal at once) tightens the gap
   // so the jar still fills in about five seconds, every coin seen.
   const count = Math.max(1, slots.length);
@@ -208,8 +208,8 @@ export default function JarMoment({ type, name, savedBefore, savedAfter, target,
   const T = useMemo(() => ({
     // Completing the goal holds a little longer: the jar glows, then the check.
     total: lastEnd + (complete ? 7000 : 5800),
-    scrimIn: [0, 500],
-    jarIn: [50, 600],
+    scrimIn: [0, 300],
+    jarIn: [30, 520],
     roll: [lastEnd + 300, lastEnd + 1300],
     float: [lastEnd - 600, lastEnd + 1200],
     glow: [lastEnd + 100, lastEnd + 1400],
@@ -264,9 +264,14 @@ export default function JarMoment({ type, name, savedBefore, savedAfter, target,
   const scrimStyle = useAnimatedStyle(() => ({
     opacity: seg(ms.value, T.scrimIn) * (1 - soft(ms.value, T.scrimOut)) * (1 - skip.value),
   }));
-  const contentStyle = useAnimatedStyle(() => ({
-    opacity: seg(ms.value, T.jarIn) * (1 - soft(ms.value, T.contentOut)) * (1 - skip.value),
-  }));
+  // The jar slides up a little as it fades in.
+  const contentStyle = useAnimatedStyle(() => {
+    const arrive = seg(ms.value, T.jarIn);
+    return {
+      opacity: arrive * (1 - soft(ms.value, T.contentOut)) * (1 - skip.value),
+      transform: [{ translateY: (1 - arrive) * 28 }],
+    };
+  });
   // The whole jar gives a small shake when the first coin lands.
   const jarStyle = useAnimatedStyle(() => {
     const u = (ms.value - T.firstLand) / 1000;

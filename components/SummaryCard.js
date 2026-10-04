@@ -3,7 +3,7 @@ import { View, Text } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { parseISO } from 'date-fns';
-import BarChart, { BAR_CHART_ASPECT, MONTHLY_BAR_W } from './BarChart';
+import BarChart, { BAR_CHART_ASPECT, ALL_TIME_BAR_W } from './BarChart';
 import LineChart from './LineChart';
 import {
   getMonthTotal,
@@ -191,6 +191,18 @@ function SummaryCard({
   }, [transactions, timeRange, year, currYear, currMonth, earliestDateStr]);
 
 
+  // A line needs two points. All Time for an account with only one year of data
+  // has one, so the line chart (Overview) is given an empty year before it.
+  const lineSeries = useMemo(() => {
+    if (chartData.income.length >= 2) return chartData;
+    const first = Number(chartData.labels[0]);
+    return {
+      income: [0, ...chartData.income],
+      expense: [0, ...chartData.expense],
+      labels: [String(first - 1), ...chartData.labels],
+    };
+  }, [chartData]);
+
   // What the chart plots depends on ModeSwitch above: Expense/Income show
   // that one series' own magnitude (always >= 0, so BarChart's per-bar sign
   // check never fires and every bar comes out one flat colour); Overview is
@@ -210,17 +222,8 @@ function SummaryCard({
       if (year > currYear) return -1;
       return new Date().getMonth();
     }
-    // "All Time" in yearly mode now pads forward to MIN_YEAR_SLOTS (see
-    // getLifetimeYearly) so a young account isn't just a couple of bars
-    // stranded with huge gaps — the padded years past currYear are the
-    // same kind of "hasn't happened yet" as a future month in the Year
-    // tab, so they get the same disabled/untappable treatment.
-    if (timeRange === '5y') {
-      const idx = (chartData.years ?? []).indexOf(currYear);
-      return idx === -1 ? null : idx;
-    }
     return null;
-  }, [timeRange, year, currYear, chartData]);
+  }, [timeRange, year, currYear]);
 
   // Mirrors the Calendar page's own "before earliest known activity" cutoff
   // (see spendShadeFor/getEarliestDate in utils/format.js) — a new account
@@ -544,9 +547,9 @@ function SummaryCard({
                 // moves when the tab changes; any spare room is above it.
                 <View style={{ width: '100%', aspectRatio: BAR_CHART_ASPECT, justifyContent: 'flex-end' }}>
                 <LineChart
-                  incomeData={chartData.income}
-                  expenseData={chartData.expense}
-                  labels={chartData.labels}
+                  incomeData={lineSeries.income}
+                  expenseData={lineSeries.expense}
+                  labels={lineSeries.labels}
                   activeIndex={chartActiveIndex}
                   disabledAfterIndex={disabledAfterIndex}
                   // Year's labels are single letters (J/F/M/…), not "MMM
@@ -572,10 +575,9 @@ function SummaryCard({
                   // most recent real period (today, this month, this year — the
                   // same index the disabled-after cutoff is measured from), so
                   // the chart opens pointing at where you actually are.
-                  accentIndex={chartActiveIndex >= 0 ? chartActiveIndex : disabledAfterIndex}
+                  accentIndex={chartActiveIndex >= 0 ? chartActiveIndex : (disabledAfterIndex ?? barValues.length - 1)}
                   disabledAfterIndex={disabledAfterIndex}
                   disabledBeforeIndex={disabledBeforeIndex}
-                  hideLabelAfterIndex={timeRange === '5y' ? disabledAfterIndex : null}
                   // Expense mode's values are all >= 0 magnitudes with
                   // isIncome false, so toneFor's sign check never fires and
                   // every bar comes out flat red; Income mode mirrors that
@@ -591,8 +593,8 @@ function SummaryCard({
                   noSpendDots={mode === 'expense' && timeRange === 'month'}
                   instant={chartInstant}
                   // All Time has few bars, which would otherwise come out wide:
-                  // they keep the same width as the Year tab's monthly candles.
-                  barWidth={timeRange === '5y' ? MONTHLY_BAR_W : undefined}
+                  // they get a width of their own, a little wider than the Year tab's.
+                  barWidth={timeRange === '5y' ? ALL_TIME_BAR_W : undefined}
                   light={light}
                 />
               )}

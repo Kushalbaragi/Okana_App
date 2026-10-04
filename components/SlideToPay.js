@@ -13,9 +13,11 @@ import { FONT } from '../utils/type';
 
 const HEIGHT = 56;
 const BORDER = 1;
-// The thumb fills the track's whole inner height, so it is the track's own
-// rounded end — nothing sits around it.
-const THUMB = HEIGHT - BORDER * 2;
+// A circle a little smaller than the track's inner height, with an even gap
+// around it.
+const THUMB = 48;
+const INSET = (HEIGHT - BORDER * 2 - THUMB) / 2;
+
 // How far along the track a release still counts as "paid" — a deliberate
 // drag, not a nudge, but not a pixel-perfect one either.
 const COMPLETE_AT = 0.88;
@@ -50,7 +52,7 @@ function ShimmerLabel({ text, color, style }) {
   }, [phase, reduceMotion]);
   const chars = Array.from(text);
   return (
-    <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: THUMB, right: 16, flexDirection: 'row', justifyContent: 'center' }, style]}>
+    <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: THUMB + INSET * 2, right: 16, flexDirection: 'row', justifyContent: 'center' }, style]}>
       {chars.map((ch, i) => <ShimmerChar key={i} ch={ch} i={i} n={chars.length} phase={phase} color={color} still={reduceMotion} />)}
     </Animated.View>
   );
@@ -65,7 +67,7 @@ function ShimmerLabel({ text, color, style }) {
 export default function SlideToPay({ label, paidLabel, paid, onComplete, light = false }) {
   const [trackWidth, setTrackWidth] = useState(0);
   const x = useSharedValue(0);
-  const max = Math.max(0, trackWidth - BORDER * 2 - THUMB);
+  const max = Math.max(0, trackWidth - BORDER * 2 - THUMB - INSET * 2);
   const lastTick = useSharedValue(0);
   // Set the moment a slide completes, so a second drag can't fire again while
   // the thumb is parked at the end waiting on the payment.
@@ -126,10 +128,10 @@ export default function SlideToPay({ label, paidLabel, paid, onComplete, light =
       }
     });
 
-  const thumbStyle = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
+  const thumbStyle = useAnimatedStyle(() => ({ transform: [{ translateX: x.value + INSET }] }));
   // Nothing green until the thumb moves; then a faint wash grows with it.
   const fillStyle = useAnimatedStyle(() => ({
-    width: x.value + THUMB / 2,
+    width: x.value + INSET + THUMB / 2,
     opacity: max > 0 ? Math.min(1, x.value / (max * 0.6)) : 0,
   }));
   const hintStyle = useAnimatedStyle(() => ({
@@ -160,10 +162,10 @@ export default function SlideToPay({ label, paidLabel, paid, onComplete, light =
         onAccessibilityAction={commit}
         style={{ height: HEIGHT, borderRadius: HEIGHT / 2, backgroundColor: dim(light, 0.16), borderWidth: BORDER, borderColor: dim(light, 0.12), overflow: 'hidden', justifyContent: 'center' }}
       >
-        <Animated.View style={[{ position: 'absolute', left: 0, top: 0, bottom: 0, borderTopLeftRadius: HEIGHT / 2, borderBottomLeftRadius: HEIGHT / 2, backgroundColor: 'rgba(74,222,128,0.55)' }, fillStyle]} />
+        <Animated.View style={[{ position: 'absolute', left: 0, top: 0, bottom: 0, borderTopLeftRadius: HEIGHT / 2, borderBottomLeftRadius: HEIGHT / 2, backgroundColor: 'rgba(74,222,128,0.28)' }, fillStyle]} />
         <ShimmerLabel text={label} color={light ? '#111111' : '#ffffff'} style={hintStyle} />
         <Animated.View
-          style={[{ position: 'absolute', left: 0, width: THUMB, height: THUMB, borderRadius: THUMB / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: light ? '#111111' : '#ffffff' }, thumbStyle]}
+          style={[{ position: 'absolute', left: 0, top: INSET, width: THUMB, height: THUMB, borderRadius: THUMB / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: light ? 'rgba(17,17,17,0.7)' : 'rgba(255,255,255,0.7)' }, thumbStyle]}
         >
           <ChevronRight size={20} color={light ? '#ffffff' : '#111111'} />
         </Animated.View>

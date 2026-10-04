@@ -26,13 +26,16 @@ export const BAR_CHART_ASPECT = CHART_W / (BAR_HEIGHT + 22);
 // a wide slot. A small fixed inset plus evenly-spaced bar edges keeps that
 // margin the same regardless of bar count, so the chart lines up with the
 // cards around it instead of framing itself in whitespace on wide slots.
-const CHART_EDGE_PAD = 16;
-// The slimmest a bar gets.
+const CHART_EDGE_PAD = 3;
+// The slimmest a bar gets, and the least gap a bar slot leaves beside its bar.
 const THIN_BAR_W = 6;
-// The width of a bar in the Year tab, whose twelve bars are the app's monthly
-// candles. A tab with only a few bars (All Time) asks for this width, so a
-// candle looks the same size wherever it is.
-export const MONTHLY_BAR_W = Math.min(19, Math.max(THIN_BAR_W, CHART_W / 12 - 8));
+const MIN_BAR_GAP = 7;
+// The widest the distance between two neighbouring bars gets.
+const MAX_BAR_STEP = 56;
+// All Time has only a few bars, which would otherwise come out much wider than the
+// Year tab's twelve. Asked for this width instead: a little wider than a Year
+// bar, so the yearly candles read as a step up from the monthly ones.
+export const ALL_TIME_BAR_W = Math.min(19, Math.max(THIN_BAR_W, CHART_W / 12 - MIN_BAR_GAP)) + 3;
 // A flat per-bar step (capped, not spread proportionally across a fixed
 // total budget) — spreading a fixed budget across the bar count shrinks the
 // gap between consecutive bars as there are more of them (e.g. 120ms over
@@ -160,14 +163,6 @@ function NoSpendDot({ cx, cy, r, fill, delay, instant = false }) {
   return <AnimatedCircle cx={cx} cy={cy} r={r} fill={fill} animatedProps={animatedProps} />;
 }
 
-// Separate from `disabledAfterIndex` — that one also covers "hasn't
-// happened yet but is still a real calendar day/month" (e.g. day 17 later
-// this month), where the label should stay visible even though the bar
-// itself is inert. This one is only for slots that were padded in purely
-// to fill out the chart width (see getLifetimeYearly's MIN_YEAR_SLOTS) and
-// don't correspond to a real period at all — those keep their empty slot's
-// spacing but lose the label, since a label there isn't "a day that hasn't
-// happened yet," it's not a period the account will ever have.
 // `values` can be signed now — the home chart plots net (income minus
 // expense) per period rather than one type at a time, so a bar's own sign
 // decides its colour: green for a period that came out ahead, red for one
@@ -179,12 +174,16 @@ function toneFor(v, isIncome) {
   return v < 0 ? RED_TONE : (isIncome ? GREEN_TONE : RED_TONE);
 }
 
-function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAfterIndex, disabledBeforeIndex, hideLabelAfterIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, instant = false, barWidth }) {
+function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAfterIndex, disabledBeforeIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, instant = false, barWidth }) {
   const n       = values.length;
   const GROUP_W = CHART_W / n;
-  const BAR_W   = barWidth ?? Math.min(19, Math.max(THIN_BAR_W, GROUP_W - 8));
+  const BAR_W   = barWidth ?? Math.min(19, Math.max(THIN_BAR_W, GROUP_W - MIN_BAR_GAP));
   const usableW = CHART_W - 2 * CHART_EDGE_PAD;
-  const barStep = n > 1 ? (usableW - BAR_W) / (n - 1) : 0;
+  // Bars are spread across the chart, but with only a few of them (All Time, a
+  // young account) the step is capped and the group sits in the middle — one bar
+  // is dead centre, two or three are a cluster, not stranded at the two edges.
+  const barStep = n > 1 ? Math.min((usableW - BAR_W) / (n - 1), MAX_BAR_STEP) : 0;
+  const groupStart = (CHART_W - (BAR_W + (n - 1) * barStep)) / 2;
   // Height is driven by magnitude regardless of sign — a period that
   // overspent by 400 and one that saved 400 are the same height, coloured
   // oppositely.
@@ -206,7 +205,7 @@ function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAft
       <Line x1={0} y1={BAR_HEIGHT} x2={CHART_W} y2={BAR_HEIGHT} stroke={gridColor} strokeWidth="0.8" strokeDasharray="3.5 3" />
 
       {values.map((v, i) => {
-        const x = CHART_EDGE_PAD + i * barStep;
+        const x = groupStart + i * barStep;
         // Rounded to a whole pixel — a bar whose value sits at or near
         // maxVal (the tallest bar in the set) computes height through
         // Math.sqrt(v / maxVal), which floating-point division can round
@@ -225,8 +224,7 @@ function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAft
         const isDisabled = disabledAfterIndex != null && i > disabledAfterIndex;
         const isBeforeStart = disabledBeforeIndex != null && i < disabledBeforeIndex;
         const hasData    = h > 0;
-        const isPadding  = hideLabelAfterIndex != null && i > hideLabelAfterIndex;
-        const showLabel  = !isPadding && (i % labelStep === 0 || (i === n - 1 && (n - 1) - Math.floor((n - 2) / labelStep) * labelStep > 1));
+        const showLabel  = (i % labelStep === 0 || (i === n - 1 && (n - 1) - Math.floor((n - 2) / labelStep) * labelStep > 1));
 
         return (
           // Keyed by animKey too, not just index — this is what forces a

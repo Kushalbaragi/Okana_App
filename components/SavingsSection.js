@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, FadeIn } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, Easing, FadeIn } from 'react-native-reanimated';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { GlassPressable, CARD_RADIUS, SMOOTH } from './Glass';
 import MonthSlider from './MonthSlider';
@@ -31,9 +31,25 @@ import useEmiPayFlow from '../hooks/useEmiPayFlow';
 const SWAP_MS = 220;
 // How long after a money sheet closes before the jar moment opens: the sheet's
 // own native Modal needs to be fully gone first.
+// Shorter than this and iOS silently drops the jar altogether (presenting a Modal
+// while the sheet's is still going), leaving the page holding its old figures —
+// so the jar's own opening is what was made quicker, not this wait.
 const JAR_START_DELAY_MS = 300;
 // The longest the page keeps showing pre-transaction figures waiting on the jar.
 const JAR_HOLD_FAILSAFE_MS = 30000;
+// Once the jar is gone the page plays what changed one part at a time, so each can
+// be seen: the status card at the top, then — this long after — the monthly
+// savings card, then — this long after that — the transaction joins the history.
+// The new row's "just added" marker lingers a little after it appears.
+const REVEAL_START_MS = 150;
+const REVEAL_STEP_MS = 700;
+const REVEAL_ROW_MARK_MS = 2000;
+// A new transaction joins the history in two beats: the rows already there slide
+// down to make room, then — once they have — the new row fades in.
+const ROW_SLIDE_MS = 650;
+const NEW_ROW_FADE_MS = 700;
+// Until a history row has been measured, how tall to make room for a new one.
+const DEFAULT_ROW_H = 64;
 
 // Padding and alignment are inline styles here, not classNames, on the
 // GlassPressables below: className on an animated component depends on
@@ -509,6 +525,31 @@ function AddFab({ onPress, label }) {
   );
 }
 
+// One row of a savings goal's history. A row that arrives while the page is open
+// (`animate`, read once, when it first appears) makes its own room: its height
+// grows from nothing, so the rows under it are pushed down by one smooth motion
+// rather than each being moved separately, and only then does its content fade
+// in. Every other row is just the row. `height` is what to grow to — about a
+// row's height; a little over is harmless, since the growth is a ceiling, not a
+// fixed height.
+function RevealRow({ animate, height, onMeasure, children }) {
+  const play = useRef(animate).current;
+  const grow = useSharedValue(play ? 0 : 1);
+  const fade = useSharedValue(play ? 0 : 1);
+  useEffect(() => {
+    if (!play) return;
+    grow.value = withTiming(1, { duration: ROW_SLIDE_MS, easing: Easing.inOut(Easing.cubic) });
+    fade.value = withDelay(ROW_SLIDE_MS * 0.6, withTiming(1, { duration: NEW_ROW_FADE_MS, easing: Easing.out(Easing.cubic) }));
+  }, [play, grow, fade]);
+  const roomStyle = useAnimatedStyle(() => (play ? { maxHeight: grow.value * height, overflow: 'hidden' } : {}));
+  const fadeStyle = useAnimatedStyle(() => (play ? { opacity: fade.value } : {}));
+  return (
+    <Animated.View style={roomStyle} onLayout={play ? undefined : onMeasure}>
+      <Animated.View style={fadeStyle}>{children}</Animated.View>
+    </Animated.View>
+  );
+}
+
 function Divider({ inset = 16, light }) {
   return <View style={{ height: StyleSheet.hairlineWidth, marginHorizontal: inset, backgroundColor: light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }} />;
 }
@@ -596,10 +637,20 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
   // `goal`, which is the held copy during that stretch.
   const { moneyEvent, clearMoney, sheetClosed } = ui;
   const [jarHold, setJarHold] = useState(false);
+  // After the jar: null (everything live) or the part of the page now updating —
+  // 'bar' (the status card), 'chart' (the monthly savings card), 'row' (the
+  // history). Each part stays on its old figures until its turn.
+  const [reveal, setReveal] = useState(null);
+  // The ids of the history as it stood before the transaction, so the new row can
+  // be left out until its turn and then faded in.
+  const [baseIds, setBaseIds] = useState(null);
   const holding = kind === 'savings' && (jarHold || (!!moneyEvent && moneyEvent.goalId === liveGoal.id));
   const heldRef = useRef(liveGoal);
-  if (!holding || heldRef.current.id !== liveGoal.id) heldRef.current = liveGoal;
-  const goal = holding ? heldRef.current : liveGoal;
+  if ((!holding && reveal === null) || heldRef.current.id !== liveGoal.id) heldRef.current = liveGoal;
+  const staged = (part) => !holding && (reveal === null || (part === 'bar') || (part === 'chart' && reveal !== 'bar') || (part === 'row' && reveal === 'row'));
+  const goal = staged('bar') ? liveGoal : heldRef.current;
+  const chartGoal = staged('chart') ? liveGoal : heldRef.current;
+  const rowLive = staged('row');
   // Held back while the celebration is up, so the "goal reached" prompt comes
   // in once it has been dismissed rather than under it.
   const [celebrating, setCelebrating] = useState(false);
@@ -612,7 +663,14 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
   // The slide-to-pay sequence for an EMI loan (see useEmiPayFlow): the paid
   // moment, and the figures the status line and tracker show while it plays.
   const emiConfirm = useEmiExpenseConfirm(savings, showToast);
-  const { moment, endMoment, payEmi, payHold, barG, dotG, shownEntries, isNewEntry } = useEmiPayFlow({ goal, savings, emiConfirm });
+  const { moment, endMoment, payEmi, payHold, barG, dotG, shownEntries: emiShownEntries, isNewEntry: emiIsNewEntry } = useEmiPayFlow({ goal, savings, emiConfirm });
+  // The history: a loan's own flow decides what it shows; a savings goal's new
+  // row waits for its turn (see `reveal`).
+  const shownEntries = kind === 'savings' && baseIds && !rowLive ? goal.entries.filter((e) => baseIds.has(e.id)) : emiShownEntries;
+  // A history row's height, as last measured, for a new row to grow to.
+  const rowHeightRef = useRef(DEFAULT_ROW_H);
+  const measureRow = useCallback((e) => { rowHeightRef.current = e.nativeEvent.layout.height; }, []);
+  const isNewEntry = useCallback((id) => emiIsNewEntry(id) || (kind === 'savings' && !!baseIds && !baseIds.has(id)), [emiIsNewEntry, kind, baseIds]);
   // The savings jar moment, started by the sheet that logged a deposit or
   // withdrawal (see useSavingsUI's emitMoney) once that sheet has closed. A
   // deposit that takes the goal to its target fills the jar and says so —
@@ -628,9 +686,10 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
     // A deposit that takes the goal to its target completes the jar.
     const complete = moneyEvent.type === 'add' && moneyEvent.savedBefore < liveGoal.target && savedAfter >= liveGoal.target;
     setJarHold(true);
+    setBaseIds(new Set(heldRef.current.entries.map((e) => e.id)));
     // Never leave the page holding old figures if the moment doesn't play.
     clearTimeout(jarFailsafeRef.current);
-    jarFailsafeRef.current = setTimeout(() => setJarHold(false), JAR_HOLD_FAILSAFE_MS);
+    jarFailsafeRef.current = setTimeout(() => { setJarHold(false); setBaseIds(null); }, JAR_HOLD_FAILSAFE_MS);
     // The jar is a native Modal, and the sheet that logged the money is one
     // too, only just finishing its own dismissal: presenting one while the other
     // is still closing silently never happens on iOS (see the same wait before
@@ -640,12 +699,24 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
       JAR_START_DELAY_MS
     );
   }, [moneyEvent, sheetClosed, liveGoal.id, liveGoal.name, liveGoal.target, kind, clearMoney]);
-  useEffect(() => () => { clearTimeout(jarTimerRef.current); clearTimeout(jarFailsafeRef.current); }, []);
-  const releaseJarHold = useCallback(() => setJarHold(false), []);
+  const revealTimerRef = useRef(null);
+  useEffect(() => () => { clearTimeout(jarTimerRef.current); clearTimeout(jarFailsafeRef.current); clearTimeout(revealTimerRef.current); }, []);
+  // The jar has gone: the page now shows what changed, a part at a time.
   const endJar = useCallback(() => {
     clearTimeout(jarFailsafeRef.current);
     setJar(null);
-    setJarHold(false);
+    clearTimeout(revealTimerRef.current);
+    revealTimerRef.current = setTimeout(() => {
+      setJarHold(false);
+      setReveal('bar');
+      revealTimerRef.current = setTimeout(() => {
+        setReveal('chart');
+        revealTimerRef.current = setTimeout(() => {
+          setReveal('row');
+          revealTimerRef.current = setTimeout(() => { setReveal(null); setBaseIds(null); }, REVEAL_ROW_MARK_MS);
+        }, REVEAL_STEP_MS);
+      }, REVEAL_STEP_MS);
+    }, REVEAL_START_MS);
   }, []);
   const showReached = goal.reached && !goal.completedAt && !celebrating;
   // A debt goal is one of two shapes now (see useSavings.js's own comment
@@ -656,12 +727,12 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
   const isEmiDebt = kind === 'debt' && goal.debtType === 'emi';
   const isFlexibleDebt = kind === 'debt' && goal.debtType === 'flexible';
   // Only the non-EMI chart reads this.
-  const chart = useMemo(() => (isEmiDebt ? null : monthlyNets(goal.entries)), [isEmiDebt, goal.entries]);
+  const chart = useMemo(() => (isEmiDebt ? null : monthlyNets(chartGoal.entries)), [isEmiDebt, chartGoal.entries]);
   const grid = useMemo(
     () => (isEmiDebt && goal.firstEmiDate ? paymentGrid(goal.firstEmiDate, goal.tenureMonths, dotG.emisPaid) : null),
     [isEmiDebt, goal.firstEmiDate, goal.tenureMonths, dotG.emisPaid]
   );
-  const showChart = isEmiDebt ? !!grid : goal.entries.length > 0;
+  const showChart = isEmiDebt ? !!grid : chartGoal.entries.length > 0;
 
   // Whether THIS cycle's EMI is already behind the loan — the schedule is a
   // plain month index (see useSavings.js's own `emisPaid`), not a calendar,
@@ -925,24 +996,31 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
       </View>
 
       {shownEntries.length === 0 ? (
-        <Text className="text-base px-4" style={{ color: textColor(light).tertiary }}>{copy.historyEmpty}</Text>
+        <Text className="text-base px-4" style={{ color: textColor(light).tertiary, marginTop: 12, opacity: 0.6 }}>{copy.historyEmpty}</Text>
       ) : (
         <Card light={light}>
-          {shownEntries.map((e, i) => (
-            <Animated.View key={e.id} entering={isNewEntry(e.id) ? FadeIn.duration(900) : undefined}>
-              <HistoryRow
-                entry={e}
-                onPress={editEntry}
-                onDelete={deleteEntry}
-                registerSwipeable={swipes.registerSwipeable}
-                onSwipeOpen={swipes.onSwipeOpen}
-                onRowPress={swipes.onRowPress}
-                light={light}
-                kind={kind}
-              />
-              {i < shownEntries.length - 1 && <Divider inset={16} light={light} />}
-            </Animated.View>
-          ))}
+          {shownEntries.map((e, i) => {
+            const row = (
+              <>
+                <HistoryRow
+                  entry={e}
+                  onPress={editEntry}
+                  onDelete={deleteEntry}
+                  registerSwipeable={swipes.registerSwipeable}
+                  onSwipeOpen={swipes.onSwipeOpen}
+                  onRowPress={swipes.onRowPress}
+                  light={light}
+                  kind={kind}
+                />
+                {i < shownEntries.length - 1 && <Divider inset={16} light={light} />}
+              </>
+            );
+            return kind === 'savings' ? (
+              <RevealRow key={e.id} animate={isNewEntry(e.id)} height={rowHeightRef.current} onMeasure={measureRow}>{row}</RevealRow>
+            ) : (
+              <Animated.View key={e.id} entering={isNewEntry(e.id) ? FadeIn.duration(900) : undefined}>{row}</Animated.View>
+            );
+          })}
         </Card>
       )}
     </ScrollView>
@@ -976,7 +1054,7 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
     )}
     {jar && (
       <ErrorBoundary onError={endJar}>
-        <JarMoment {...jar} light={light} onRelease={releaseJarHold} onDone={endJar} />
+        <JarMoment {...jar} light={light} onDone={endJar} />
       </ErrorBoundary>
     )}
     {moment && (
