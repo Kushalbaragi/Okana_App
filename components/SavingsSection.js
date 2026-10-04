@@ -146,7 +146,10 @@ function celebrationCopy(goal, kind, copy) {
 // they're rendered at that page's root by SavingsSheetsHost, while the list and
 // detail views below only need the openers.
 // ---------------------------------------------------------------------------
-export function useSavingsUI() {
+// `locked` (with `onLocked`) is for an account that can't add anything new — an
+// expired trial, say. Starting a new goal or loan is then turned into
+// `onLocked`; everything on one that already exists still works.
+export function useSavingsUI({ locked = false, onLocked } = {}) {
   const [sheetOpen, setSheetOpen] = useState(false);
   // False from the moment a sheet opens until it has finished sliding away.
   // The list and goal page hold what they show for that whole stretch (see
@@ -160,10 +163,11 @@ export function useSavingsUI() {
   const [sheetData, setSheetData] = useState(null);
 
   const openNewGoal = useCallback((initialName = '') => {
+    if (locked) { onLocked?.(); return; }
     setSheetData({ kind: 'goal', goalId: null, initialName });
     setSheetClosed(false);
     setSheetOpen(true);
-  }, []);
+  }, [locked, onLocked]);
   const openEditGoal = useCallback((goalId) => {
     setSheetData({ kind: 'goal', goalId, initialName: '' });
     setSheetClosed(false);
@@ -514,12 +518,12 @@ function EmptyState({ onNew, light, kind = 'savings' }) {
   const copy = KIND_COPY[kind];
   return (
     <View className="items-center" style={{ paddingTop: 96, paddingHorizontal: 16 }}>
-      <Text className="text-xl font-semibold text-center" style={{ color: light ? '#111111' : '#ffffff' }}>{copy.emptyTitle}</Text>
+      <Text className="text-xl text-center" style={{ fontWeight: '400', color: light ? '#111111' : '#ffffff' }}>{copy.emptyTitle}</Text>
       <Text className="text-[16px] text-center" style={{ color: textColor(light).tertiary, marginTop: 8, marginBottom: 24, lineHeight: 22 }}>
         {copy.emptyBody}
       </Text>
       <GlassPressable variant="active" radius={9999} onPress={() => onNew('')} style={{ paddingHorizontal: 32, paddingVertical: 12, alignItems: 'center' }}>
-        <Text className="text-black text-[16px] font-semibold">{copy.emptyAction}</Text>
+        <Text className="text-black text-[16px]" style={{ fontWeight: '500' }}>{copy.emptyAction}</Text>
       </GlassPressable>
     </View>
   );

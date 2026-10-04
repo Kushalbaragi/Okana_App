@@ -60,7 +60,7 @@ const PLAN_CHECK_DELAY_MS = 350;
 // amount, spent, percent — plus what setting one needs: `onSubmit`, last month's
 // amount and spend, and `onSetupClosed` for the caller's own bookkeeping when the
 // sheet closes. The sheet opens right here on the page, not by closing it first.
-function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, light = false, userId, slideX }) {
+function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, light = false, userId, slideX, locked = false, onLocked }) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
@@ -70,11 +70,15 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
   // so switching costs nothing.
   const [section, setSection] = useState('budget');
   const [detailGoalId, setDetailGoalId] = useState(null);
-  const savingsUI = useSavingsUI();
+  // `locked` is an account with no access to add new things (trial over, or
+  // never started): a new goal, loan or plan line asks for a subscription
+  // instead, while logging money against a goal or loan that already exists
+  // is left alone.
+  const savingsUI = useSavingsUI({ locked, onLocked });
   // Debt is a second, fully independent instance of the same goal-tracking
   // UI — its own sheet/confirm state and its own selected-item id, since
   // opening a loan's detail page has nothing to do with a savings goal's.
-  const debtUI = useSavingsUI();
+  const debtUI = useSavingsUI({ locked, onLocked });
   const [detailDebtId, setDetailDebtId] = useState(null);
 
   // Switching Budget/Savings/Debt via the segmented control always lands on
@@ -114,7 +118,10 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
   // The Budget Plan's one popup — same "render at the page root, slide over
   // everything" treatment as the savings/debt sheets below.
   const [addItemOpen, setAddItemOpen] = useState(false);
-  const openAddItem = useCallback(() => setAddItemOpen(true), []);
+  const openAddItem = useCallback(() => {
+    if (locked) { onLocked?.(); return; }
+    setAddItemOpen(true);
+  }, [locked, onLocked]);
   // Tapping an existing line opens the same sheet in edit mode — `editingItem`
   // is that line, or null while adding/closed. Only one of the two can be
   // open at a time in practice (they're separate taps on a modal sheet), but
@@ -487,6 +494,7 @@ function WalletPage({ open, onClose, onClosed, budget, savings, budgetPlan, ligh
                   open={budgetSheetOpen}
                   onClose={closeBudgetSheet}
                   onSubmit={submitBudget}
+                  currentAmount={budgetBar.amount}
                   lastMonthAmount={lastMonthAmount}
                   lastMonthSpent={lastMonthSpent}
                 />

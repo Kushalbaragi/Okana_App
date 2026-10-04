@@ -32,9 +32,9 @@ const BACKDROP_MAX_OPACITY = 0.55;
 const OPEN_MS = 340;
 const CLOSE_MS = 240;
 
-// Where the ruler starts when there is no previous month to carry over — a
-// visible suggestion to adjust, not a blank to fill in.
-const DEFAULT_BUDGET = 20000;
+// Where the ruler starts for someone who has never set a budget — a visible
+// suggestion to adjust, not a blank to fill in.
+const DEFAULT_BUDGET = 50000;
 
 // How long the "you set X more/less" confirmation holds on screen before
 // auto-redirecting home — long enough to actually read, short enough not to
@@ -67,17 +67,19 @@ function lastMonthMessage(lastMonthAmount, lastMonthSpent) {
 // calendar page) instead of in a native <Modal> of its own — a second native Modal
 // opened over the calendar is broken on Android, which is why this used to make
 // the calendar close first. The sheet, its drag and its confirmation are the same.
-function BudgetSetupModal({ open, onClose, onClosed, onSubmit, lastMonthAmount, lastMonthSpent, inline = false }) {
+function BudgetSetupModal({ open, onClose, onClosed, onSubmit, currentAmount, lastMonthAmount, lastMonthSpent, inline = false }) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const { month: currMonth } = currentMonthYear();
 
   // A string either way, so the keypad path and the ruler path share the
-  // submit logic below. With the ruler it starts as last month's budget — the
-  // natural starting point, so leaving it untouched just keeps things as they
-  // were — and `session` tells the ruler to go back there on each open.
+  // submit logic below. With the ruler it starts at the last budget that was set
+  // — this month's if there is one, else last month's — the natural starting
+  // point, so leaving it untouched just keeps things as they were; the first
+  // time ever it starts at DEFAULT_BUDGET. `session` tells the ruler to go back
+  // there on each open.
   const rulerOn = FLAGS.budgetRuler;
-  const startValue = lastMonthAmount ?? DEFAULT_BUDGET;
+  const startValue = currentAmount ?? lastMonthAmount ?? DEFAULT_BUDGET;
   const { amount, prevAmountLength, skipDigitAnim, onKeyPress: handleKeypadPress, setProgrammatic: setAmountProgrammatically } = useAmountEntry(rulerOn ? String(startValue) : '');
   const [session, setSession] = useState(0);
   const [error, setError] = useState('');
