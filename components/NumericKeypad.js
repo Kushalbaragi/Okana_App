@@ -7,7 +7,7 @@ import { BackspaceIcon } from './icons';
 // Default layout — Amount entry (digits + decimal point). Screens that only
 // need digits (e.g. an OTP code) pass their own `rows` with a blank spacer
 // cell instead of '.'.
-export const DECIMAL_KEYPAD_ROWS = [
+const DECIMAL_KEYPAD_ROWS = [
   ['1', '2', '3'],
   ['4', '5', '6'],
   ['7', '8', '9'],

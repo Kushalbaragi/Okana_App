@@ -67,7 +67,7 @@ function SignedOut() {
 }
 
 // Small: this month's spend against the budget.
-export function MonthSpendWidget({ snap, info }) {
+function MonthSpendWidget({ snap, info }) {
   if (!snap) return <SignedOut />
   const { spent, budget } = snap
   const percent = budget ? (spent / budget) * 100 : 0
@@ -86,7 +86,7 @@ export function MonthSpendWidget({ snap, info }) {
 }
 
 // Medium: spend per day over the last 30 days, today in red.
-export function DailyChartWidget({ snap, info }) {
+function DailyChartWidget({ snap, info }) {
   if (!snap) return <SignedOut />
   const { days } = snap
   const total = days.reduce((a, b) => a + b, 0)
@@ -119,7 +119,7 @@ export function DailyChartWidget({ snap, info }) {
 }
 
 // Small: the goal closest to done.
-export function GoalWidget({ snap, info }) {
+function GoalWidget({ snap, info }) {
   if (!snap) return <SignedOut />
   const goal = snap.goals[0]
   if (!goal) {
@@ -148,7 +148,7 @@ export function GoalWidget({ snap, info }) {
 const GOAL_ROW = 36
 const GOALS_HEADER = 22
 
-export function GoalsWidget({ snap, info }) {
+function GoalsWidget({ snap, info }) {
   if (!snap) return <SignedOut />
   const { goals } = snap
   if (!goals.length) {

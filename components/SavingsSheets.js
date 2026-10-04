@@ -58,7 +58,7 @@ const FIELD_LAYOUT_TRANSITION = layoutTransition(SPRING_QUICK);
 // alpha) and kept in sync with the overlay colours just below; a mismatch
 // here is exactly what used to show up as a dark seam under the ruler,
 // cutting the card in two instead of the fade actually blending into it.
-export const FIELD_CARD_SURFACE = { light: '#efefed', dark: '#262626' };
+const FIELD_CARD_SURFACE = { light: '#efefed', dark: '#262626' };
 const FieldCard = memo(function FieldCard({ light, children }) {
   return (
     <View style={{ backgroundColor: light ? 'rgba(0,0,0,0.045)' : 'rgba(255,255,255,0.07)', borderRadius: CARD_RADIUS, ...SMOOTH, overflow: 'hidden' }}>

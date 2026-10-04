@@ -5,7 +5,6 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { parseISO } from 'date-fns';
 import BarChart, { BAR_CHART_ASPECT, MONTHLY_BAR_W } from './BarChart';
 import LineChart from './LineChart';
-import { GlassPressable } from './Glass';
 import {
   getMonthTotal,
   getMonthlyTotals,
@@ -21,10 +20,6 @@ import { CAPTION, TABULAR, FONT } from '../utils/type';
 
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { SETTLE_EASING } from '../utils/motion';
-
-// Temporary — trying the chart with just Month, no Year/All Time picker.
-// Hidden, not deleted; see the render's own comment on RangeSelector.
-const SHOW_RANGE_SELECTOR = false;
 
 const MONTH_LABELS_SHORT = ['J','F','M','A','M','J','J','A','S','O','N','D'];
 
@@ -129,57 +124,12 @@ function AnimatedAmount({ value, color }) {
   );
 }
 
-// Fixed range names rather than the actual current month/year ("September",
-// "2026"), so the control reads as a range picker at a glance instead of
-// three unrelated proper nouns. Static now, so it lives out here rather
-// than being rebuilt every render — and RangeSelector no longer needs the
-// current month/year passed in at all. The period being shown is still
-// spelled out in full above the amount (see periodLabel).
+// The chart's three ranges, in swipe order: Month, then Year, then All Time.
 const RANGE_OPTIONS = [
   { id: 'month', label: 'Month' },
   { id: 'year',  label: 'Year' },
   { id: '5y',    label: 'All' },
 ];
-
-// Plain words, no pills. A segmented control announces itself as chrome
-// before it says anything about the data; three words with only the live
-// one brightened carry the same choice at a fraction of the weight.
-function RangeSelector({ value, onChange, light }) {
-  return (
-    // No top margin of its own any more — it used to sit below the chart
-    // and needed the gap itself; now the amount block above it (mb-7)
-    // already provides that space.
-    <View className="flex-row items-center justify-center" style={{ gap: 22 }}>
-      {RANGE_OPTIONS.map(opt => (
-        value === opt.id ? (
-          <GlassPressable
-            key={opt.id}
-            variant="field"
-            radius={9999}
-            onPress={() => onChange(opt.id)}
-            className="px-1 py-1"
-          >
-            <Text className="text-base" style={{ color: light ? '#111111' : '#ffffff' }}>{opt.label}</Text>
-          </GlassPressable>
-        ) : (
-          // variant="field" — transparent background (same look as before),
-          // but still gets GlassPressable's animated press-opacity instead
-          // of the plain Pressable this used to be, which had no press
-          // feedback at all.
-          <GlassPressable
-            key={opt.id}
-            variant="field"
-            radius={9999}
-            onPress={() => onChange(opt.id)}
-            className="px-1 py-1"
-          >
-            <Text className="text-base" style={{ color: textColor(light).disabled }}>{opt.label}</Text>
-          </GlassPressable>
-        )
-      ))}
-    </View>
-  );
-}
 
 // What the headline figure is OF, as one caption under it — just the period
 // ("September"). Which of expense/income/overview it's a period OF is
@@ -476,10 +426,8 @@ function SummaryCard({
     transform: [{ translateX: chartTranslateX.value }],
   }));
 
-  // Swipe the chart itself to change Month/Year/All — this is what actually
-  // replaced the pill row (SHOW_RANGE_SELECTOR above): the three states
-  // didn't go away, they just don't need a permanent row of chrome to
-  // reach. Left = forward through the list (Month → Year → All, the same
+  // Swipe the chart itself to change Month/Year/All — the three states need no
+  // permanent row of chrome to reach. Left = forward through the list (Month → Year → All, the same
   // order RANGE_OPTIONS already defines), right = back; stops at either
   // end rather than wrapping, since this is a zoom level, not a cycle.
   // activeOffsetX/failOffsetY mirror AddModal's own Pan gesture — a real
@@ -573,15 +521,6 @@ function SummaryCard({
               it just updates in place, same as AnimatedAmount above it. */}
           <AverageCaption info={averageInfo} light={light} />
         </View>
-
-        {/* Hidden, not removed — Month/Year/All is off for now, so the chart
-            just always shows Month (timeRange's own default in index.js).
-            The selector, its handler and timeRange itself are all still
-            wired up underneath; flip SHOW_RANGE_SELECTOR back on to bring
-            the row back exactly as it was. */}
-        {SHOW_RANGE_SELECTOR && (
-          <RangeSelector value={timeRange} onChange={onTimeRangeChange} light={light} />
-        )}
 
         <View style={{ position: 'relative' }}>
           <GestureDetector gesture={chartSwipe}>

@@ -202,10 +202,6 @@ export function currentMonthYear() {
   return { month: now.getMonth(), year: now.getFullYear() }
 }
 
-export function monthLabel(month, year) {
-  return `${MONTHS[month]} ${year}`
-}
-
 export function getMonthlyTotals(transactions, year) {
   const income = new Array(12).fill(0)
   const expense = new Array(12).fill(0)

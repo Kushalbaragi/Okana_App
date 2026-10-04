@@ -214,9 +214,8 @@ export default function Dashboard() {
 
   const { month: currMonth, year: currYear } = currentMonthYear();
 
-  // 'year' — the chart is locked to monthly candles (12 bars, one per
-  // month of the current year) while Month/Year/All is hidden (see
-  // SHOW_RANGE_SELECTOR in SummaryCard.js), not 'month''s daily bars.
+  // 'year' — the chart opens on monthly candles (12 bars, one per month of the
+  // current year), not 'month''s daily bars; swiping the chart moves between ranges.
   const [timeRange, setTimeRange] = useState('year');
   const [year, setYear] = useState(currYear);
   const [selectedMonth, setSelectedMonth] = useState(currMonth);

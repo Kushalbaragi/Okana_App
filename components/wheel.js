@@ -22,7 +22,7 @@ export const WHEEL_ITEM_H = 40;
 // wheel; a 5-row window left a couple of rows' worth of dead space above the
 // first option (and below the last) whenever the wheel opened on either end
 // of a short list, which is most of the time here.
-export const WHEEL_VISIBLE = 3;
+const WHEEL_VISIBLE = 3;
 export const WHEEL_H = WHEEL_ITEM_H * WHEEL_VISIBLE;
 export const WHEEL_PAD = (WHEEL_H - WHEEL_ITEM_H) / 2; // centres item 0 at offset 0
 export const WHEEL_OVERSCROLL = WHEEL_ITEM_H * 0.6;

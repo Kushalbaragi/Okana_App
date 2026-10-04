@@ -44,7 +44,7 @@ function Centered({ children }) {
   return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: GUTTER }}>{children}</View>;
 }
 
-export function WelcomeSlide() {
+function WelcomeSlide() {
   return (
     <Centered>
       {/* "Welcome to" steps back so the name is what is read. */}
@@ -58,7 +58,7 @@ export function WelcomeSlide() {
 const BARS = [38, 52, 44, 70, 58, 64, 48, 80, 60, 72];
 const MONTHS = 'JFMAMJJASO'.split('');
 
-export function ExpensesSlide({ top, bottom }) {
+function ExpensesSlide({ top, bottom }) {
   const { height } = useWindowDimensions();
   const chartHeight = Math.max(110, Math.min(190, Math.round(height * 0.22)));
   return (
@@ -112,7 +112,7 @@ function PlanRow({ name, amount, checked }) {
   );
 }
 
-export function BudgetSlide({ top, bottom }) {
+function BudgetSlide({ top, bottom }) {
   return (
     <Slide top={top} bottom={bottom} title="Plan the month">
       <Caption>A budget and a list of what is coming.</Caption>
@@ -142,7 +142,7 @@ const HISTORY = [
   ['Added', 'Aug 27', '+₹6,000'],
 ];
 
-export function SavingsSlide({ top, bottom }) {
+function SavingsSlide({ top, bottom }) {
   return (
     <Slide top={top} bottom={bottom} title="Save for what matters">
       <Text style={{ fontSize: FONT.title, fontWeight: '500', color: '#ffffff', textAlign: 'center', marginTop: 28, marginBottom: 14 }}>Emergency fund</Text>
@@ -187,7 +187,7 @@ const YEARS = [
   { year: 2027, cells: Array.from({ length: 12 }, () => ({ paid: false, inRange: true })) },
 ];
 
-export function DebtSlide({ top, bottom }) {
+function DebtSlide({ top, bottom }) {
   return (
     <Slide top={top} bottom={bottom} title="Pay off, one EMI at a time">
       <Text style={{ fontSize: FONT.body, fontWeight: '500', color: darkText.secondary, textAlign: 'center', marginTop: 24 }}>Bike loan</Text>
@@ -216,7 +216,7 @@ export function DebtSlide({ top, bottom }) {
 // In the middle of the screen, sitting 15px above its true centre. The extra
 // bottom padding (14px more than the 30 that does that) is what keeps "okana"
 // where it was after the line under it moved 14px closer.
-export function StartSlide() {
+function StartSlide() {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 44, paddingHorizontal: GUTTER }}>
       <Text style={{ fontSize: FONT.display, fontWeight: '400', letterSpacing: -1.5, color: '#ffffff' }}>okana</Text>
