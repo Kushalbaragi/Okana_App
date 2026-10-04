@@ -7,6 +7,8 @@ import Svg, { Path } from 'react-native-svg';
 import { POSITIVE, money } from './savingsShared';
 import { hapticAdded } from '../utils/haptics';
 import { TABULAR } from '../utils/type';
+import { seg, soft } from '../utils/timeline';
+import RollingNumber from './RollingNumber';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
@@ -34,61 +36,6 @@ const HAPTIC_AT = 1500;
 const RING_PATH = 'M46 4a42 42 0 1 1 0 84a42 42 0 1 1 0-84';
 const RING_LEN = 264;
 const TICK_LEN = 56;
-
-const seg = (ms, range) => {
-  'worklet';
-  const x = Math.min(1, Math.max(0, (ms - range[0]) / (range[1] - range[0])));
-  return 1 - (1 - x) * (1 - x) * (1 - x);
-};
-
-// The exits use a smoothstep (slow at both ends) instead of the ease-out the
-// beats use, so nothing starts or stops with a visible edge.
-const soft = (ms, range) => {
-  'worklet';
-  const x = Math.min(1, Math.max(0, (ms - range[0]) / (range[1] - range[0])));
-  return x * x * (3 - 2 * x);
-};
-
-// One character position of a rolling number: the old character slides up and
-// out while the new one slides in from below, together, inside a box one line
-// tall so nothing shows outside it.
-function RollChar({ oldCh, newCh, ms, range, style, lh }) {
-  const oldStyle = useAnimatedStyle(() => {
-    const p = seg(ms.value, range);
-    return { opacity: 1 - p, transform: [{ translateY: -lh * p }] };
-  });
-  const newStyle = useAnimatedStyle(() => {
-    const p = seg(ms.value, range);
-    return { opacity: p, transform: [{ translateY: lh * (1 - p) }] };
-  });
-  const place = [style, { position: 'absolute', left: 0, right: 0, textAlign: 'center' }];
-  return (
-    <View style={{ height: lh, overflow: 'hidden', justifyContent: 'center' }}>
-      {/* Invisible, only to give the box its width. */}
-      <Text style={[style, { opacity: 0 }]}>{newCh || oldCh}</Text>
-      <Animated.Text style={[...place, oldStyle]}>{oldCh}</Animated.Text>
-      <Animated.Text style={[...place, newStyle]}>{newCh}</Animated.Text>
-    </View>
-  );
-}
-
-// A number that changes digit by digit: only the characters that differ
-// (lined up from the right) roll, the rest — the ₹, the commas, a digit that
-// stays the same — sit still. 26 → 25 rolls just the 6.
-function RollingNumber({ from, to, ms, range, style, lh }) {
-  const a = Array.from(from).reverse();
-  const b = Array.from(to).reverse();
-  const n = Math.max(a.length, b.length);
-  const cells = [];
-  for (let i = n - 1; i >= 0; i -= 1) {
-    const oldCh = a[i] ?? '';
-    const newCh = b[i] ?? '';
-    cells.push(oldCh === newCh
-      ? <Text key={i} style={style}>{oldCh}</Text>
-      : <RollChar key={i} oldCh={oldCh} newCh={newCh} ms={ms} range={range} style={style} lh={lh} />);
-  }
-  return <View style={{ flexDirection: 'row', alignItems: 'center', height: lh }}>{cells}</View>;
-}
 
 // The paid moment: not a pop-up, just the page going dark for a few seconds.
 // `prevRemaining`/`remaining` are the money owed before and after this EMI,

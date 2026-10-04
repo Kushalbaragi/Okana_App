@@ -8,6 +8,7 @@ import MonthSlider from './MonthSlider';
 import PaymentGrid from './PaymentGrid';
 import SlideToPay from './SlideToPay';
 import PaidMoment from './PaidMoment';
+import JarMoment from './JarMoment';
 import Celebration from './Celebration';
 import ErrorBoundary from './ErrorBoundary';
 import { InlineConfirm } from './InlineConfirm';
@@ -28,6 +29,11 @@ import useEmiPayFlow from '../hooks/useEmiPayFlow';
 // List and detail swap by crossfade — the same fade the home screen uses for a
 // tab switch, and cheap because it's opacity only.
 const SWAP_MS = 220;
+// How long after a money sheet closes before the jar moment opens: the sheet's
+// own native Modal needs to be fully gone first.
+const JAR_START_DELAY_MS = 300;
+// The longest the page keeps showing pre-transaction figures waiting on the jar.
+const JAR_HOLD_FAILSAFE_MS = 30000;
 
 // Padding and alignment are inline styles here, not classNames, on the
 // GlassPressables below: className on an animated component depends on
@@ -184,6 +190,13 @@ export function useSavingsUI() {
   }, []);
   const closeSheet = useCallback(() => setSheetOpen(false), []);
 
+  // A new savings deposit or withdrawal, announced by the sheet that logged it
+  // so the goal's page can play the jar moment once the sheet has gone (see
+  // GoalDetail). `token` tells one event from the next.
+  const [moneyEvent, setMoneyEvent] = useState(null);
+  const emitMoney = useCallback((event) => setMoneyEvent({ ...event, token: Date.now() }), []);
+  const clearMoney = useCallback(() => setMoneyEvent(null), []);
+
   // Backstop for a sheet that never reports finishing (the page it lives on
   // closing under it, say) — the hold must not outlive it.
   useEffect(() => {
@@ -208,6 +221,7 @@ export function useSavingsUI() {
 
   return {
     sheetOpen, sheetData, sheetClosed, markSheetClosed, openNewGoal, openEditGoal, openMoney, openCloseEarly, openEntry, closeSheet,
+    moneyEvent, emitMoney, clearMoney,
     confirmOpen, confirmData, openDeleteGoal, openDeleteEntry, closeConfirm,
   };
 }
@@ -242,6 +256,10 @@ export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings'
   const emiConfirm = useEmiExpenseConfirm(savings, showToast);
   const submitMoney = useCallback(async (payload) => {
     const result = entry ? await savings.updateEntry(entry.id, payload) : await savings.addEntry(goalId, payload);
+    // A new savings deposit or withdrawal gets the jar moment on the goal's page.
+    if (result?.success && kind === 'savings' && !entry && goal?.target > 0) {
+      ui.emitMoney({ goalId, type: payload.type, amount: payload.amount, savedBefore: goal.saved });
+    }
     if (result?.success && kind === 'debt' && !entry && payload.type === 'add') {
       emiConfirm.schedule({ entryId: result.id, amount: payload.amount, date: payload.date, name: goal?.name || 'this loan' });
       // A pre-closure payment settles the loan outright — it doesn't wait
@@ -252,7 +270,7 @@ export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings'
       if (sheetData?.closeEarly) savings.setGoalCompleted(goalId, true);
     }
     return result;
-  }, [savings, goalId, entry, kind, goal, emiConfirm, sheetData]);
+  }, [savings, goalId, entry, kind, goal, emiConfirm, sheetData, ui]);
 
   // What the confirmation is about, looked up from the data rather than
   // carried in state so it can't go stale.
@@ -571,9 +589,20 @@ const HistoryRow = memo(function HistoryRow({ entry, onPress, onDelete, register
 // ---------------------------------------------------------------------------
 // Detail
 // ---------------------------------------------------------------------------
-function GoalDetail({ goal, savings, ui, light, kind = 'savings', showToast }) {
+function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', showToast }) {
   const copy = KIND_COPY[kind];
   const insets = useSafeAreaInsets();
+  // A savings deposit or withdrawal is saved straight away, but the page keeps
+  // showing the figures from before it until the jar moment has played: from
+  // the moment the sheet reports the transaction (`moneyEvent`) until the
+  // moment's dark wash starts to leave (`jarHold`). Everything below reads
+  // `goal`, which is the held copy during that stretch.
+  const { moneyEvent, clearMoney, sheetClosed } = ui;
+  const [jarHold, setJarHold] = useState(false);
+  const holding = kind === 'savings' && (jarHold || (!!moneyEvent && moneyEvent.goalId === liveGoal.id));
+  const heldRef = useRef(liveGoal);
+  if (!holding || heldRef.current.id !== liveGoal.id) heldRef.current = liveGoal;
+  const goal = holding ? heldRef.current : liveGoal;
   // Held back while the celebration is up, so the "goal reached" prompt comes
   // in once it has been dismissed rather than under it.
   const [celebrating, setCelebrating] = useState(false);
@@ -587,6 +616,40 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings', showToast }) {
   // moment, and the figures the status line and tracker show while it plays.
   const emiConfirm = useEmiExpenseConfirm(savings, showToast);
   const { moment, endMoment, payEmi, payHold, barG, dotG, shownEntries, isNewEntry } = useEmiPayFlow({ goal, savings, emiConfirm });
+  // The savings jar moment, started by the sheet that logged a deposit or
+  // withdrawal (see useSavingsUI's emitMoney) once that sheet has closed. A
+  // deposit that takes the goal to its target fills the jar and says so —
+  // savings never uses the confetti celebration.
+  const [jar, setJar] = useState(null);
+  const jarTimerRef = useRef(null);
+  const jarFailsafeRef = useRef(null);
+  useEffect(() => {
+    if (!moneyEvent || moneyEvent.goalId !== liveGoal.id || !sheetClosed) return;
+    clearMoney();
+    if (kind !== 'savings') return;
+    const savedAfter = Math.max(0, moneyEvent.savedBefore + (moneyEvent.type === 'add' ? moneyEvent.amount : -moneyEvent.amount));
+    // A deposit that takes the goal to its target completes the jar.
+    const complete = moneyEvent.type === 'add' && moneyEvent.savedBefore < liveGoal.target && savedAfter >= liveGoal.target;
+    setJarHold(true);
+    // Never leave the page holding old figures if the moment doesn't play.
+    clearTimeout(jarFailsafeRef.current);
+    jarFailsafeRef.current = setTimeout(() => setJarHold(false), JAR_HOLD_FAILSAFE_MS);
+    // The jar is a native Modal, and the sheet that logged the money is one
+    // too, only just finishing its own dismissal: presenting one while the other
+    // is still closing silently never happens on iOS (see the same wait before
+    // Celebration, below). So it starts a beat later.
+    jarTimerRef.current = setTimeout(
+      () => setJar({ type: moneyEvent.type, name: liveGoal.name, savedBefore: moneyEvent.savedBefore, savedAfter, target: liveGoal.target, amount: moneyEvent.amount, complete }),
+      JAR_START_DELAY_MS
+    );
+  }, [moneyEvent, sheetClosed, liveGoal.id, liveGoal.name, liveGoal.target, kind, clearMoney]);
+  useEffect(() => () => { clearTimeout(jarTimerRef.current); clearTimeout(jarFailsafeRef.current); }, []);
+  const releaseJarHold = useCallback(() => setJarHold(false), []);
+  const endJar = useCallback(() => {
+    clearTimeout(jarFailsafeRef.current);
+    setJar(null);
+    setJarHold(false);
+  }, []);
   const showReached = goal.reached && !goal.completedAt && !celebrating;
   // A debt goal is one of two shapes now (see useSavings.js's own comment
   // on `debtType`) — an EMI/Loan (fixed schedule, the circle tracker below)
@@ -642,7 +705,7 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings', showToast }) {
     // again the next time it is completed.
     const reopened = seen.completed && !completed;
     setSeen({ id: goal.id, reached: goal.reached, completed, celebrated: sameGoal && !reopened && (seen.celebrated || first) });
-    if (first) {
+    if (first && kind !== 'savings') {
       // `celebrating` flips on THIS render, synchronously, so `showReached`
       // above never gets a frame on screen first — that part still happens
       // exactly as the comment above describes. Mounting Celebration's own
@@ -900,9 +963,8 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings', showToast }) {
         />
       </View>
     )}
-    {/* EMI debt has no floating "+" any more — the slide-to-pay bar and Close
-        early above are its own two real actions, placed to be found without
-        a separate round button floating over the page as well. Savings and
+    {/* EMI debt has no floating "+" any more — its slide-to-pay bar (and Close
+        early, beside the Payments label) are its actions. Savings and
         Flexible debt have no schedule to read a specific action off, so
         this stays their one way in. */}
     {!isEmiDebt && <AddFab onPress={() => ui.openMoney(goal.id, 'add')} label={copy.fabLabel} />}
@@ -913,6 +975,11 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings', showToast }) {
     {celebrationReady && (
       <ErrorBoundary onError={endCelebration}>
         <Celebration {...celebrationCopy(goal, kind, copy)} onDone={endCelebration} />
+      </ErrorBoundary>
+    )}
+    {jar && (
+      <ErrorBoundary onError={endJar}>
+        <JarMoment {...jar} light={light} onRelease={releaseJarHold} onDone={endJar} />
       </ErrorBoundary>
     )}
     {moment && (
