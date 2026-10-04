@@ -13,10 +13,10 @@ import Celebration from './Celebration';
 import ErrorBoundary from './ErrorBoundary';
 import { InlineConfirm } from './InlineConfirm';
 import { ConfirmPill } from './ConfirmPill';
-import { GOAL_SUGGESTIONS, GoalSheet, MoneySheet } from './SavingsSheets';
+import { GoalSheet, MoneySheet } from './SavingsSheets';
 import GoalCard from './GoalCard';
 import { SwipeDeleteAction, useSwipeDelete, useSwipeGroup } from './SwipeDeleteAction';
-import { Card, ProgressBar, POSITIVE, cardFill, dim, money, KIND_COPY, DEBT_SUGGESTIONS } from './savingsShared';
+import { Card, ProgressBar, POSITIVE, cardFill, dim, money, KIND_COPY } from './savingsShared';
 import { textColor } from '../utils/colors';
 import { TABULAR } from '../utils/type';
 import { CheckIcon, ChevronRight, EditIcon, PlusIcon } from './icons';
@@ -509,25 +509,18 @@ function Divider({ inset = 16, light }) {
   return <View style={{ height: StyleSheet.hairlineWidth, marginHorizontal: inset, backgroundColor: light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }} />;
 }
 
+// A first visit, kept to one question, one line of examples and one button.
 function EmptyState({ onNew, light, kind = 'savings' }) {
   const copy = KIND_COPY[kind];
-  const suggestions = kind === 'debt' ? DEBT_SUGGESTIONS : GOAL_SUGGESTIONS;
   return (
-    <View className="items-center" style={{ paddingTop: 72, paddingHorizontal: 16 }}>
+    <View className="items-center" style={{ paddingTop: 96, paddingHorizontal: 16 }}>
       <Text className="text-xl font-semibold text-center" style={{ color: light ? '#111111' : '#ffffff' }}>{copy.emptyTitle}</Text>
-      <Text className="text-base text-center" style={{ color: textColor(light).tertiary, marginTop: 8, marginBottom: 24, lineHeight: 22 }}>
+      <Text className="text-[15px] text-center" style={{ color: textColor(light).tertiary, marginTop: 8, marginBottom: 24, lineHeight: 22 }}>
         {copy.emptyBody}
       </Text>
       <GlassPressable variant="active" radius={9999} onPress={() => onNew('')} style={{ paddingHorizontal: 32, paddingVertical: 12, alignItems: 'center' }}>
-        <Text className="text-black text-[15px] font-semibold">{copy.newLabel}</Text>
+        <Text className="text-black text-[15px] font-semibold">{copy.emptyAction}</Text>
       </GlassPressable>
-      <View className="flex-row flex-wrap justify-center" style={{ gap: 8, marginTop: 20 }}>
-        {suggestions.map(name => (
-          <GlassPressable key={name} variant="field" radius={9999} onPress={() => onNew(name)} style={{ paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1, borderColor: dim(light, 0.14) }}>
-            <Text className="text-sm" style={{ color: dim(light, 0.7) }}>{name}</Text>
-          </GlassPressable>
-        ))}
-      </View>
     </View>
   );
 }

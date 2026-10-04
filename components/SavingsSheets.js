@@ -10,7 +10,7 @@ import ReanimatedView, {
   withSpring, runOnJS, interpolate, Extrapolation, FadeIn,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getDaysInMonth, parseISO } from 'date-fns';
+import { addMonths, getDaysInMonth, parseISO } from 'date-fns';
 import { GlassPressable, INPUT_TEXT_STYLE, CARD_RADIUS, SMOOTH } from './Glass';
 import { InlineSheet, OPEN_MS } from './InlineSheet';
 import AddModal from './AddModal';
@@ -66,10 +66,6 @@ const FieldCard = memo(function FieldCard({ light, children }) {
     </View>
   );
 });
-
-// Ideas for a goal's name, offered under the name field and on the empty
-// state. Tapping one just fills the name in; it can still be edited.
-export const GOAL_SUGGESTIONS = ['Emergency fund', 'Vacation', 'Bike', 'Home', 'New phone', 'Wedding'];
 
 // Ideas for where a savings goal's money sits — not an exhaustive list or
 // enum, just a fast path for the common cases (see the "Other" option every
@@ -859,7 +855,13 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
   // in its state). A fresh function each render defeated that memo, so the
   // ruler rebuilt its whole SVG on every month it crossed.
   const handleTenureChange = useCallback(v => setTenureMonths(String(v)), []);
-  const handleEmisPaidChange = useCallback(v => setEmisPaidBefore(String(v)), []);
+  // EMIs already paid can never be more than the loan's total EMIs — including
+  // when the total is still zero (nothing set yet, so nothing can have been
+  // paid). Enforced at every way it can change: the ruler, the tenure moving
+  // under it, and the save itself.
+  const tenureRef = useRef(0);
+  tenureRef.current = parseInt(tenureMonths, 10) || 0;
+  const handleEmisPaidChange = useCallback(v => setEmisPaidBefore(String(Math.min(Number(v) || 0, tenureRef.current))), []);
   // Dragging the tenure ruler down below however many EMIs were already
   // marked paid would otherwise leave that field pointing at a month the
   // loan no longer has (its own ruler, built off this same tenure, would
@@ -869,7 +871,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
   useEffect(() => {
     const tenure = parseInt(tenureMonths, 10) || 0;
     const paid = parseInt(emisPaidBefore, 10) || 0;
-    if (tenure > 0 && paid > tenure) setEmisPaidBefore(String(tenure));
+    if (paid > tenure) setEmisPaidBefore(String(tenure));
   }, [tenureMonths, emisPaidBefore]);
   const [firstEmiDate, setFirstEmiDate] = useState('');
   const [emiAmount, setEmiAmount] = useState(0);
@@ -974,20 +976,22 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
     // own comment on inferring one) — null only for a genuinely new debt
     // goal, which is exactly when the type-selector step below needs to ask.
     setDebtType(goal?.debtType ?? null);
-    // '12', not '' — a slider always sits on some value (there's no "blank"
+    // '0', not '' — a slider always sits on some value (there's no "blank"
     // position to drag to), so the ruler and the field it drives have to
     // agree on a starting point from the first frame, rather than the ruler
-    // showing one thing until the user happens to drag it.
-    setTenureMonths(goal?.tenureMonths ? String(goal.tenureMonths) : '12');
+    // showing one thing until the user happens to drag it. Zero until the user
+    // sets it: the monthly EMI below stays at zero with it.
+    setTenureMonths(goal?.tenureMonths ? String(goal.tenureMonths) : '0');
     setRulerSession(n => n + 1);
     setEmisPaidBefore(goal?.emisPaidBefore ? String(goal.emisPaidBefore) : '');
-    // Today, not blank, for a new loan. Left unset this field reads as
-    // optional, but nothing downstream works without it: no first EMI means
-    // no schedule to hang dates off, so the circle tracker doesn't render at
-    // all and "Next payment" stays hidden. Most loans are added around the
-    // time they start, so today is both the likeliest answer and one less
-    // field to go and fill in; it is still a plain editable row.
-    setFirstEmiDate(goal?.firstEmiDate || today());
+    // The same day next month, not blank, for a new loan. Left unset this field
+    // reads as optional, but nothing downstream works without it: no first EMI
+    // means no schedule to hang dates off, so the circle tracker doesn't render
+    // at all and "Next payment" stays hidden. A loan added around the time it
+    // starts has its first EMI due a month on (a 31st lands on the month's last
+    // day), so that is the likeliest answer and one less field to go and fill
+    // in; it is still a plain editable row.
+    setFirstEmiDate(goal?.firstEmiDate || toDateStr(addMonths(parseISO(today()), 1)));
     setEmiAmount(goal?.emiAmount ?? 0);
     // An existing loan's EMI is its own — never recomputed under the user.
     // A new one's follows the borrowed amount and tenure until it is typed
@@ -1034,7 +1038,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
     setSubmitting(true);
     setError('');
     const tenure = isEmiType && parseInt(tenureMonths, 10) > 0 ? parseInt(tenureMonths, 10) : null;
-    const paidBefore = isEmiType && parseInt(emisPaidBefore, 10) > 0 ? parseInt(emisPaidBefore, 10) : 0;
+    const paidBefore = isEmiType && parseInt(emisPaidBefore, 10) > 0 ? Math.min(parseInt(emisPaidBefore, 10), tenure || 0) : 0;
     const emiDate = isEmiType && firstEmiDate ? firstEmiDate : null;
     const emi = isEmiType && emiAmount > 0 ? emiAmount : null;
     const starting = !isEdit && kind === 'savings' && startingAmount > 0 ? startingAmount : 0;
@@ -1186,7 +1190,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
           <ReanimatedView.View layout={rowsReady ? FIELD_LAYOUT_TRANSITION : undefined} style={{ overflow: 'hidden' }}>
           <FieldCard light={light}>
             <AmountTextRow
-              label={isEmiType ? 'Original amount' : kind === 'debt' ? 'Amount owed' : 'Target amount'}
+              label={isEmiType ? 'Total loan amount' : kind === 'debt' ? 'Amount owed' : 'Target amount'}
               value={amount}
               onChangeValue={setAmount}
               placeholder="Set amount"
@@ -1250,7 +1254,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
                   open={openField === 'emisPaid'}
                   onOpen={() => openRow('emisPaid')}
                   onClose={closeRow}
-                  maxMonths={parseInt(tenureMonths, 10) || undefined}
+                  maxMonths={parseInt(tenureMonths, 10) || 0}
                   tintCompleted
                 />
               </ReanimatedView.View>

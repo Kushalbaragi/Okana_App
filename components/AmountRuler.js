@@ -375,7 +375,8 @@ function buildMonthsScale(max) {
 // and never below MONTHS_MIN) so its own ruler only ever offers ticks the
 // loan actually has.
 export function monthsScale(max = MONTHS_MAX) {
-  const clampedMax = Math.max(MONTHS_MIN, Math.min(MONTHS_MAX, Math.round(max) || MONTHS_MAX));
+  // `max` of 0 is a real answer (a loan with no EMIs set yet has nothing to have paid), not "unset".
+  const clampedMax = Math.max(MONTHS_MIN, Math.min(MONTHS_MAX, Number.isFinite(max) ? Math.round(max) : MONTHS_MAX));
   return { ticks: Array.from({ length: clampedMax - MONTHS_MIN + 1 }, (_, i) => MONTHS_MIN + i), ...buildMonthsScale(clampedMax) };
 }
 
