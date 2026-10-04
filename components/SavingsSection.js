@@ -850,9 +850,19 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings', showToast }) {
         </View>
       )}
 
-      <Text className="text-[11px] font-medium uppercase tracking-wider px-4 mb-2" style={{ color: textColor(light).disabled, marginTop: showChart ? 28 : 12 }}>
-        {copy.historyTitle}
-      </Text>
+      <View className="flex-row items-center justify-between mb-2" style={{ marginTop: showChart ? 28 : 12 }}>
+        <Text className="text-[11px] font-medium uppercase tracking-wider px-4" style={{ color: textColor(light).disabled }}>
+          {copy.historyTitle}
+        </Text>
+        {/* Rare and weighty, so it lives out of the way up here rather than
+            beside the slider — reachable, never the easy tap. Hidden once the
+            loan is done. */}
+        {isEmiDebt && !goal.completedAt && !goal.reached && (
+          <Pressable onPress={openCloseEarly} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close loan early" style={{ paddingRight: 16 }}>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: textColor(light).secondary }}>Close early</Text>
+          </Pressable>
+        )}
+      </View>
 
       {shownEntries.length === 0 ? (
         <Text className="text-base px-4" style={{ color: textColor(light).tertiary }}>{copy.historyEmpty}</Text>
@@ -877,12 +887,10 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings', showToast }) {
       )}
     </ScrollView>
     {/* EMI debt's one real action, pinned to the bottom where a thumb rests:
-        slide to log this month's EMI. Close early stays a quiet link under
-        it — rare and weighty, so reachable but never the easy tap. Hidden
-        once the loan is done (`reached`/`completedAt` have their own
-        banner above). */}
+        slide to log this month's EMI. Hidden once the loan is done
+        (`reached`/`completedAt` have their own banner above). */}
     {isEmiDebt && !goal.completedAt && !goal.reached && (
-      <View style={{ paddingHorizontal: GUTTER, paddingTop: 12, paddingBottom: insets.bottom + 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: dim(light, 0.12) }}>
+      <View style={{ paddingHorizontal: GUTTER, paddingTop: 12, paddingBottom: insets.bottom + 12 }}>
         <SlideToPay
           label={`Slide to pay ${money(goal.emiAmount || 0)}`}
           paidLabel={goal.nextEmiDate ? `EMI paid · next ${formatDateFull(goal.nextEmiDate)}` : 'EMI paid'}
@@ -890,9 +898,6 @@ function GoalDetail({ goal, savings, ui, light, kind = 'savings', showToast }) {
           onComplete={payEmi}
           light={light}
         />
-        <Pressable onPress={openCloseEarly} hitSlop={8} accessibilityRole="button" accessibilityLabel="Close loan early" style={{ alignSelf: 'center', paddingVertical: 10 }}>
-          <Text style={{ fontSize: 14, fontWeight: '500', color: textColor(light).secondary }}>Close early</Text>
-        </Pressable>
       </View>
     )}
     {/* EMI debt has no floating "+" any more — the slide-to-pay bar and Close
