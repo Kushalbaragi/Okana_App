@@ -1,20 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, RefreshControl, Platform, ActivityIndicator, StyleSheet, AppState } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
+import { differenceInCalendarDays, parseISO } from 'date-fns';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withRepeat, cancelAnimation, Easing } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
 import { useSubscription } from '../../hooks/useSubscription';
 import { usePurchases, openManageSubscription } from '../../hooks/usePurchases';
-import { formatChargeDate, getSubscriptionDisplayStatus, PRICE_PER_YEAR, WHY_ITEMS } from '../../utils/trial';
+import { formatChargeDate, getSubscriptionDisplayStatus, PLUS_BENEFITS, PRICE_PER_YEAR } from '../../utils/trial';
 import { today } from '../../utils/format';
 import { BackIcon, CheckIcon, RefreshIcon } from '../../components/icons';
 import { PaymentProcessing } from '../../components/PaymentProcessing';
-import { Card, Divider, SectionLabel } from '../../components/SettingsUI';
 import { SETTLE_EASING } from '../../utils/motion';
 import { darkText } from '../../utils/colors';
+import { GUTTER } from '../../utils/spacing';
 import { FONT } from '../../utils/type';
+
+// How much of the background image shows through the black.
+const BACKGROUND = require('../../assets/subscription-bg.webp');
+const BACKGROUND_OPACITY = 0.35;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -95,6 +102,18 @@ function RefreshAction({ onRefresh }) {
         </Animated.Text>
       )}
     </Pressable>
+  );
+}
+
+// The one plan, as a quiet one-line card: the yearly price.
+function PriceLine({ price, suffix }) {
+  return (
+    <View style={{ borderWidth: 1, borderColor: '#2a2a2a', backgroundColor: '#161616', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 16 }}>
+      <Text style={{ fontSize: FONT.body, color: '#ffffff', textAlign: 'center' }}>
+        {price} a year
+        {!!suffix && <Text style={{ color: darkText.tertiary }}>{` ${suffix}`}</Text>}
+      </Text>
+    </View>
   );
 }
 
@@ -234,6 +253,7 @@ export default function SubscriptionPage() {
     if (!isOnline) { notifyOffline(); return; }
     setRestoring(true);
     setPurchaseError(null);
+    setPurchaseNotice(null);
     const result = await restorePurchases();
     if (!result.success) {
       setPurchaseError(result.error || 'Could not restore purchases.');
@@ -261,28 +281,62 @@ export default function SubscriptionPage() {
       // map means there's genuinely nothing on this Apple/Google account to
       // restore, not that our webhook is merely running behind.
       const hasActiveEntitlement = Object.keys(result.customerInfo?.entitlements?.active || {}).length > 0;
-      setPurchaseError(hasActiveEntitlement
-        ? "Restored — just finishing up. This can take a minute; pull to refresh if it doesn't update."
-        : 'No previous purchases found on this account.');
+      // "Just finishing up" isn't a failure, so it's the grey notice; only a
+      // genuine "nothing to restore" is the red error.
+      if (hasActiveEntitlement) setPurchaseNotice("Restored — just finishing up. This can take a minute; pull to refresh if it doesn't update.");
+      else setPurchaseError('No previous purchases found on this account.');
     }
     setRestoring(false);
   }
 
+  const insets = useSafeAreaInsets();
+  // The store formats this itself, and some locales put a space (or a
+  // non-breaking one) between the symbol and the number — "₹ 499".
+  const price = (pkg?.product?.priceString || `₹${PRICE_PER_YEAR}`).replace(/\s+/g, '');
+  const storeName = Platform.OS === 'ios' ? 'the App Store' : 'Play Store';
+  const daysLeft = trialInfo.chargeDate ? Math.max(0, differenceInCalendarDays(parseISO(trialInfo.chargeDate), parseISO(today()))) : 0;
+  const chargeDate = trialInfo.chargeDate ? formatChargeDate(trialInfo.chargeDate) : '';
+
+  // The heading: what state this account is in, in a line.
+  let kicker;
+  let title;
+  let sub = null;
+  if (status === 'trial') {
+    kicker = 'Free trial';
+    title = daysLeft === 1 ? '1 day left' : `${daysLeft} days left`;
+  } else if (status === 'expired') {
+    kicker = 'Your trial has ended';
+    title = 'Pick up where you left off.';
+  } else if (status === 'subscribed') {
+    kicker = 'Okana Plus';
+    title = "You're all set";
+    sub = trialInfo.cancelAtPeriodEnd ? `Access until ${chargeDate}` : `Renews ${chargeDate} · ${price}`;
+  } else {
+    kicker = 'Okana Plus';
+    title = 'Upgrade to Okana Plus and keep tracking.';
+  }
+
   return (
-    <View className="flex-1 bg-bg">
+    <View style={{ flex: 1, backgroundColor: '#000000' }}>
+      {/* A soft grey texture, held right down so the page still reads as black. */}
+      <Image
+        source={BACKGROUND}
+        contentFit="cover"
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, { opacity: BACKGROUND_OPACITY }]}
+      />
       <ScrollView
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="rgba(255,255,255,0.6)" />
         }
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: GUTTER, paddingTop: insets.top + 12, paddingBottom: insets.bottom + 16 }}
+        showsVerticalScrollIndicator={false}
       >
-        {/* px-5 (20), matching the app's screen gutter (Home, Settings, the
-            Savings detail page) — Row content inside the Cards below stays
-            at its own 16, a bordered card's internal padding. */}
-        <View className="flex-row items-center gap-2 px-5 pt-14 pb-4">
+        <View className="flex-row items-center justify-between">
           <Pressable
-            // Same canGoBack() guard as account.js's back button, and for
-            // the same reason — a reload/deep-link landing directly here
-            // would otherwise leave back() silently doing nothing.
+            // Same canGoBack() guard as account.js's back button, and for the
+            // same reason — a reload/deep-link landing directly here would
+            // otherwise leave back() silently doing nothing.
             onPress={() => (router.canGoBack() ? router.back() : router.replace('/(app)'))}
             className="w-9 h-9 items-center justify-center rounded-xl"
             accessibilityRole="button"
@@ -290,7 +344,11 @@ export default function SubscriptionPage() {
           >
             <BackIcon />
           </Pressable>
-          <Text className="text-white text-base font-semibold">Subscription</Text>
+          {needsAction && Platform.OS !== 'web' && (
+            <Pressable onPress={handleRestore} disabled={restoring} hitSlop={8} accessibilityRole="button">
+              <Text style={{ fontSize: FONT.caption, color: darkText.tertiary, opacity: restoring ? 0.5 : 1 }}>Restore</Text>
+            </Pressable>
+          )}
         </View>
 
         {/* Gated on having no data at all yet, not on the network fetch
@@ -305,202 +363,111 @@ export default function SubscriptionPage() {
             <ActivityIndicator color="rgba(255,255,255,0.4)" />
           </View>
         ) : (
-        <View className="px-5 pb-16" style={{ gap: 12 }}>
-          <View>
-            <SectionLabel
-              action={
-                // A visible, always-tappable escape hatch — pull-to-refresh
-                // works but isn't discoverable, and this is exactly the row
-                // that can briefly lag behind a cancellation (see the
-                // useFocusEffect/AppState comments above). Calls refresh()
-                // directly, not onRefresh — the latter also flips on the
-                // ScrollView's native pull-to-refresh spinner, which would
-                // show up redundantly alongside this icon's own animation
-                // for a single tap.
-                <RefreshAction onRefresh={refresh} />
-              }
-            >
-              Current Plan
-            </SectionLabel>
-            <Card>
-              {status === 'expired' ? (
-                <View className="px-4 py-[18px] items-center">
-                  <Text className="text-base font-semibold text-center" style={{ color: 'rgba(248,113,113,0.85)' }}>
-                    Your Plan has Expired
-                  </Text>
-                </View>
-              ) : (
-                <View className="px-4 py-[18px] items-center">
-                  <Text className="text-white text-base" style={{ textAlign: 'center' }}>
-                    You are{' '}
-                    <Text style={{ color: '#4ade80', fontWeight: '600' }}>
-                      {needsAction ? 'Free' : 'Plus'}
-                    </Text>
-                    {' '}user of Okana
-                  </Text>
-                </View>
-              )}
-
+          <>
+            <View className="items-center" style={{ marginTop: 40 }}>
+              <View className="flex-row items-center" style={{ gap: 10 }}>
+                <Text style={{ fontSize: FONT.caption, color: darkText.tertiary }}>{kicker}</Text>
+                {/* Only in the window where it matters: the trial is over (or never
+                    started) and there's no subscription yet. That's when a
+                    purchase or a restore can land a moment before this page
+                    knows, and pull-to-refresh isn't discoverable. Calls
+                    refresh() directly, not onRefresh — the latter also flips on
+                    the ScrollView's native pull-to-refresh spinner. */}
+                {needsAction && <RefreshAction onRefresh={refresh} />}
+              </View>
+              <Text style={{ fontSize: FONT.title, fontWeight: '300', lineHeight: 27, letterSpacing: -0.3, color: '#ffffff', textAlign: 'center', marginTop: 8 }}>
+                {title}
+              </Text>
+              {!!sub && <Text style={{ fontSize: FONT.caption, color: darkText.tertiary, marginTop: 8, textAlign: 'center' }}>{sub}</Text>}
               {status === 'subscribed' && trialInfo.paymentFailed && (
-                <>
-                  <Divider />
-                  <View className="px-4 py-[14px]">
-                    <Text className="text-base" style={{ color: 'rgba(248,113,113,0.85)' }}>
-                      There's a problem with your payment — update it in {Platform.OS === 'ios' ? 'the App Store' : 'Play Store'} to keep your access.
-                    </Text>
-                  </View>
-                </>
-              )}
-            </Card>
-          </View>
-
-          {/* Pre-conversion pitch — only while there's still a decision to
-              make (free, expired, or still in the trial). Not shown to an
-              actual paying subscriber; see the thank-you card below instead. */}
-          {(needsAction || status === 'trial') && (
-            <View>
-              <SectionLabel>Features</SectionLabel>
-              <Card>
-                {WHY_ITEMS.map((item, i) => (
-                  <View key={item.title}>
-                    {i > 0 && <Divider />}
-                    <View className="px-4 py-[14px]">
-                      <View className="flex-row items-center" style={{ gap: 8 }}>
-                        <CheckIcon size={20} />
-                        <Text className="text-white font-medium" style={{ fontSize: FONT.body }}>{item.title}</Text>
-                      </View>
-                      <Text className="text-white/50 text-[13px] mt-1" style={{ lineHeight: 19, marginLeft: 24 }}>
-                        {item.description}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-
-                {needsAction && Platform.OS !== 'web' && (
-                  <>
-                    <Divider />
-                    <View className="px-4 py-[14px]" style={{ gap: 8 }}>
-                      {!!purchaseError && (
-                        <View className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderWidth: 1, borderColor: 'rgba(248,113,113,0.2)' }}>
-                          <Text className="text-red-300 text-base">{purchaseError}</Text>
-                        </View>
-                      )}
-
-                      {!!purchaseNotice && (
-                        <View className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
-                          <Text className="text-white/60 text-base">{purchaseNotice}</Text>
-                        </View>
-                      )}
-
-                      {offeringLoading ? (
-                        <View className="w-full py-[13px] rounded-full items-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                          <ActivityIndicator color="rgba(255,255,255,0.5)" />
-                        </View>
-                      ) : pkg ? (
-                        <Pressable
-                          onPress={handleSubscribe}
-                          disabled={purchasing}
-                          className="w-full py-[13px] rounded-full items-center"
-                          style={{ backgroundColor: 'rgba(74,222,128,0.25)', opacity: purchasing ? 0.6 : 1 }}
-                        >
-                          <Text className="text-base font-semibold" style={{ color: '#4ade80' }}>
-                            Subscribe — {pkg.product.priceString}/year
-                          </Text>
-                        </Pressable>
-                      ) : (
-                        <View
-                          className="w-full py-[13px] rounded-full items-center"
-                          style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
-                        >
-                          <Text className="text-base font-semibold" style={{ color: darkText.tertiary }}>
-                            {offeringError || 'Subscription options unavailable'}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  </>
-                )}
-              </Card>
-
-              {status === 'trial' && (
-                <Text className="text-white/50 text-[13px] text-center" style={{ marginTop: 14 }}>
-                  {trialInfo.cancelAtPeriodEnd
-                    ? `Access until ${formatChargeDate(trialInfo.chargeDate)}`
-                    : `Free access until ${formatChargeDate(trialInfo.chargeDate)}`}
+                <Text style={{ fontSize: FONT.caption, color: 'rgba(248,113,113,0.85)', marginTop: 10, textAlign: 'center' }}>
+                  There's a problem with your payment — update it in {storeName} to keep your access.
                 </Text>
               )}
+            </View>
 
-              {needsAction && Platform.OS !== 'web' && (
-                <Pressable onPress={handleRestore} disabled={restoring} className="w-full py-2 items-center mt-1">
-                  <Text className="text-white/50 text-base">Restore purchases</Text>
-                </Pressable>
-              )}
+            {/* The benefits list, on every state of this page. */}
+            <View style={{ marginTop: 36, paddingHorizontal: 6 }}>
+              {PLUS_BENEFITS.map((line) => (
+                <View key={line} className="flex-row items-center" style={{ gap: 14, paddingVertical: 11 }}>
+                  <CheckIcon size={16} />
+                  <Text style={{ fontSize: FONT.body, color: 'rgba(255,255,255,0.85)' }}>{line}</Text>
+                </View>
+              ))}
+            </View>
 
-              {needsAction && Platform.OS === 'web' && (
-                <View style={{ gap: 8, marginTop: 10 }}>
-                  <View
-                    className="w-full py-[13px] rounded-full items-center"
-                    style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+            <View style={{ height: 32 }} />
+
+            {status === 'trial' && (
+              <PriceLine price={price} suffix="after your trial" />
+            )}
+
+            {needsAction && Platform.OS !== 'web' && (
+              <View style={{ gap: 10 }}>
+                {!!purchaseError && (
+                  <View className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderWidth: 1, borderColor: 'rgba(248,113,113,0.2)' }}>
+                    <Text style={{ fontSize: FONT.caption, color: '#fca5a5' }}>{purchaseError}</Text>
+                  </View>
+                )}
+                {!!purchaseNotice && (
+                  <View className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
+                    <Text style={{ fontSize: FONT.caption, color: 'rgba(255,255,255,0.6)' }}>{purchaseNotice}</Text>
+                  </View>
+                )}
+                {offeringLoading ? (
+                  <View className="w-full rounded-full items-center" style={{ backgroundColor: 'rgba(255,255,255,0.08)', paddingVertical: 15 }}>
+                    <ActivityIndicator color="rgba(255,255,255,0.5)" />
+                  </View>
+                ) : pkg ? (
+                  <Pressable
+                    onPress={handleSubscribe}
+                    disabled={purchasing}
+                    accessibilityRole="button"
+                    className="w-full rounded-full items-center"
+                    style={{ backgroundColor: '#ffffff', paddingVertical: 15, opacity: purchasing ? 0.6 : 1 }}
                   >
-                    <Text className="text-base font-semibold" style={{ color: darkText.tertiary }}>Not available on web</Text>
+                    <Text style={{ fontSize: FONT.body, fontWeight: '500', color: '#000000' }}>{`Subscribe now ${price}/year`}</Text>
+                  </Pressable>
+                ) : (
+                  <View className="w-full rounded-full items-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', paddingVertical: 15 }}>
+                    <Text style={{ fontSize: FONT.body, color: darkText.tertiary }}>
+                      {offeringError || 'Subscription options unavailable'}
+                    </Text>
                   </View>
-                  <Text className="w-full text-center text-white/50 text-base">
-                    Subscribing is only available from the iOS or Android app.
-                  </Text>
+                )}
+                <Text style={{ fontSize: FONT.caption, color: darkText.tertiary, textAlign: 'center' }}>
+                  {status === 'expired' ? 'Your data is safe and waiting.' : 'Cancel anytime.'}
+                </Text>
+              </View>
+            )}
+
+            {needsAction && Platform.OS === 'web' && (
+              <View style={{ gap: 8 }}>
+                <PriceLine price={price} />
+                <View className="w-full rounded-full items-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', paddingVertical: 15 }}>
+                  <Text style={{ fontSize: FONT.body, color: darkText.tertiary }}>Not available on web</Text>
                 </View>
-              )}
-            </View>
-          )}
+                <Text className="text-center" style={{ fontSize: FONT.caption, color: darkText.tertiary }}>
+                  Subscribing is only available from the iOS or Android app.
+                </Text>
+              </View>
+            )}
 
-          {/* Only for someone actually paying — a genuine subscriber gets no
-              further pitch (that's what Features above is for), just a
-              short, honest thank-you. Deliberately doesn't repeat feature
-              claims that aren't actually exclusive to Plus. */}
-          {status === 'subscribed' && (
-            <View>
-              <Card>
-                <View className="px-4 py-4">
-                  <Text className="text-white text-base font-semibold mb-2">Thanks for being an Okana Plus member 💚</Text>
-                  <View className="flex-row items-start" style={{ gap: 8 }}>
-                    <View style={{ marginTop: 2 }}><CheckIcon size={14} /></View>
-                    <Text className="text-white/50 text-[13px] flex-1" style={{ lineHeight: 19 }}>
-                      Unlimited transaction tracking, no interruptions.
-                    </Text>
-                  </View>
-                  <View className="flex-row items-start mt-1" style={{ gap: 8 }}>
-                    <View style={{ marginTop: 2 }}><CheckIcon size={14} /></View>
-                    <Text className="text-white/50 text-[13px] flex-1" style={{ lineHeight: 19 }}>
-                      You're supporting an independently built app, made by one person.
-                    </Text>
-                  </View>
-                  <View className="flex-row items-start mt-1" style={{ gap: 8 }}>
-                    <View style={{ marginTop: 2 }}><CheckIcon size={14} /></View>
-                    <Text className="text-white/50 text-[13px] flex-1" style={{ lineHeight: 19 }}>
-                      Helps keep Okana improving and ad-free.
-                    </Text>
-                  </View>
-
-                </View>
-              </Card>
-
-              <Text className="text-white/50 text-[13px] text-center" style={{ marginTop: 40, marginBottom: 4 }}>
-                {trialInfo.cancelAtPeriodEnd
-                  ? `Access until ${formatChargeDate(trialInfo.chargeDate)}`
-                  : `You'll be charged ₹${PRICE_PER_YEAR} on ${formatChargeDate(trialInfo.chargeDate)}`}
-              </Text>
-            </View>
-          )}
-
-          {canManage && Platform.OS !== 'web' && (
-            <Pressable
-              onPress={() => (isOnline ? openManageSubscription() : notifyOffline())}
-              className="w-full py-[15px] rounded-full items-center"
-              style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
-            >
-              <Text className="text-white text-base font-semibold">Manage Subscription</Text>
-            </Pressable>
-          )}
-        </View>
+            {status === 'subscribed' && (
+              <View style={{ gap: 12 }}>
+                {canManage && Platform.OS !== 'web' && (
+                  <Pressable
+                    onPress={() => (isOnline ? openManageSubscription() : notifyOffline())}
+                    accessibilityRole="button"
+                    className="w-full rounded-full items-center"
+                    style={{ backgroundColor: 'rgba(255,255,255,0.08)', paddingVertical: 15 }}
+                  >
+                    <Text style={{ fontSize: FONT.body, fontWeight: '500', color: '#ffffff' }}>Manage subscription</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
 

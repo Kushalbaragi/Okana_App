@@ -20,7 +20,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
 import { isConnectivityError, reportError } from '../../utils/errors';
 import { clearAllUserData, clearDataCaches } from '../../utils/localData';
-import { openLink, openStoreListing } from '../../utils/links';
+import { openLink, openStoreListing, TERMS_URL } from '../../utils/links';
 import { useSubscription } from '../../hooks/useSubscription';
 import { useTransactions } from '../../hooks/useTransactions';
 import { openManageSubscription } from '../../hooks/usePurchases';
@@ -32,6 +32,7 @@ import { textColor } from '../../utils/colors';
 import { BackIcon, EditIcon, ChevronRight, CheckIcon, CameraIcon } from '../../components/icons';
 import { ONBOARDING_SEEN_KEY } from '../onboarding';
 import { AnimatedModal } from '../../components/AnimatedModal';
+import EditNameSheet from '../../components/EditNameSheet';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { ActionOverlay } from '../../components/ActionOverlay';
 import * as SettingsUI from '../../components/SettingsUI';
@@ -412,11 +413,7 @@ export default function AccountPage() {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(profile?.name || '');
   const [savingName, setSavingName] = useState(false);
-  // A tap on Save blurs the TextInput (see its onBlur below) before Save's
-  // own onPress actually fires — a ref, not state, because the deferred
-  // onBlur check below needs the CURRENT value the instant it runs, not
-  // whatever `savingName` was captured as when that closure was created.
-  const nameSaveInFlightRef = useRef(false);
+  const [nameError, setNameError] = useState('');
   const [avatarPhase, setAvatarPhase] = useState('idle'); // 'idle' | 'uploading' | 'success'
 
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -497,19 +494,17 @@ export default function AccountPage() {
     if (savingName) return;
     if (!nameInput.trim() || nameInput.trim() === profile?.name) { setEditingName(false); return; }
     if (!isOnline) { notifyOffline(); return; }
-    nameSaveInFlightRef.current = true;
     setSavingName(true);
-    setActionError('');
+    setNameError('');
     try {
       const { error } = await supabase.auth.updateUser({ data: { name: nameInput.trim() } });
       if (error) throw error;
       setEditingName(false);
     } catch (err) {
       if (isConnectivityError(err, isOnline)) { notifyOffline(); }
-      else { reportError(err); setActionError(err.message || 'Failed to update name. Please try again.'); }
+      else { reportError(err); setNameError(err.message || 'Failed to update name. Please try again.'); }
     } finally {
       setSavingName(false);
-      nameSaveInFlightRef.current = false;
     }
   }
 
@@ -1035,58 +1030,23 @@ export default function AccountPage() {
               the icon-led card underneath is then purely actions/links,
               nothing to read or fill in. */}
           <View className="items-center mt-4" style={{ gap: 5 }}>
-            {editingName ? (
-              <View className="flex-row items-center" style={{ gap: 8 }}>
-                <TextInput
-                  autoFocus
-                  value={nameInput}
-                  onChangeText={setNameInput}
-                  onSubmitEditing={saveName}
-                  // Tapping outside (or the Save button — see the ref's
-                  // own comment) blurs this first. Deferred a tick so a
-                  // same-gesture Save press still gets to fire; if nothing
-                  // caught that flag by then, this was a genuine "tapped
-                  // away" and the typed name is discarded — closing without
-                  // saving is exactly that, since nameInput never persists
-                  // anywhere until saveName actually runs.
-                  onBlur={() => {
-                    setTimeout(() => {
-                      if (!nameSaveInFlightRef.current) setEditingName(false);
-                    }, 0);
-                  }}
-                  maxLength={60}
-                  className="text-base text-center px-3 py-2"
-                  style={{
-                    color: LIGHT_SETTINGS ? '#111111' : '#ffffff',
-                    minWidth: 120,
-                    borderRadius: 10,
-                    borderWidth: 1,
-                    borderColor: LIGHT_SETTINGS ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.14)',
-                  }}
-                />
-                <Pressable onPress={saveName} disabled={savingName}>
-                  <Text className="text-base" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.60)' : 'rgba(255,255,255,0.60)' }}>Save</Text>
-                </Pressable>
+            <Pressable
+              onPress={() => { setNameInput(profile?.name || ''); setNameError(''); setEditingName(true); }}
+              className="flex-row items-center"
+              accessibilityRole="button"
+              accessibilityLabel="Edit name"
+            >
+              {/* Balances the icon's own width + gap on the opposite side,
+                  so the name text lands under the avatar's centre — without
+                  it, the trailing icon pulls the whole row (and so the
+                  name) visibly right of centre. Purely a layout spacer,
+                  invisible either way. */}
+              <View style={{ width: 25 }} />
+              <Text style={{ fontSize: FONT.body, color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>{profile?.name || '—'}</Text>
+              <View style={{ marginLeft: 12 }}>
+                <EditIcon size={13} color={LIGHT_SETTINGS ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)'} />
               </View>
-            ) : (
-              <Pressable
-                onPress={() => { setNameInput(profile?.name || ''); setEditingName(true); }}
-                className="flex-row items-center"
-                accessibilityRole="button"
-                accessibilityLabel="Edit name"
-              >
-                {/* Balances the icon's own width + gap on the opposite side,
-                    so the name text lands under the avatar's centre — without
-                    it, the trailing icon pulls the whole row (and so the
-                    name) visibly right of centre. Purely a layout spacer,
-                    invisible either way. */}
-                <View style={{ width: 25 }} />
-                <Text style={{ fontSize: FONT.body, color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>{profile?.name || '—'}</Text>
-                <View style={{ marginLeft: 12 }}>
-                  <EditIcon size={13} color={LIGHT_SETTINGS ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)'} />
-                </View>
-              </Pressable>
-            )}
+            </Pressable>
             <Text className="text-[13px]" style={{ color: textColor(LIGHT_SETTINGS).tertiary }}>{profile?.email || '—'}</Text>
           </View>
         </View>
@@ -1210,6 +1170,17 @@ export default function AccountPage() {
         </Pressable>
       </InfoModal>
 
+      <EditNameSheet
+        open={editingName}
+        value={nameInput}
+        onChange={t => { setNameInput(t); setNameError(''); }}
+        onSave={saveName}
+        onClose={() => { if (!savingName) setEditingName(false); }}
+        saving={savingName}
+        error={nameError}
+        unchanged={nameInput.trim() === (profile?.name || '')}
+      />
+
       <InfoModal open={modal === 'feedback'} title={feedbackSent ? '✓ Message sent!' : 'Support'} onClose={closeFeedbackModal}>
         {!feedbackSent && (
           <>
@@ -1259,7 +1230,7 @@ export default function AccountPage() {
         <Card>
           <Row label="Privacy Policy" onPress={() => openLink('https://kushalbaragiokana.notion.site/Privacy-Policy-3c58f887c3c9806180c1ed51844d872e?source=copy_link')} />
           <Divider />
-          <Row label="Terms & Conditions" onPress={() => openLink('https://kushalbaragiokana.notion.site/Terms-and-Condition-3c58f887c3c9806d86eae7473775949c?source=copy_link')} />
+          <Row label="Terms & Conditions" onPress={() => openLink(TERMS_URL)} />
           <Divider />
           <Row label="Refunds & Cancellations" onPress={() => openLink('https://kushalbaragiokana.notion.site/Refund-Cancellation-Policy-3c58f887c3c980c48cb6ded1520897ed?source=copy_link')} />
         </Card>
