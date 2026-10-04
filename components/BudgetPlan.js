@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, Pressable, Keyboard, StyleSheet } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { INPUT_TEXT_STYLE } from './Glass';
@@ -109,6 +109,13 @@ function BudgetPlan({ plan, onAddPress, onEditItem, onItemChecked, onRequestChec
   const { items, total, updateItem, setChecked } = plan;
   const swipes = useSwipeGroup();
 
+  // Paid lines sink to the bottom, so the top of the list stays what's
+  // still owed — unpaid and paid each keep their own relative order.
+  const sortedItems = useMemo(
+    () => [...items].sort((a, b) => !!a.checkedAt - !!b.checkedAt),
+    [items]
+  );
+
   // Only tells the caller (for its toast) once the write actually went
   // through — a failed/offline toggle stays silent rather than confirming
   // something that didn't happen. The name goes with it so the toast can
@@ -163,7 +170,7 @@ function BudgetPlan({ plan, onAddPress, onEditItem, onItemChecked, onRequestChec
           <Text style={[ROW_PAD, { fontSize: 14, color: textColor(light).tertiary }]}>Nothing planned yet.</Text>
         ) : (
           <>
-            {items.map((item, i) => (
+            {sortedItems.map((item, i) => (
               <ItemRow
                 key={item.id}
                 item={item}
@@ -174,7 +181,7 @@ function BudgetPlan({ plan, onAddPress, onEditItem, onItemChecked, onRequestChec
                 registerSwipeable={swipes.registerSwipeable}
                 onSwipeOpen={swipes.onSwipeOpen}
                 light={light}
-                isLast={i === items.length - 1}
+                isLast={i === sortedItems.length - 1}
               />
             ))}
             <View

@@ -256,25 +256,24 @@ export function useBudgetPlan(onChecked) {
   const total = useMemo(() => items.reduce((sum, i) => sum + (i.checkedAt ? 0 : i.amount), 0), [items])
 
   // The list's own reset, now that nothing clears it automatically (see this
-  // hook's own top comment) — removes every line, checked or not, and takes
-  // each checked one's linked expense with it, the same reasoning as
-  // `deleteItem` above just for the whole list in one request rather than
-  // one delete per line.
+  // hook's own top comment) — removes every line, checked or not. Unlike
+  // `deleteItem` above, this deliberately does NOT take a checked line's own
+  // expense with it: that expense is already real money spent, sitting on
+  // Home in its own right, not a detail of the plan line any more — clearing
+  // the LIST is tidying up the plan, not undoing spending that already
+  // happened. An individual line's own delete (`deleteItem`) still takes its
+  // expense with it on purpose, since deleting ONE line is a deliberate "I
+  // didn't mean to log that" the user is taking on that specific line, not a
+  // side effect of clearing everything at once.
   const clearList = useCallback(async () => {
     if (!user) return { success: false, error: 'Not signed in' }
     if (!isOnlineRef.current) { notifyOffline(); return { success: false, offline: true } }
     const prevItems = itemsRef.current
     if (prevItems.length === 0) return { success: true }
-    const transactionIds = prevItems.filter(i => i.transactionId).map(i => i.transactionId)
     setItems([])
     try {
       const { error } = await supabase.from('budget_plan_items').delete().eq('user_id', user.id)
       if (error) { setItems(prevItems); reportError(error); return { success: false, error: error.message } }
-      if (transactionIds.length) {
-        const { error: txError } = await supabase.from('transactions').delete().eq('user_id', user.id).in('id', transactionIds)
-        if (txError) reportError(txError)
-        else onChecked?.()
-      }
       return { success: true }
     } catch (err) {
       setItems(prevItems)
@@ -282,7 +281,7 @@ export function useBudgetPlan(onChecked) {
       reportError(err)
       return { success: false, error: err.message || 'Something went wrong. Please try again.' }
     }
-  }, [user, isOnlineRef, notifyOffline, onChecked])
+  }, [user, isOnlineRef, notifyOffline])
 
   return useMemo(() => ({
     loading,
