@@ -16,6 +16,7 @@ import {
   getEarliestDate,
   firstBarWithData,
   currentMonthYear,
+  formatCurrency,
 } from '../utils/format';
 import { textColor } from '../utils/colors';
 import { CAPTION, TABULAR } from '../utils/type';
@@ -193,6 +194,20 @@ function PeriodCaption({ periodLabel, light }) {
   );
 }
 
+// One line under the headline amount — "avg daily spend – ₹450" and its
+// kind. Dimmer than the period caption above the amount (disabled, not
+// tertiary): this is a secondary reference figure, not something read on
+// every glance the way the period or the amount itself are. fontSize 12,
+// under CAPTION's 13, keeps it reading as the smallest thing on the card.
+function AverageCaption({ info, light }) {
+  if (!info) return null;
+  return (
+    <Text style={{ fontSize: 12, fontWeight: '400', marginTop: 4, color: textColor(light).disabled }}>
+      {info.label} – {formatCurrency(info.value)}
+    </Text>
+  );
+}
+
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard — see the matching comment in Header.js.
 function SummaryCard({
@@ -202,7 +217,6 @@ function SummaryCard({
   mode,
   selectedMonth,
   year,
-  selectedPeriod,
   selectedDay,
   light = false,
 }) {
@@ -235,22 +249,6 @@ function SummaryCard({
     return { income, expense, labels: MONTH_LABELS_SHORT };
   }, [transactions, timeRange, year, currYear, currMonth, lifetimeGranularity, earliestDateStr]);
 
-  // What each "All Time" bar actually represents, as real calendar periods —
-  // {year, month: null} per bar in yearly mode, {year, month} per bar in
-  // monthly mode — so a tap can filter/select by real date either way
-  // instead of needing two divergent code paths.
-  const periodsList = useMemo(() => {
-    if (timeRange !== '5y') return [];
-    if (lifetimeGranularity === 'year') {
-      return (chartData.years ?? chartData.labels.map(Number)).map(y => ({ year: y, month: null }));
-    }
-    return chartData.months ?? [];
-  }, [timeRange, lifetimeGranularity, chartData]);
-
-  const selectedPeriodIndex = useMemo(() => {
-    if (!selectedPeriod) return -1;
-    return periodsList.findIndex(p => p.year === selectedPeriod.year && p.month === selectedPeriod.month);
-  }, [periodsList, selectedPeriod]);
 
   // What the chart plots depends on ModeSwitch above: Expense/Income show
   // that one series' own magnitude (always >= 0, so BarChart's per-bar sign
@@ -302,6 +300,55 @@ function SummaryCard({
     return firstBarWithData({ timeRange, earliestDateStr, year, currYear, currMonth });
   }, [timeRange, earliestDateStr, year, currYear, currMonth, disabledAfterIndex]);
 
+  // The small "avg X spend/income – ₹Y" line under the headline amount —
+  // daily in Month, monthly in Year, yearly in All Time. Skipped in
+  // Overview: an average of income-minus-expense per period isn't a
+  // figure anyone reads at a glance the way "avg daily spend" is, and
+  // Overview already has no single series to average in the first place.
+  //
+  // Averaged over the same real (non-future, non-before-signup) range as
+  // disabledBeforeIndex/disabledAfterIndex above. All Time always
+  // averages true calendar years via a fresh getLifetimeYearly call, even
+  // when the chart itself is showing monthly bars (a young account, see
+  // lifetimeGranularity) — the bars being monthly there is a display
+  // choice for readability, not what "average yearly spending" should mean.
+  const averageInfo = useMemo(() => {
+    if (mode === 'overview') return null;
+    const noun = mode === 'income' ? 'income' : 'spend';
+
+    if (timeRange === 'month' || timeRange === 'year') {
+      const series = mode === 'income' ? chartData.income : chartData.expense;
+      const startIdx = disabledBeforeIndex ?? 0;
+      const endIdx = disabledAfterIndex ?? (series.length - 1);
+      if (endIdx < startIdx) return null;
+      const real = series.slice(startIdx, endIdx + 1);
+      // Same "nothing to average" guard as BarChart's own hidden average
+      // line: a single real period, or a period with nothing recorded in
+      // it at all, isn't a reference figure worth showing.
+      if (real.length < 2) return null;
+      const total = real.reduce((a, b) => a + b, 0);
+      if (total <= 0) return null;
+      return {
+        label: timeRange === 'month' ? `Avg daily ${noun}` : `Avg monthly ${noun}`,
+        value: total / real.length,
+      };
+    }
+
+    if (timeRange === '5y') {
+      const yearly = getLifetimeYearly(transactions, earliestDateStr);
+      const series = mode === 'income' ? yearly.income : yearly.expense;
+      const currIdx = yearly.years.indexOf(currYear);
+      const endIdx = currIdx === -1 ? series.length - 1 : currIdx;
+      const real = series.slice(0, endIdx + 1);
+      if (real.length < 2) return null;
+      const total = real.reduce((a, b) => a + b, 0);
+      if (total <= 0) return null;
+      return { label: `Avg yearly ${noun}`, value: total / real.length };
+    }
+
+    return null;
+  }, [mode, timeRange, chartData, disabledBeforeIndex, disabledAfterIndex, transactions, earliestDateStr, currYear]);
+
   // The income/expense split for whatever period is currently shown —
   // displayAmount below is just their difference.
   const overviewBreakdown = useMemo(() => {
@@ -314,14 +361,11 @@ function SummaryCard({
         expense: getMonthTotal(transactions, 'expense', selectedMonth, year),
       };
     }
-    if (timeRange === '5y' && selectedPeriodIndex >= 0) {
-      return { income: chartData.income[selectedPeriodIndex] ?? 0, expense: chartData.expense[selectedPeriodIndex] ?? 0 };
-    }
     return {
       income: chartData.income.reduce((a, b) => a + b, 0),
       expense: chartData.expense.reduce((a, b) => a + b, 0),
     };
-  }, [timeRange, chartData, transactions, selectedMonth, year, selectedPeriodIndex, selectedDay]);
+  }, [timeRange, chartData, transactions, selectedMonth, year, selectedDay]);
 
   const displayAmount = overviewBreakdown.income - overviewBreakdown.expense;
 
@@ -344,88 +388,106 @@ function SummaryCard({
       return selectedMonth != null ? MONTH_NAMES[selectedMonth] : String(year);
     }
     if (timeRange === '5y') {
-      if (selectedPeriod != null) {
-        return selectedPeriod.month != null
-          ? `${MONTH_NAMES[selectedPeriod.month]} ${selectedPeriod.year}`
-          : String(selectedPeriod.year);
-      }
       return earliestYear === currYear ? String(currYear) : `${earliestYear} – ${currYear}`;
     }
     return String(currYear);
-  }, [timeRange, selectedMonth, currYear, currMonth, selectedPeriod, earliestYear, selectedDay, year]);
+  }, [timeRange, selectedMonth, currYear, currMonth, earliestYear, selectedDay, year]);
 
 
   const animKey   = `${timeRange}-${year}-${mode}`;
 
-  // Only a genuine mode switch (or the very first paint) gets the full
-  // grow-from-zero reveal — a Month/Year/All swipe is frequent and minor
-  // (same chart type, just paging), and replaying a staggered regrow on
-  // every single swipe added real perceived lag to that; it now just snaps
-  // in under the same opacity dip-and-recover that already softens the
-  // swap (see chartOpacity below), which reads as instant rather than
-  // laggy. A mode switch is the bigger context change (Overview can even
-  // swap chart types entirely, bars to a line) and keeps the full reveal.
+  // Only a genuine mode switch gets the full grow-from-zero reveal — a
+  // Month/Year/All swipe is frequent and minor (same chart type, just
+  // paging), and replaying a staggered regrow on every single swipe added
+  // real perceived lag to that; it now just snaps in under the slide
+  // transition that already carries the swap (see chartTranslateX below),
+  // which reads as instant rather than laggy. A mode switch is the bigger
+  // context change (Overview can even swap chart types entirely, bars to a
+  // line) and keeps the full reveal.
+  //
+  // The very first paint DOES get the grow-from-zero reveal, same as a mode
+  // switch — this used to snap straight to full height instead, back when
+  // the whole home screen's fade-in waited on the network round trip (see
+  // Dashboard's entranceProgress/txInitialLoading); a staggered bar reveal
+  // underneath that slow fade read as the chart loading in a second,
+  // separate wave after the header. Now that the fade starts as soon as
+  // the (near-instant) cache is checked, the bars growing in happens as
+  // part of that same first paint instead of trailing it.
+  //
+  // "First paint" isn't just "first render", though: on a cold launch this
+  // component renders once with `transactions` still empty (before the
+  // cache/network fetch resolves), and every bar is a zero-height `Rect`
+  // placeholder, not a `Bar` (see BarChart's hasData check) — nothing to
+  // reveal yet. The *next* render, once real data lands, is what actually
+  // flips those placeholders into real `Bar`s for the first time — a
+  // different element type at the same Fragment key, so React mounts a
+  // genuinely fresh Bar instance right then. `hadDataRef` is what catches
+  // that moment specifically, in addition to a real mode switch — without
+  // it, `mode` hadn't changed between the empty and the loaded render, so
+  // the reveal looked already "used up" by the earlier, data-less paint,
+  // and this fresh Bar mounted straight at `instant=true`, silently
+  // skipping the grow-in on exactly the render that needed it.
   //
   // Writing to a ref during render like this — not in an effect — is what
   // lets `chartInstant` reflect *this* render's change rather than
   // lagging a render behind; see React's own "adjusting state as you
   // render" pattern for why that's safe here (no setState involved).
-  const isFirstRenderRef = useRef(true);
-  const prevModeForRevealRef = useRef(mode);
-  const growFromZero = isFirstRenderRef.current || prevModeForRevealRef.current !== mode;
-  isFirstRenderRef.current = false;
+  const prevModeForRevealRef = useRef(null);
+  const hadDataRef = useRef(false);
+  const hasAnyData = transactions.length > 0;
+  const growFromZero = prevModeForRevealRef.current !== mode || (hasAnyData && !hadDataRef.current);
   prevModeForRevealRef.current = mode;
+  if (hasAnyData) hadDataRef.current = true;
   const chartInstant = !growFromZero;
   const labelStep = timeRange === 'month' ? 4 : (timeRange === '5y' && lifetimeGranularity === 'month' ? 6 : 1);
 
+  // No per-bar selection in 5y — see the BarChart/LineChart call sites'
+  // own comment on why "All Time" isn't a drill-down at any range.
   const chartActiveIndex =
     timeRange === 'month' && selectedDay != null ? selectedDay - 1 :
     timeRange === 'year' ? (selectedMonth ?? -1) :
-    timeRange === '5y' ? selectedPeriodIndex :
     -1;
 
-  // Very small, deliberately — a dip-and-recover on the chart's own
-  // opacity when switching between the September/2026/All Time pills, or
-  // between Expense/Income/Overview. Never drops fully to 0 — that read as
-  // a bigger transition than this is meant to be; a shallow dip is enough
-  // to soften the swap without becoming its own moment. animKey (above)
-  // separately regrows every bar from 0 on the same change — this opacity
-  // dip and that regrow are what together read as "seamless" rather than
-  // the bars just snapping to their new heights and colour.
-  // A mode switch still dips-then-recovers around the commit (see the
-  // effect below) — fine there, since growFromZero's own stagger already
-  // gives that transition its own visual continuity. A range swipe used to
-  // do the same, but with `chartInstant` bars now snapping straight to
-  // their final values, dipping AFTER the commit meant the new (already
-  // finished) chart flashed at full opacity for a frame before the dim
-  // even started — the "hard cut" this was meant to hide instead happened
-  // in plain view just ahead of it. Fixed by reordering, for a swipe only:
-  // dim first, swap the data once mostly hidden, reveal after — the
-  // classic dissolve-hides-the-cut trick, not a fade layered on top of an
-  // already-visible cut.
+  // A directional slide on just the chart itself (not the headline amount,
+  // period caption or the page dots below — those live outside this
+  // Animated.View, see the JSX below) when swiping between the Month/Year/
+  // All Time pills, or between Expense/Income/Overview: the chart slides
+  // fully off screen in the swipe direction; once it's off, the data swaps
+  // (chartInstant snaps every bar straight to its new height — no
+  // stagger); the chart then slides in from the opposite side. No fade —
+  // tried a plain opacity dip (read as a light switching on/off) and a
+  // dissolve+scale (softer, but ended up not liked either) before settling
+  // back on this.
   //
-  // 0.06 (near-black) fixed the cut but read as the screen going blank for
-  // a beat — correct sequencing doesn't need the dip that deep to hide a
-  // reshuffle, just deep enough that it's not the eye's focus; 0.35 still
-  // masks it while staying a soft dim rather than a blackout, and the
-  // longer, gentler reveal after is what makes it read as settling into
-  // place rather than snapping back.
-  const DIP_OPACITY = 0.35;
-  const DIP_OUT_MS = 120;
-  const DIP_IN_MS = 380;
+  // pendingSlideDirRef carries the swipe's direction from the gesture
+  // handler (UI thread) to changeRangeBy (JS thread, via runOnJS) to this
+  // effect (fires after the next commit) — a plain ref write on the JS
+  // side of runOnJS, not a worklet mutation, so it's safely visible by
+  // the time this effect reads it. 0 means "not a swipe" (a mode switch,
+  // which has no gesture direction to key off) — that path plays no slide
+  // of its own; growFromZero's own stagger already gives a mode switch
+  // its own visual continuity.
+  const SLIDE_DISTANCE = 36;
+  const SLIDE_OUT_MS = 160;
+  const SLIDE_IN_MS = 320;
 
   const prevSwapKeyRef = useRef(animKey);
-  const chartOpacity = useSharedValue(1);
+  const pendingSlideDirRef = useRef(0);
+  const chartTranslateX = useSharedValue(0);
   useEffect(() => {
     if (prevSwapKeyRef.current === animKey) return;
     prevSwapKeyRef.current = animKey;
-    // Recovery only — a range swipe already dimmed itself before this
-    // commit (see chartSwipe below) and just needs revealing; a mode
-    // switch never dimmed in the first place, so animating to 1 from
-    // wherever it already sits (1) is a harmless no-op there.
-    chartOpacity.value = withTiming(1, { duration: DIP_IN_MS, easing: Easing.out(Easing.cubic) });
-  }, [animKey, chartOpacity]);
-  const chartAnimStyle = useAnimatedStyle(() => ({ opacity: chartOpacity.value }));
+    const dir = pendingSlideDirRef.current;
+    pendingSlideDirRef.current = 0;
+    if (dir === 0) return;
+    // Park the new (already-swapped-in) block on the far side, in the
+    // same direction the old one just exited, then release it.
+    chartTranslateX.value = dir * SLIDE_DISTANCE;
+    chartTranslateX.value = withTiming(0, { duration: SLIDE_IN_MS, easing: SETTLE_EASING });
+  }, [animKey, chartTranslateX]);
+  const chartAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: chartTranslateX.value }],
+  }));
 
   // Swipe the chart itself to change Month/Year/All — this is what actually
   // replaced the pill row (SHOW_RANGE_SELECTOR above): the three states
@@ -456,7 +518,14 @@ function SummaryCard({
 
   const changeRangeBy = useCallback((delta) => {
     const next = resolveNextRange(delta);
-    if (next) onTimeRangeChange(next);
+    if (next) {
+      // Runs on the JS thread (changeRangeBy is only ever invoked via
+      // runOnJS from the gesture worklet below) — a plain ref write here
+      // is safely visible to the slide-in effect above once this commit
+      // lands, unlike mutating a ref from inside the worklet itself.
+      pendingSlideDirRef.current = delta;
+      onTimeRangeChange(next);
+    }
   }, [resolveNextRange, onTimeRangeChange]);
 
   // Which edge chevrons show, in lockstep with what a swipe can actually
@@ -486,21 +555,24 @@ function SummaryCard({
       // Same reachability check as resolveNextRange above, inlined rather
       // than called — this handler runs as a worklet on the UI thread, and
       // calling back into a plain JS closure from there needs runOnJS,
-      // which can't hand back a return value to decide whether to dim.
+      // which can't hand back a return value to decide whether to slide.
       // Checking first (instead of letting changeRangeBy silently bail
-      // after the dip had already started) is what actually matters here:
-      // a blocked swipe used to dim the chart and then never recover,
-      // since nothing changed to trigger the recovery effect.
+      // after the slide-out had already started) is what actually matters
+      // here: a blocked swipe used to dim the chart and then never
+      // recover, since nothing changed to trigger the recovery effect —
+      // same failure mode would apply to a slide left stranded off-screen.
       const idx = RANGE_OPTIONS.findIndex(o => o.id === timeRange);
       let nextIdx = idx + delta;
       if (RANGE_OPTIONS[nextIdx] && RANGE_OPTIONS[nextIdx].id === 'month' && mode !== 'expense') nextIdx += delta;
       if (nextIdx < 0 || nextIdx >= RANGE_OPTIONS.length) return;
-      // Dims first, and only calls into JS (which is what actually swaps
-      // the data) once that dim has finished — see the comment above.
-      chartOpacity.value = withTiming(DIP_OPACITY, { duration: DIP_OUT_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
+      // Slides out first, and only calls into JS (which is what actually
+      // swaps the data) once that's finished — see the comment above.
+      // delta=1 is a forward swipe (finger moving left), so the block
+      // exits to the left (-SLIDE_DISTANCE); delta=-1 exits right.
+      chartTranslateX.value = withTiming(-delta * SLIDE_DISTANCE, { duration: SLIDE_OUT_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
         if (finished) runOnJS(changeRangeBy)(delta);
       });
-    }), [changeRangeBy, chartOpacity, timeRange, mode]);
+    }), [changeRangeBy, chartTranslateX, timeRange, mode]);
 
   return (
     // mx-5 (20), not mx-4 (16) — matches the Header's own px-5 and the
@@ -510,7 +582,6 @@ function SummaryCard({
     // card's month/range vs. that period's actual transactions), and wants
     // the larger between-groups gap rather than the tighter within-card one.
     <View className="mx-5 mb-1 pt-5 pb-8">
-      <Animated.View style={chartAnimStyle}>
         <View className="items-center justify-center mb-7">
           {/* Above the figure now, not below it — the period reads as a
               heading for the number underneath rather than a caption
@@ -518,6 +589,12 @@ function SummaryCard({
           <PeriodCaption periodLabel={periodLabel} light={light} />
 
           <AnimatedAmount value={Math.abs(headlineValue)} color={headlineColor} />
+
+          {/* Outside the chart's own sliding Animated.View (see
+              chartAnimStyle below) — this is anchored to the amount, not
+              the chart, so a Month/Year/All swipe doesn't drag it along;
+              it just updates in place, same as AnimatedAmount above it. */}
+          <AverageCaption info={averageInfo} light={light} />
         </View>
 
         {/* Hidden, not removed — Month/Year/All is off for now, so the chart
@@ -534,7 +611,7 @@ function SummaryCard({
             across the amount block above too. */}
         <View style={{ position: 'relative' }}>
           <GestureDetector gesture={chartSwipe}>
-            <View className="mt-4">
+            <Animated.View className="mt-4" style={chartAnimStyle}>
               {mode === 'overview' ? (
                 // Overview means "both together" — this is the same
                 // income/expense pair barValues derives its net from, just
@@ -594,12 +671,11 @@ function SummaryCard({
                   // nothing that day" — Income's 0 isn't a "no spend" day,
                   // and Year/All's bars are monthly totals, not single days.
                   noSpendDots={mode === 'expense' && timeRange === 'month'}
-                  showAverage={false}
                   instant={chartInstant}
                   light={light}
                 />
               )}
-            </View>
+            </Animated.View>
           </GestureDetector>
 
           {/* Pure hint, not a second tap target — pointerEvents="none" so
@@ -642,7 +718,6 @@ function SummaryCard({
             />
           ))}
         </View>
-      </Animated.View>
     </View>
   );
 }

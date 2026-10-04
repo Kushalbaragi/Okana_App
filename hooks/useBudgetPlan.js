@@ -46,8 +46,16 @@ async function loadCache(userId) {
 // turns into a real expense (see setChecked below), dated the day it was
 // checked, not backdated to whenever it was planned.
 //
-// Scoped to the current calendar month only, unlike useSavings — there is no
-// list of past plans to browse. Same online-only write model as useSavings.
+// NOT scoped to the current calendar month, despite `month_start` existing
+// on every row (kept only because the column is `not null` — each item is
+// still tagged with whichever month it was first added in, for whatever
+// that's worth later, but nothing here reads it back). This used to filter
+// by the current month, which silently emptied the whole list the moment a
+// month turned over — a line you'd planned and hadn't gotten to yet just
+// vanished, with no warning and nothing to undo. The list is a standing
+// note now: it carries forward across months on its own, and only actually
+// empties when `clearList` is called (see its own comment below) — a
+// person's own choice, not the calendar's.
 export function useBudgetPlan(onChecked) {
   const { user } = useAuth()
   const { isOnlineRef, notifyOffline } = useNetwork()
@@ -61,15 +69,15 @@ export function useBudgetPlan(onChecked) {
 
   const hydratedRef = useRef(false)
   useEffect(() => {
-    if (user && hydratedRef.current) saveCache(user.id, { monthStart, items })
-  }, [items, user, monthStart])
+    if (user && hydratedRef.current) saveCache(user.id, { items })
+  }, [items, user])
 
   const refresh = useCallback(async () => {
     if (!user) { setItems([]); setLoading(false); return }
     try {
       if (!isOnlineRef.current) return
       const { data, error } = await supabase
-        .from('budget_plan_items').select('*').eq('user_id', user.id).eq('month_start', monthStart)
+        .from('budget_plan_items').select('*').eq('user_id', user.id)
         .order('sort_order', { ascending: true })
       if (error) throw error
       hydratedRef.current = true
@@ -79,19 +87,19 @@ export function useBudgetPlan(onChecked) {
     } finally {
       setLoading(false)
     }
-  }, [user, monthStart, isOnlineRef])
+  }, [user, isOnlineRef])
 
   useEffect(() => {
     if (!user) { hydratedRef.current = false; setItems([]); setLoading(false); return }
     let cancelled = false
     loadCache(user.id).then(cached => {
-      if (cancelled || !cached || cached.monthStart !== monthStart) return
+      if (cancelled || !cached) return
       hydratedRef.current = true
       setItems(cached.items)
     })
     refresh()
     return () => { cancelled = true }
-  }, [user, monthStart, refresh])
+  }, [user, refresh])
 
   const addItem = useCallback(async ({ name = '', amount = 0 }) => {
     if (!user) return { success: false, error: 'Not signed in' }
@@ -159,17 +167,37 @@ export function useBudgetPlan(onChecked) {
     }
   }, [user, isOnlineRef, notifyOffline, onChecked])
 
-  // Checking a line off is the point of the whole thing: it's done, so it
-  // becomes a real expense on today's date — not backdated to whenever the
-  // line was planned. Unchecking removes that expense again, the same way an
-  // undo would. `onChecked` lets the caller's own transaction list (Home's
-  // useTransactions, which has no way to know about either write on its own)
-  // refresh once it's done.
-  const setChecked = useCallback(async (id, checked) => {
+  // Checking a line off is the point of the whole thing: it's done. Whether
+  // that also becomes a real expense on today's date (not backdated to
+  // whenever the line was planned) is now the caller's own choice — see
+  // BudgetPlan's confirm prompt — so `addTransaction` (true by default,
+  // every existing caller) can be turned off to just mark the line paid
+  // with no transaction of its own. Unchecking removes that expense again if
+  // there was one, the same way an undo would. `onChecked` lets the caller's
+  // own transaction list (Home's useTransactions, which has no way to know
+  // about either write on its own) refresh once it's done.
+  const setChecked = useCallback(async (id, checked, { addTransaction = true } = {}) => {
     if (!user) return { success: false, error: 'Not signed in' }
     if (!isOnlineRef.current) { notifyOffline(); return { success: false, offline: true } }
     const prev = itemsRef.current.find(i => i.id === id)
     if (!prev) return { success: false, error: 'Something went wrong. Please try again.' }
+
+    if (checked && !addTransaction) {
+      if (!(prev.amount > 0)) return { success: false, error: 'Add an amount before checking this off.' }
+      const checkedAt = new Date().toISOString()
+      setItems(s => s.map(i => i.id === id ? { ...i, checkedAt, transactionId: null } : i))
+      try {
+        const { error } = await supabase.from('budget_plan_items')
+          .update({ checked_at: checkedAt, transaction_id: null }).eq('id', id).eq('user_id', user.id)
+        if (error) { setItems(s => s.map(i => i.id === id ? prev : i)); reportError(error); return { success: false, error: error.message } }
+        return { success: true }
+      } catch (err) {
+        setItems(s => s.map(i => i.id === id ? prev : i))
+        if (isConnectivityError(err, isOnlineRef.current)) { notifyOffline(); return { success: false, offline: true } }
+        reportError(err)
+        return { success: false, error: err.message || 'Something went wrong. Please try again.' }
+      }
+    }
 
     if (checked) {
       if (!(prev.amount > 0)) return { success: false, error: 'Add an amount before checking this off.' }
@@ -220,7 +248,40 @@ export function useBudgetPlan(onChecked) {
     }
   }, [user, isOnlineRef, notifyOffline, onChecked])
 
-  const total = useMemo(() => items.reduce((sum, i) => sum + i.amount, 0), [items])
+  // Checked items are done — money already accounted for as a real expense
+  // (or marked paid with no expense of its own, see `setChecked` above
+  // either way). Counting them here too would double them up against
+  // whichever of those already happened, so the total is what's still
+  // ahead of you, not everything you ever planned.
+  const total = useMemo(() => items.reduce((sum, i) => sum + (i.checkedAt ? 0 : i.amount), 0), [items])
+
+  // The list's own reset, now that nothing clears it automatically (see this
+  // hook's own top comment) — removes every line, checked or not. Unlike
+  // `deleteItem` above, this deliberately does NOT take a checked line's own
+  // expense with it: that expense is already real money spent, sitting on
+  // Home in its own right, not a detail of the plan line any more — clearing
+  // the LIST is tidying up the plan, not undoing spending that already
+  // happened. An individual line's own delete (`deleteItem`) still takes its
+  // expense with it on purpose, since deleting ONE line is a deliberate "I
+  // didn't mean to log that" the user is taking on that specific line, not a
+  // side effect of clearing everything at once.
+  const clearList = useCallback(async () => {
+    if (!user) return { success: false, error: 'Not signed in' }
+    if (!isOnlineRef.current) { notifyOffline(); return { success: false, offline: true } }
+    const prevItems = itemsRef.current
+    if (prevItems.length === 0) return { success: true }
+    setItems([])
+    try {
+      const { error } = await supabase.from('budget_plan_items').delete().eq('user_id', user.id)
+      if (error) { setItems(prevItems); reportError(error); return { success: false, error: error.message } }
+      return { success: true }
+    } catch (err) {
+      setItems(prevItems)
+      if (isConnectivityError(err, isOnlineRef.current)) { notifyOffline(); return { success: false, offline: true } }
+      reportError(err)
+      return { success: false, error: err.message || 'Something went wrong. Please try again.' }
+    }
+  }, [user, isOnlineRef, notifyOffline])
 
   return useMemo(() => ({
     loading,
@@ -230,6 +291,7 @@ export function useBudgetPlan(onChecked) {
     updateItem,
     deleteItem,
     setChecked,
+    clearList,
     refresh,
-  }), [loading, items, total, addItem, updateItem, deleteItem, setChecked, refresh])
+  }), [loading, items, total, addItem, updateItem, deleteItem, setChecked, clearList, refresh])
 }

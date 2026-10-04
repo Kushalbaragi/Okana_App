@@ -45,7 +45,7 @@ import { GUTTER } from '../../utils/spacing';
 // false to fully revert. Mirrors the same LIGHT_HOME flag in app/(app)/index.js.
 const LIGHT_SETTINGS = false;
 const SETTINGS_BG = LIGHT_SETTINGS ? '#FAFAF8' : '#000000';
-// Same lighter-scrim value AddModal/SpendCalendarModal already use behind a
+// Same lighter-scrim value AddModal/WalletPage already use behind a
 // light-mode sheet, so a modal here doesn't dim the light page to solid black.
 // Only the light-theme experiment asks for a plain tint; otherwise popups get the
 // blurred backdrop (see AnimatedModal).
@@ -1216,7 +1216,7 @@ export default function AccountPage() {
       </ScrollView>
 
       {/* Fixed — not inside the ScrollView, so it never scrolls away from
-          the avatar it's measuring, same as SpendCalendarModal's tour hints. */}
+          the avatar it's measuring, same as WalletPage's tour hints. */}
       <TourHint
         visible={avatarTourActive}
         targetRef={avatarRef}

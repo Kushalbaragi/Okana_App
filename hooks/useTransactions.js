@@ -103,6 +103,18 @@ export function useTransactions() {
   // initial array, permanently stamping their once-a-day flag before real
   // data arrived. Fine for rendering: nothing here gates a spinner on this.
   const [loading, setLoading] = useState(true)
+  // Separate from `loading` on purpose: `loading` only clears once the
+  // *network* round trip finishes, because the recap/budget-popup effects
+  // above need the server's real data before making a once-a-day decision.
+  // But the on-open entrance fade (Dashboard) was gating on that same flag,
+  // which meant the whole screen — including the chart's own growing-reveal
+  // animation, which plays on mount regardless of visibility — stayed
+  // invisible for the entire network fetch and only faded in once the chart
+  // had already finished drawing itself off-screen. `initialLoading` clears
+  // as soon as the (near-instant) AsyncStorage cache check resolves, so the
+  // entrance — and with it the chart's reveal — starts right away instead of
+  // waiting on the network.
+  const [initialLoading, setInitialLoading] = useState(true)
 
   // Read inside `refresh` without making it depend on `transactions` (which
   // would break its referential stability for memo'd consumers like
@@ -155,12 +167,15 @@ export function useTransactions() {
   }, [user])
 
   useEffect(() => {
-    if (!user) { setTransactions([]); return }
+    if (!user) { setTransactions([]); setInitialLoading(false); return }
 
     let cancelled = false
+    setInitialLoading(true)
     // Show cached data as soon as it loads, while the network fetch runs
     loadCache(user.id).then(cached => {
-      if (cached && !cancelled) setTransactions(cached)
+      if (cancelled) return
+      if (cached) setTransactions(cached)
+      setInitialLoading(false)
     })
 
     refresh()
@@ -401,5 +416,5 @@ export function useTransactions() {
     return { success: true, imported }
   }, [user, refresh])
 
-  return { transactions, loading, addTransaction, editTransaction, deleteTransaction, importTransactions, refresh }
+  return { transactions, loading, initialLoading, addTransaction, editTransaction, deleteTransaction, importTransactions, refresh }
 }

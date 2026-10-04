@@ -1,76 +1,66 @@
 import { memo } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { formatCurrency, currentMonthYear } from '../utils/format';
-import { textColor as textColorTone, EXPENSE } from '../utils/colors';
-import { Card, ProgressBar } from './savingsShared';
+import { textColor as textColorTone, EXPENSE, EXPENSE_HEX } from '../utils/colors';
+import { Card, ProgressBar, dim } from './savingsShared';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
+import { TABULAR } from '../utils/type';
 
-// `light` is a one-off experimental prop for trying a light theme on just
-// the Dashboard (and the flows it opens) — see the matching comment in
-// Header.js.
-//
-// Simple on purpose: a title, a gray card, the headline amount, a plain bar
-// (the same one Savings/Debt use), and the two numbers underneath — the
-// custom 63-segment candlestick bar this used to draw itself is gone, along
-// with the border-bottom-divider dance that only existed to separate it from
-// whatever sat below; the card's own edge does that now.
+// Same shape as a Savings/Debt goal card (see GoalCard.js): a name/status
+// row, the headline amount below it with its "of X" suffix folded into the
+// same line, then a thin bar. Red only once actually over — the line's own
+// colour is what says "over", no word spells it out.
 function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, light = false }) {
-  const textColor = light ? '#111111' : '#ffffff';
-  const dimColor = light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
   const dimmerColor = textColorTone(light).tertiary;
-  const cappedPercent = hasBudget ? Math.min(percent, 100) : 0;
-  const { month } = currentMonthYear();
+  const primaryColor = textColorTone(light).primary;
+  const { month: currMonth } = currentMonthYear();
+  const monthLabel = `${MONTH_NAMES[currMonth]} budget`;
 
   if (loading) return null;
 
-  const title = (
-    <Text style={{ fontSize: 15, fontWeight: '500', letterSpacing: -0.2, marginBottom: 14, color: dimmerColor }}>
-      {MONTH_NAMES[month]} Budget
-    </Text>
-  );
-
   if (!hasBudget) {
     return (
-      <View>
-        {title}
-        <Card light={light}>
-          <Pressable onPress={onSetup} className="flex-row items-center justify-between" style={{ padding: 16 }}>
-            <Text className="text-sm font-semibold" style={{ color: textColor }}>Budget</Text>
-            <Text className="text-sm" style={{ color: dimmerColor }}>Set a budget ›</Text>
-          </Pressable>
-        </Card>
-      </View>
+      <Card light={light}>
+        <Pressable onPress={onSetup} className="flex-row items-center justify-between" style={{ padding: 20 }}>
+          <Text style={{ fontSize: 15, fontWeight: '400', color: dimmerColor }}>{monthLabel}</Text>
+          <Text style={{ fontSize: 15, color: dimmerColor }}>Set a budget ›</Text>
+        </Pressable>
+      </Card>
     );
   }
 
-  const remaining = amount - spent;
-  const isOver = remaining < 0;
-  const heroAmount = formatCurrency(Math.abs(remaining));
-  const heroSuffix = isOver ? 'over' : 'left';
-  const usedLabel = isOver ? `${Math.round(percent - 100)}% over budget` : `${Math.round(percent)}% used`;
-  const totalLabel = `${formatCurrency(amount)} total`;
+  const isOver = spent > amount;
+  const cappedPercent = Math.min(percent, 100);
 
   return (
-    <View>
-      {title}
-      <Card light={light}>
-        <View style={{ padding: 16 }}>
-          <View className="flex-row items-baseline justify-center mb-4" style={{ gap: 6 }}>
-            <Text style={{ color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.80)', fontSize: 32, fontWeight: '600', letterSpacing: -0.5 }}>{heroAmount}</Text>
-            <Text style={{ color: dimColor, fontSize: 15 }}>{heroSuffix}</Text>
-          </View>
-
-          {/* Red once spend crosses the budget — the same "money leaving" red
-              used everywhere else, not a new warning colour of its own. */}
-          <ProgressBar percent={cappedPercent} height={8} light={light} color={isOver ? EXPENSE : undefined} />
-
-          <View className="flex-row items-center justify-between mt-2.5">
-            <Text className="text-xs" style={{ color: dimmerColor }}>{usedLabel}</Text>
-            <Text className="text-xs" style={{ color: dimmerColor }}>{totalLabel}</Text>
-          </View>
+    <Card light={light}>
+      <View style={{ padding: 20 }}>
+        <View className="flex-row items-baseline justify-between">
+          <Text style={{ fontSize: 15, fontWeight: '400', color: dimmerColor }}>{monthLabel}</Text>
+          {/* Solid hex here, not the alpha EXPENSE the bar fill uses below —
+              blended over this row's plain card background at 0.92 alpha it
+              read as a visibly duller red than the same value filling the
+              bar (which sits over the lighter track). The opaque hex reads
+              as the one consistent red regardless of what's under it. */}
+          <Text style={{ fontSize: 15, fontWeight: '400', color: isOver ? EXPENSE_HEX : dimmerColor }}>{Math.round(percent)}%</Text>
         </View>
-      </Card>
-    </View>
+
+        <Text style={{ fontSize: 24, fontWeight: '600', marginTop: 10, color: primaryColor, ...TABULAR }}>
+          {formatCurrency(spent)}
+          <Text style={{ fontSize: 15, fontWeight: '400', color: dimmerColor }}> of {formatCurrency(amount)}</Text>
+        </Text>
+
+        <View style={{ marginTop: 14 }}>
+          <ProgressBar
+            percent={cappedPercent}
+            height={5}
+            light={light}
+            color={isOver ? EXPENSE : '#4ade80'}
+            trackColor={isOver ? 'rgba(255,75,75,0.15)' : dim(light, 0.1)}
+          />
+        </View>
+      </View>
+    </Card>
   );
 }
 

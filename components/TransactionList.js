@@ -1,9 +1,6 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { View, Text, FlatList, Pressable, InteractionManager, StyleSheet } from 'react-native';
 import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withDelay,
   withTiming,
 } from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
@@ -21,6 +18,18 @@ import { ChevronRight } from './icons';
 // than AmountField's narrow digit sliding, which uses SPRING_QUICK).
 const ROW_LAYOUT_TRANSITION = layoutTransition(SPRING_SMOOTH);
 
+// MonthHeader's label column — every label is the same "MMM-YYYY" shape
+// (see flatData below), but the font is proportional, so "SEP-2026" and
+// "AUG-2026" aren't the same pixel width. Left unconstrained, the dash
+// after it lands at a different x on every row depending on which month's
+// letters happen to be drawn, so a stack of collapsed months reads as a
+// ragged column instead of one straight line of dashes. A fixed-width box
+// around just the label pins the dash to the same x on every row
+// regardless of which month it is. 100, not a tighter guess — a tighter
+// width clipped the widest real labels ("MAR-2026", "MAY-2026", ...) at
+// MonthHeader's fontSize; this is comfortably past even the widest one.
+const MONTH_LABEL_WIDTH = 100;
+
 // Plays once, only for the row TransactionList is told just got added (see
 // justAddedId) — a plain fade + small rise, no stagger, since there's only
 // ever one of these at a time.
@@ -35,37 +44,8 @@ function rowEntering() {
   };
 }
 
-// Per-row stagger on the very first paint, capped so a long history doesn't
-// take forever to finish revealing — rows past the cap all settle together
-// at the tail instead of queuing further out.
-const REVEAL_STAGGER_MS = 40;
-const REVEAL_STAGGER_CAP_MS = 420;
-// Only the top rows that are plausibly visible without scrolling get the
-// animated wrapper at all.
-const REVEAL_ANIMATE_MAX = 6;
-
 // How long the tour's demo swipe holds the delete button in view before closing.
 const DEMO_SWIPE_HOLD_MS = 1300;
-
-// Slides up + fades in on mount. Only ever plays for the list's very first
-// paint (see `revealing` below) — later adds/edits/deletes don't replay it,
-// since re-animating every row on every change would be real per-row
-// Reanimated setup cost for no visible benefit past the first paint.
-function RevealRow({ index, children }) {
-  const progress = useSharedValue(0);
-
-  useEffect(() => {
-    progress.value = withDelay(Math.min(index * REVEAL_STAGGER_MS, REVEAL_STAGGER_CAP_MS), withTiming(1, { duration: 300, easing: SETTLE_EASING }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const style = useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [{ translateY: (1 - progress.value) * 14 }],
-  }));
-
-  return <Animated.View style={style}>{children}</Animated.View>;
-}
 
 // One running ledger — every month that has anything in it, newest first,
 // each with a total; every transaction under its own month, newest first.
@@ -119,12 +99,26 @@ function MonthHeader({ label, amount, light, isOpen, onPress }) {
               bolted onto the same list. Label/total stay bright, dash dim —
               same hierarchy as before, just without the box around it. */}
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={[BODY, { color: textColor(light).primary }]}>{label}</Text>
+            {/* Fixed width, not flex/auto — see MONTH_LABEL_WIDTH's own
+                comment above: this is what keeps the dash below at the
+                same x on every collapsed month row regardless of which
+                month's label (a different pixel width each time, in this
+                proportional font) is actually drawn inside it. */}
+            <View style={{ width: MONTH_LABEL_WIDTH }}>
+              <Text numberOfLines={1} style={[BODY, { color: textColor(light).primary }]}>{label}</Text>
+            </View>
             {amount != null && (
-              <>
-                <Text style={[BODY, { color: textColor(light).disabled, marginHorizontal: 12 }]}>—</Text>
-                <Text style={[BODY, TABULAR, { color: textColor(light).primary }]}>{formatCurrency(amount)}</Text>
-              </>
+              // One Text with nested spans, not two sibling Text boxes —
+              // siblings each get their own layout box, and the dash's
+              // glyph sits at a different optical height within its box
+              // than the amount does within its own, so the row read as
+              // misaligned even though both boxes shared the same
+              // line-height. Nesting spans inside a single Text lays them
+              // out on one shared baseline instead.
+              <Text style={[BODY, { color: textColor(light).disabled }]}>
+                {'—   '}
+                <Text style={[{ color: textColor(light).primary }, TABULAR]}>{formatCurrency(amount)}</Text>
+              </Text>
             )}
           </View>
 
@@ -151,9 +145,6 @@ function TransactionList({
   // rowEntering (fade + rise) and everything below it pushes down via
   // ROW_LAYOUT_TRANSITION.
   justAddedId,
-  // Handed the element the rows sit inside, for a caller that wants to
-  // point at it (the tour outlines it).
-  cardRef,
   // Same Expense/Income/Overview value the Home chart's slider is on —
   // decides which figure (if any) each month's header shows, see
   // MonthHeader's own comment.
@@ -269,12 +260,8 @@ function TransactionList({
   // did, is what made scrolling janky. FlatList only ever mounts what's on
   // screen plus a small buffer.
   //
-  // `revealIndex` only counts transaction rows (not headers), since
-  // REVEAL_ANIMATE_MAX is about how many rows are plausibly visible on the
-  // first paint, not position within the flattened array.
   const flatData = useMemo(() => {
     const out = [];
-    let revealIndex = 0;
     for (const g of groups) {
       const isCurrent = g.key === currentMonthKey;
       const isOpen = isCurrent || g.key === expandedKey;
@@ -299,25 +286,12 @@ function TransactionList({
       }
       if (isOpen) {
         for (const { tx } of g.items) {
-          out.push({ type: 'tx', key: tx.id, tx, revealIndex: revealIndex++ });
+          out.push({ type: 'tx', key: tx.id, tx });
         }
       }
     }
     return out;
   }, [groups, currentMonthKey, expandedKey, mode]);
-
-  // True only while the list's very first paint is still revealing. This is
-  // state rather than a ref-flipped-on-mount deliberately: `settled` below
-  // forces a re-render a frame or two after that first paint, and a ref
-  // that had already flipped would drop RevealRow's wrapper mid-animation,
-  // popping the rows into place. Held for the reveal's full duration
-  // instead, then flipped once — after which nothing mounts a RevealRow
-  // again, even as more transactions are added later.
-  const [revealing, setRevealing] = useState(true);
-  useEffect(() => {
-    const t = setTimeout(() => setRevealing(false), REVEAL_STAGGER_CAP_MS + 300);
-    return () => clearTimeout(t);
-  }, []);
 
   // False for the first commit only, true once it has settled. Gates the
   // two per-row costs that profiling showed dominate a first paint —
@@ -335,30 +309,26 @@ function TransactionList({
   // Hoisted rather than inlined at the call site so memo(TransactionItem)
   // keeps getting stable props and can actually bail out of re-rendering
   // rows that haven't changed.
-  const renderTransaction = useCallback((item, revealIndex) => {
-    const card = (
-      <Animated.View
-        layout={settled ? ROW_LAYOUT_TRANSITION : undefined}
-        entering={item.id === justAddedId ? rowEntering : undefined}
-        style={{ backgroundColor: cardColor }}
-      >
-        <TransactionItem
-          tx={item}
-          isIncome={item.type === 'income'}
-          onEdit={onEdit}
-          onDelete={onDelete}
-          registerSwipeable={registerSwipeable}
-          onSwipeOpen={onSwipeOpen}
-          onCardPress={onCardPress}
-          light={light}
-          cardColor={cardColor}
-          swipeable={settled}
-        />
-      </Animated.View>
-    );
-    const shouldAnimate = revealing && revealIndex < REVEAL_ANIMATE_MAX;
-    return shouldAnimate ? <RevealRow index={revealIndex}>{card}</RevealRow> : card;
-  }, [settled, revealing, justAddedId, cardColor, onEdit, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light]);
+  const renderTransaction = useCallback((item) => (
+    <Animated.View
+      layout={settled ? ROW_LAYOUT_TRANSITION : undefined}
+      entering={item.id === justAddedId ? rowEntering : undefined}
+      style={{ backgroundColor: cardColor }}
+    >
+      <TransactionItem
+        tx={item}
+        isIncome={item.type === 'income'}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        registerSwipeable={registerSwipeable}
+        onSwipeOpen={onSwipeOpen}
+        onCardPress={onCardPress}
+        light={light}
+        cardColor={cardColor}
+        swipeable={settled}
+      />
+    </Animated.View>
+  ), [settled, justAddedId, cardColor, onEdit, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light]);
 
   const renderItem = useCallback(({ item }) => (
     item.type === 'header'
@@ -371,7 +341,7 @@ function TransactionList({
           onPress={() => toggleMonth(item.groupKey)}
         />
       )
-      : renderTransaction(item.tx, item.revealIndex)
+      : renderTransaction(item.tx)
   ), [renderTransaction, light, toggleMonth]);
 
   const empty = (
@@ -385,10 +355,7 @@ function TransactionList({
 
   return (
     <Pressable onPress={closeOpenRow} style={{ flex: 1 }}>
-      {/* ref sits on this wrapper, not the FlatList itself — FlatList's own
-          ref isn't a plain measurable host view, and the tour only needs
-          something spanning the same area to outline. */}
-      <View ref={cardRef} style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
         <FlatList
           data={flatData}
           keyExtractor={item => item.key}

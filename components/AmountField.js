@@ -19,22 +19,38 @@ import { TABULAR } from '../utils/type';
 // velocity it was already moving at. A spring naturally continues from
 // wherever it currently is with matching momentum instead of resetting,
 // which is what actually reads as one continuous slide rather than a
-// series of small shifts. Same physics already proven smooth elsewhere in
-// this app for an identical "sliding pill" motion — Header's chart-tab
-// toggle. SPRING_QUICK — the same preset SegmentedSwitch's pill uses.
-export const AMOUNT_LAYOUT_TRANSITION = layoutTransition(SPRING_QUICK);
+// series of small shifts.
+//
+// A dedicated spring, not the shared SPRING_QUICK preset (used elsewhere
+// for an identical "sliding pill" motion — Header's chart-tab toggle) —
+// SPRING_QUICK's own settle time ran measurably longer than this row's
+// digit fades (ENTER_DURATION/EXIT_DURATION below), so the two were
+// visibly out of step: typing a digit, the older digits were still
+// mid-shift after the new one had already fully faded in; backspacing,
+// the remaining digits finished sliding into the gap while the removed
+// one was still visibly fading out. Quicker (higher stiffness, same
+// damping *ratio* so it's still no-overshoot) brings the shift's own
+// settle time back in line with both.
+//
+// Stiffer again on top of that first pass — a first tuning fixed it for
+// ordinary typing speed, but fast typing re-triggers this same spring
+// (every keystroke shifts every digit again) faster than it can settle:
+// each retrigger carries forward whatever position/velocity it already
+// had rather than resetting (that's *why* it's a spring, not a duration —
+// see above), but a still-settling-from-the-last-keystroke spring is
+// still visibly behind when the digit it belongs with has already
+// finished its own fixed-duration fade in, and it never gets the chance
+// to catch up before the next keystroke moves its target again. Stiff
+// enough to settle well inside a fast typing cadence (well under
+// ENTER_DURATION) is what actually closes that gap, rather than just
+// narrowing it for the average case.
+const AMOUNT_SHIFT_SPRING = { damping: 24, stiffness: 500, mass: 0.35 };
+export const AMOUNT_LAYOUT_TRANSITION = layoutTransition(AMOUNT_SHIFT_SPRING);
 
-const ENTER_DURATION = 400;
-const EXIT_DURATION = 320;
-// Lower than it looks like it should be — textShadowRadius is a shadow/glow
-// around the glyph's outline, not a true blur of its pixels, so a large
-// radius reads as a harsh bright halo rather than something soft/defocused.
-// Keeping it small is what makes it pass as "soft" instead of "glowing".
-const BLUR_MAX = 14;
-// How far below its resting spot a digit starts before rising in — 16px
-// reads as barely-there next to a 72px digit, so this is bumped up to
-// actually register as "rising from below" rather than popping in place.
-const ENTER_RISE = 26;
+const ENTER_DURATION = 220;
+const EXIT_DURATION = 180;
+const BLUR_MAX = 6;
+const ENTER_RISE = 12;
 
 // Mirrors the entrance in reverse: fades out, shrinks, and drifts *up*
 // and away (entrance comes from below) — instead of a typed-over digit
@@ -44,6 +60,14 @@ const ENTER_RISE = 26;
 // textShadowRadius isn't a supported layout-animation prop (Reanimated
 // warns and may not apply it), unlike the entrance, which animates it
 // through useAnimatedStyle.
+//
+// Easing.out, not .in — an ease-in stays close to fully visible for most
+// of EXIT_DURATION and only actually fades in its last stretch, which
+// meant the remaining digits (sliding into the gap on AMOUNT_SHIFT_SPRING,
+// a spring — see AMOUNT_LAYOUT_TRANSITION above) had already arrived at
+// their new position well before this one had visibly gone, reading as an
+// overlap. Front-loading the fade instead means it's mostly gone early,
+// around the same time the shift is doing most of its own moving.
 function digitExiting() {
   'worklet';
   return {
@@ -52,10 +76,10 @@ function digitExiting() {
       transform: [{ scale: 1 }, { translateY: 0 }],
     },
     animations: {
-      opacity: withTiming(0, { duration: EXIT_DURATION, easing: Easing.in(Easing.cubic) }),
+      opacity: withTiming(0, { duration: EXIT_DURATION, easing: Easing.out(Easing.cubic) }),
       transform: [
-        { scale: withTiming(0.5, { duration: EXIT_DURATION, easing: Easing.in(Easing.cubic) }) },
-        { translateY: withTiming(-16, { duration: EXIT_DURATION, easing: Easing.in(Easing.cubic) }) },
+        { scale: withTiming(0.75, { duration: EXIT_DURATION, easing: Easing.out(Easing.cubic) }) },
+        { translateY: withTiming(-8, { duration: EXIT_DURATION, easing: Easing.out(Easing.cubic) }) },
       ],
     },
   };
@@ -101,7 +125,7 @@ export function AmountDigit({ char, animateIn, color = '#ffffff', fontSize = 48,
     return {
       opacity: fadeProgress.value,
       transform: [
-        { scale: 0.5 + fadeProgress.value * 0.5 },
+        { scale: 0.8 + fadeProgress.value * 0.2 },
         { translateY: (1 - fadeProgress.value) * ENTER_RISE },
       ],
       textShadowRadius: (1 - blurT) * BLUR_MAX,
@@ -237,6 +261,7 @@ export function AmountRow({ amount, prevAmountLength, skipDigitAnim, digitFontSi
             key={i}
             char={char}
             animateIn={i >= prevAmountLength && !skipDigitAnim}
+            instantExit={skipDigitAnim}
             fontSize={digitFontSize}
             lineHeight={lineHeight}
             color={digitColor}
