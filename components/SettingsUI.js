@@ -68,7 +68,7 @@ export function Row({ label, value, onPress, right, labelColor, light = false, a
         <Text className="text-base" style={{ color: labelColor || (light ? '#111111' : '#ffffff') }}>{label}</Text>
       </View>
       <View className="flex-row items-center" style={{ gap: 8 }}>
-        {!!value && <Text className="text-xs" style={{ color: textColor(light).tertiary }}>{value}</Text>}
+        {!!value && <Text className="text-[13px]" style={{ color: textColor(light).tertiary }}>{value}</Text>}
         {right || (onPress && !right && <ChevronRight color={light ? 'rgba(0,0,0,0.25)' : undefined} />)}
       </View>
     </View>

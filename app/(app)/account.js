@@ -38,6 +38,7 @@ import * as SettingsUI from '../../components/SettingsUI';
 import { CARD_RADIUS, POPUP_RADIUS, SMOOTH } from '../../components/Glass';
 import { SETTLE_EASING } from '../../utils/motion';
 import { GUTTER } from '../../utils/spacing';
+import { FONT } from '../../utils/type';
 
 // One-flag experiment: a light theme for just this screen. Flip back to
 // false to fully revert. Mirrors the same LIGHT_HOME flag in app/(app)/index.js.
@@ -68,7 +69,7 @@ function Pill({ label, tone = 'green' }) {
   const bg = tone === 'red' ? 'rgba(248,113,113,0.14)' : 'rgba(74,222,128,0.14)';
   return (
     <View style={{ backgroundColor: bg, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999 }}>
-      <Text style={{ color, fontSize: 12, fontWeight: '600' }}>{label}</Text>
+      <Text style={{ color, fontSize: FONT.caption, fontWeight: '600' }}>{label}</Text>
     </View>
   );
 }
@@ -306,7 +307,7 @@ function DeleteAccountOverlay({ type, phase, onDone, subscriptionWarning }) {
     >
       {subscriptionWarning && (
         <>
-          <Text className="text-sm text-center mt-3" style={{ lineHeight: 19, color: textColor(LIGHT_SETTINGS).tertiary }}>
+          <Text className="text-[13px] text-center mt-3" style={{ lineHeight: 19, color: textColor(LIGHT_SETTINGS).tertiary }}>
             Your {Platform.OS === 'ios' ? 'App Store' : 'Play Store'} subscription is still active — cancel it to stop future charges.
           </Text>
           <Pressable
@@ -314,7 +315,7 @@ function DeleteAccountOverlay({ type, phase, onDone, subscriptionWarning }) {
             className="mt-4 px-4 py-[10px] rounded-full"
             style={{ backgroundColor: 'rgba(74,222,128,0.14)' }}
           >
-            <Text className="text-sm font-semibold" style={{ color: '#4ade80' }}>Manage Subscription</Text>
+            <Text className="text-[13px] font-semibold" style={{ color: '#4ade80' }}>Manage Subscription</Text>
           </Pressable>
         </>
       )}
@@ -358,7 +359,7 @@ function BottomBanner({ visible, children }) {
         style,
       ]}
     >
-      <Text className="text-sm font-medium text-center" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.80)' }}>{children}</Text>
+      <Text className="text-[13px] font-medium text-center" style={{ color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.80)' }}>{children}</Text>
     </Animated.View>
   );
 }
@@ -1080,13 +1081,13 @@ export default function AccountPage() {
                     name) visibly right of centre. Purely a layout spacer,
                     invisible either way. */}
                 <View style={{ width: 25 }} />
-                <Text style={{ fontSize: 17, color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>{profile?.name || '—'}</Text>
+                <Text style={{ fontSize: FONT.body, color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>{profile?.name || '—'}</Text>
                 <View style={{ marginLeft: 12 }}>
                   <EditIcon size={13} color={LIGHT_SETTINGS ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)'} />
                 </View>
               </Pressable>
             )}
-            <Text className="text-xs" style={{ color: textColor(LIGHT_SETTINGS).tertiary }}>{profile?.email || '—'}</Text>
+            <Text className="text-[13px]" style={{ color: textColor(LIGHT_SETTINGS).tertiary }}>{profile?.email || '—'}</Text>
           </View>
         </View>
 
@@ -1114,7 +1115,7 @@ export default function AccountPage() {
               icon={<Feather name="download" size={18} color={textColor(LIGHT_SETTINGS).tertiary} />}
               label="Backup Data"
               onPress={exportData}
-              right={exporting && <Text className="text-xs" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>Exporting…</Text>}
+              right={exporting && <Text className="text-[13px]" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>Exporting…</Text>}
             />
             <Divider />
             <Row
@@ -1168,13 +1169,13 @@ export default function AccountPage() {
             />
           </Card>
           {!!actionError && (
-            <Text className="text-red-400 text-sm mt-2 px-1">{actionError}</Text>
+            <Text className="text-red-400 text-[13px] mt-2 px-1">{actionError}</Text>
           )}
           {!!exportError && (
-            <Text className="text-red-400 text-sm mt-2 px-1">{exportError}</Text>
+            <Text className="text-red-400 text-[13px] mt-2 px-1">{exportError}</Text>
           )}
 
-          <Text className="text-xs text-center mt-4 mb-8" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>v{APP_VERSION}</Text>
+          <Text className="text-[13px] text-center mt-4 mb-8" style={{ color: textColor(LIGHT_SETTINGS).disabled }}>v{APP_VERSION}</Text>
         </View>
       </ScrollView>
 
@@ -1193,7 +1194,7 @@ export default function AccountPage() {
           <Text className="text-base font-semibold mb-1" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>
             {downloadingTemplate ? 'Preparing…' : 'Get template'}
           </Text>
-          <Text className="text-sm" style={{ lineHeight: 18, color: textColor(LIGHT_SETTINGS).tertiary }}>
+          <Text className="text-[13px]" style={{ lineHeight: 18, color: textColor(LIGHT_SETTINGS).tertiary }}>
             Download an empty Excel file with the right columns.
           </Text>
         </Pressable>
@@ -1203,7 +1204,7 @@ export default function AccountPage() {
           style={{ borderRadius: CARD_RADIUS, ...SMOOTH, backgroundColor: '#ffffff' }}
         >
           <Text className="text-black text-base font-semibold mb-1">Import file</Text>
-          <Text style={{ color: 'rgba(0,0,0,0.5)', fontSize: 14, lineHeight: 18 }}>
+          <Text style={{ color: 'rgba(0,0,0,0.5)', fontSize: FONT.caption, lineHeight: 18 }}>
             Choose a file from your device to import.
           </Text>
         </Pressable>
@@ -1246,7 +1247,7 @@ export default function AccountPage() {
             >
               <Text className="text-black text-base font-semibold">Send</Text>
             </Pressable>
-            <Text className="mt-3 text-center" style={{ fontSize: 12, color: textColor(LIGHT_SETTINGS).disabled }}>We typically respond within 1–2 business days.</Text>
+            <Text className="mt-3 text-center" style={{ fontSize: FONT.caption, color: textColor(LIGHT_SETTINGS).disabled }}>We typically respond within 1–2 business days.</Text>
           </>
         )}
       </InfoModal>
@@ -1341,7 +1342,7 @@ export default function AccountPage() {
                 <Text className="text-base font-semibold mb-2 text-center" style={{ color: LIGHT_SETTINGS ? '#111111' : '#ffffff' }}>
                   {importError.title}
                 </Text>
-                <Text className="text-sm mb-5 text-center" style={{ lineHeight: 20, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.50)' : 'rgba(255,255,255,0.50)' }}>
+                <Text className="text-[13px] mb-5 text-center" style={{ lineHeight: 20, color: LIGHT_SETTINGS ? 'rgba(0,0,0,0.50)' : 'rgba(255,255,255,0.50)' }}>
                   {importError.message}
                 </Text>
                 <View style={{ gap: 8 }}>

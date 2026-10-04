@@ -14,6 +14,7 @@ import { PaymentProcessing } from '../../components/PaymentProcessing';
 import { Card, Divider, SectionLabel } from '../../components/SettingsUI';
 import { SETTLE_EASING } from '../../utils/motion';
 import { darkText } from '../../utils/colors';
+import { FONT } from '../../utils/type';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -88,7 +89,7 @@ function RefreshAction({ onRefresh }) {
         </Animated.View>
       ) : (
         <Animated.Text
-          style={[labelStyle, { fontSize: 11, fontWeight: '500', color: 'rgba(74,222,128,0.9)' }]}
+          style={[labelStyle, { fontSize: FONT.label, fontWeight: '500', color: 'rgba(74,222,128,0.9)' }]}
         >
           Refreshed
         </Animated.Text>
@@ -366,9 +367,9 @@ export default function SubscriptionPage() {
                     <View className="px-4 py-[14px]">
                       <View className="flex-row items-center" style={{ gap: 8 }}>
                         <CheckIcon size={20} />
-                        <Text className="text-white font-medium" style={{ fontSize: 16 }}>{item.title}</Text>
+                        <Text className="text-white font-medium" style={{ fontSize: FONT.body }}>{item.title}</Text>
                       </View>
-                      <Text className="text-white/50 text-sm mt-1" style={{ lineHeight: 19, marginLeft: 24 }}>
+                      <Text className="text-white/50 text-[13px] mt-1" style={{ lineHeight: 19, marginLeft: 24 }}>
                         {item.description}
                       </Text>
                     </View>
@@ -422,7 +423,7 @@ export default function SubscriptionPage() {
               </Card>
 
               {status === 'trial' && (
-                <Text className="text-white/50 text-sm text-center" style={{ marginTop: 14 }}>
+                <Text className="text-white/50 text-[13px] text-center" style={{ marginTop: 14 }}>
                   {trialInfo.cancelAtPeriodEnd
                     ? `Access until ${formatChargeDate(trialInfo.chargeDate)}`
                     : `Free access until ${formatChargeDate(trialInfo.chargeDate)}`}
@@ -462,19 +463,19 @@ export default function SubscriptionPage() {
                   <Text className="text-white text-base font-semibold mb-2">Thanks for being an Okana Plus member 💚</Text>
                   <View className="flex-row items-start" style={{ gap: 8 }}>
                     <View style={{ marginTop: 2 }}><CheckIcon size={14} /></View>
-                    <Text className="text-white/50 text-sm flex-1" style={{ lineHeight: 19 }}>
+                    <Text className="text-white/50 text-[13px] flex-1" style={{ lineHeight: 19 }}>
                       Unlimited transaction tracking, no interruptions.
                     </Text>
                   </View>
                   <View className="flex-row items-start mt-1" style={{ gap: 8 }}>
                     <View style={{ marginTop: 2 }}><CheckIcon size={14} /></View>
-                    <Text className="text-white/50 text-sm flex-1" style={{ lineHeight: 19 }}>
+                    <Text className="text-white/50 text-[13px] flex-1" style={{ lineHeight: 19 }}>
                       You're supporting an independently built app, made by one person.
                     </Text>
                   </View>
                   <View className="flex-row items-start mt-1" style={{ gap: 8 }}>
                     <View style={{ marginTop: 2 }}><CheckIcon size={14} /></View>
-                    <Text className="text-white/50 text-sm flex-1" style={{ lineHeight: 19 }}>
+                    <Text className="text-white/50 text-[13px] flex-1" style={{ lineHeight: 19 }}>
                       Helps keep Okana improving and ad-free.
                     </Text>
                   </View>
@@ -482,7 +483,7 @@ export default function SubscriptionPage() {
                 </View>
               </Card>
 
-              <Text className="text-white/50 text-sm text-center" style={{ marginTop: 40, marginBottom: 4 }}>
+              <Text className="text-white/50 text-[13px] text-center" style={{ marginTop: 40, marginBottom: 4 }}>
                 {trialInfo.cancelAtPeriodEnd
                   ? `Access until ${formatChargeDate(trialInfo.chargeDate)}`
                   : `You'll be charged ₹${PRICE_PER_YEAR} on ${formatChargeDate(trialInfo.chargeDate)}`}
