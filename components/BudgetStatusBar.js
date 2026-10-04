@@ -7,9 +7,9 @@ import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { TABULAR } from '../utils/type';
 
 // Same shape as a Savings/Debt goal card (see GoalCard.js): a name/status
-// row, the headline amount below it with its "of X" suffix folded into the
-// same line, then a thin bar. Red only once actually over — the line's own
-// colour is what says "over", no word spells it out.
+// row, the headline amount below it, then a thin bar. The amount is what's
+// left of the budget ("₹10,000 left of ₹80,000"); once spent passes it, it reads what
+// it's over by, in red.
 function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, light = false }) {
   const dimmerColor = textColorTone(light).tertiary;
   const primaryColor = textColorTone(light).primary;
@@ -42,12 +42,12 @@ function BudgetStatusBar({ loading, hasBudget, amount, spent, percent, onSetup, 
               read as a visibly duller red than the same value filling the
               bar (which sits over the lighter track). The opaque hex reads
               as the one consistent red regardless of what's under it. */}
-          <Text style={{ fontSize: 15, fontWeight: '400', color: isOver ? EXPENSE_HEX : dimmerColor }}>{Math.round(percent)}%</Text>
+          <Text style={{ fontSize: 15, fontWeight: '400', color: isOver ? EXPENSE_HEX : dimmerColor }}>{Math.round(percent)}% used</Text>
         </View>
 
         <Text style={{ fontSize: 24, fontWeight: '600', marginTop: 10, color: primaryColor, ...TABULAR }}>
-          {formatCurrency(spent)}
-          <Text style={{ fontSize: 15, fontWeight: '400', color: dimmerColor }}> of {formatCurrency(amount)}</Text>
+          {formatCurrency(Math.abs(amount - spent))}
+          <Text style={{ fontSize: 15, fontWeight: '400', color: isOver ? EXPENSE_HEX : dimmerColor }}> {isOver ? `over ${formatCurrency(amount)} budget` : `left of ${formatCurrency(amount)}`}</Text>
         </Text>
 
         <View style={{ marginTop: 14 }}>
