@@ -78,8 +78,6 @@ const TYPE_LABELS = { expense: 'Expense', income: 'Income' };
 //   ever logs a payment, so there's nothing to pick between).
 // - `initialMode` is the mode a fresh (non-edit) open starts on, default
 //   the first of `modes`.
-// - `subtitle` is optional text under the toggle (Savings/Debt use it for
-//   the goal's own name; Home has none).
 // - `fieldPlaceholder`/`fieldRequired` cover the one text field reading
 //   "Description" (required) on Home and "Note (optional)" (optional) on
 //   Savings/Debt.
@@ -91,7 +89,6 @@ function AddModal({
   modes = TYPE_MODES,
   labels = TYPE_LABELS,
   initialMode,
-  subtitle,
   fieldPlaceholder = 'Description',
   fieldRequired = true,
   extraValidate,
@@ -464,11 +461,6 @@ function AddModal({
             {modes.length > 1 && (
               <SegmentedSwitch options={switchOptions} value={type} onChange={setType} trackColor="#262626" light={light} />
             )}
-            {!!subtitle && (
-              <Text numberOfLines={1} style={{ marginTop: modes.length > 1 ? 10 : 0, fontSize: FONT.body, fontWeight: '600', color: light ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)' }}>
-                {subtitle}
-              </Text>
-            )}
           </View>
 
           <Animated.View key={resetKey} className="items-center" style={[{ marginTop: 16, marginBottom: 8 }, amountShake.style]}>
@@ -666,7 +658,7 @@ function AddModal({
                   <Text style={{ fontSize: FONT.body, fontWeight: '500', color: light ? '#111111' : '#ffffff' }}>Done</Text>
                 </Pressable>
               </View>
-              <DateWheelPicker value={date} onChange={setDate} light={light} />
+              <DateWheelPicker value={date} onChange={setDate} light={light} maxDate={today()} />
             </Animated.View>
           )}
         </View>

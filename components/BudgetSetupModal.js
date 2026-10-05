@@ -1,11 +1,11 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, View, Text, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, Easing, runOnJS } from 'react-native-reanimated';
 import { GlassPressable, POPUP_RADIUS, SMOOTH, CARD_RADIUS } from './Glass';
 import { useAmountEntry } from '../hooks/useAmountEntry';
-import AmountRuler, { RulerFigure, BUDGET_SCALE } from './AmountRuler';
+import AmountRuler, { BUDGET_SCALE } from './AmountRuler';
 import { TrendArrowIcon } from './icons';
 import { SuccessBadge } from './SuccessBadge';
 import { formatCurrency, currentMonthYear } from '../utils/format';
@@ -75,6 +75,10 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, currentAmount, la
   // DEFAULT_BUDGET. `session` tells the ruler to go back there on each open.
   const startValue = currentAmount ?? lastMonthAmount ?? DEFAULT_BUDGET;
   const { amount, setProgrammatic: setAmountProgrammatically } = useAmountEntry(String(startValue));
+  // Stable, not an inline arrow: AmountRuler is memo'd, and a fresh function
+  // every render defeated that — it rebuilt its whole tick/label SVG on every
+  // tick of a drag.
+  const handleRulerChange = useCallback(v => setAmountProgrammatically(String(v)), [setAmountProgrammatically]);
   const [session, setSession] = useState(0);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -286,16 +290,16 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, currentAmount, la
                 How much do you want to spend this month?
               </Text>
 
-              <View className="items-center mb-2">
-                <RulerFigure value={parseFloat(amount) || 0} />
-              </View>
-
-              {/* Edge to edge, so the ticks can run off both sides of the screen. */}
+              {/* Edge to edge, so the ticks can run off both sides of the screen.
+                  The big figure above the ticks is the ruler's own now — it was
+                  this modal's state, re-rendering the whole sheet on every tick
+                  the ruler crossed, which is what the drag stuttered under. */}
               <AmountRuler
+                figure="currency"
                 scale={BUDGET_SCALE}
                 initialValue={startValue}
                 sessionKey={session}
-                onChange={v => setAmountProgrammatically(String(v))}
+                onChange={handleRulerChange}
                 surface={SHEET_COLOR}
               />
 

@@ -55,7 +55,7 @@ export function toDateStr(d) {
 // while developing/testing in one timezone and silently be a day off in
 // another. parseISO treats a date-only string as local midnight instead,
 // matching how toDateStr/today() above already construct these strings.
-export function shiftDate(dateStr, days) {
+function shiftDate(dateStr, days) {
   const d = parseISO(dateStr)
   d.setDate(d.getDate() + days)
   return toDateStr(d)
@@ -243,35 +243,23 @@ export function getDailyTotals(transactions, month, year) {
 // Yearly data from first transaction year to now (All Time)
 // `earliestDateStr` is optional — a caller that's already computed the
 // account's earliest transaction date (e.g. via getEarliestDate, for its
-// own separate reason) can pass it through to skip a second full scan of
-// `transactions` here purely to re-derive the same thing.
-// A couple of years of real history reads as a handful of bars stranded
-// with huge gaps between them (BarChart spaces bars evenly across the full
-// chart width regardless of count) — this pads the range forward with
-// future, as-yet-empty years, the same way the Year tab always shows all 12
-// months of the calendar year rather than stopping at the current one.
-const MIN_YEAR_SLOTS = 5
-
+// own separate reason) can pass it through to skip re-deriving the same thing.
+// One entry per calendar year the account has data in, from the first to this
+// year (or a later one, if something is dated ahead) — no empty years added.
 export function getLifetimeYearly(transactions, earliestDateStr) {
   const currYear = new Date().getFullYear()
-  // A new account has no history yet: this year at the left, padded forward
-  // with the empty years after it.
+  // A new account has no history yet: just this year.
   if (!transactions.length) {
-    const earliest = currYear
-    const endYear  = Math.max(currYear, earliest + MIN_YEAR_SLOTS - 1)
-    const years    = Array.from({ length: endYear - earliest + 1 }, (_, i) => earliest + i)
-    return { income: new Array(years.length).fill(0), expense: new Array(years.length).fill(0), labels: years.map(String), years }
+    return { income: [0], expense: [0], labels: [String(currYear)], years: [currYear] }
   }
-  const earliest = earliestDateStr
-    ? parseISO(earliestDateStr).getFullYear()
-    : transactions.reduce((min, tx) => {
-        const y = parseISO(tx.date).getFullYear(); return y < min ? y : min
-      }, currYear - 1)
-  // Extends into the future only far enough to reach MIN_YEAR_SLOTS total —
-  // an account with more real history than that already fills the chart
-  // on its own, so nothing past currYear gets added.
-  const endYear = Math.max(currYear, earliest + MIN_YEAR_SLOTS - 1)
-  const years   = Array.from({ length: endYear - earliest + 1 }, (_, i) => earliest + i)
+  let first = earliestDateStr ? parseISO(earliestDateStr).getFullYear() : currYear
+  let last = currYear
+  transactions.forEach(tx => {
+    const y = parseISO(tx.date).getFullYear()
+    if (!earliestDateStr && y < first) first = y
+    if (y > last) last = y
+  })
+  const years   = Array.from({ length: last - first + 1 }, (_, i) => first + i)
   const income  = new Array(years.length).fill(0)
   const expense = new Array(years.length).fill(0)
   transactions.forEach(tx => {

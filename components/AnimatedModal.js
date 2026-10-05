@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Modal, View, Pressable, StyleSheet, useWindowDimensions, Platform, Keyboard } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
@@ -103,13 +103,18 @@ export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', dim
   });
   const centerAreaStyle = useAnimatedStyle(() => ({ paddingBottom: keyboardOffset.value }));
 
+  // The worklet below can't reach `Keyboard` itself (it is a native-backed object
+  // that can't be sent to the UI runtime — that crashed the app the moment a sheet
+  // was pulled down), only a plain function that calls it on the JS thread.
+  const dismissKeyboard = useCallback(() => Keyboard.dismiss(), []);
+
   const pull = Gesture.Pan()
     .enabled(swipeToClose)
     // Only a downward pull starts it, so sideways and upward drags (and taps on
     // what is inside) are left alone.
     .activeOffsetY(10)
     .failOffsetX([-24, 24])
-    .onStart(() => { runOnJS(Keyboard.dismiss)(); })
+    .onStart(() => { runOnJS(dismissKeyboard)(); })
     .onUpdate((e) => {
       dragY.value = Math.max(0, e.translationY);
       // The backdrop lightens as the sheet leaves.
@@ -122,8 +127,9 @@ export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', dim
           if (finished) runOnJS(onClose)();
         });
       } else {
-        dragY.value = withTiming(0, { duration: 260, easing: SETTLE_EASING });
-        backdropOpacity.value = withTiming(1, { duration: 260, easing: SETTLE_EASING });
+        // Easing built here, in the worklet, rather than captured from outside it.
+        dragY.value = withTiming(0, { duration: 260, easing: Easing.out(Easing.cubic) });
+        backdropOpacity.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) });
       }
     });
 

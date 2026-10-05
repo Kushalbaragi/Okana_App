@@ -353,7 +353,7 @@ const OptionsRow = memo(function OptionsRow({ label, value, onChangeText, option
 // has to fit a keyboard-avoiding field open at a time). Unlike a calendar
 // tap, a wheel has no single "pick" moment, so the row stays open until the
 // header is tapped again to collapse it — same as OptionsRow's own wheel.
-const DateRow = memo(function DateRow({ label, value, onChangeText, placeholder, light, open, onOpen, onClose }) {
+const DateRow = memo(function DateRow({ label, value, onChangeText, placeholder, light, open, onOpen, onClose, maxDate }) {
   const headerPress = () => { if (open) onClose(); else onOpen(); };
   const display = value ? formatDateFull(value) : '';
   return (
@@ -363,7 +363,7 @@ const DateRow = memo(function DateRow({ label, value, onChangeText, placeholder,
       </RowHeader>
       {!!open && (
         <View style={{ paddingBottom: 8 }}>
-          <DateWheelPicker value={value || today()} onChange={onChangeText} light={light} />
+          <DateWheelPicker value={value || today()} onChange={onChangeText} light={light} maxDate={maxDate} />
         </View>
       )}
     </View>
@@ -605,13 +605,11 @@ function MonthsRulerRow({ label, value, onChange, session, light, open, onOpen, 
       </RowHeader>
       {!!open && (
         <View style={{ paddingBottom: 14 }}>
-          <View className="items-center mb-2">
-            <Text style={{ fontSize: FONT.display, lineHeight: 50, fontWeight: '300', letterSpacing: -1, color: light ? '#111111' : '#ffffff', ...TABULAR }}>
-              {months}
-              <Text style={{ fontSize: FONT.title, fontWeight: '400', color: textColor(light).disabled }}> {unit}</Text>
-            </Text>
-          </View>
+          {/* The month count above the ticks is the ruler's own readout — see
+              AmountRuler's `figure`. It used to be this sheet's state, set on
+              every tick, so a drag re-rendered the whole form behind it. */}
           <AmountRuler
+            figure="months"
             scale={scale}
             initialValue={openedValue.current}
             sessionKey={session}
@@ -691,7 +689,10 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
     const paid = parseInt(emisPaidBefore, 10) || 0;
     if (paid > tenure) setEmisPaidBefore(String(tenure));
   }, [tenureMonths, emisPaidBefore]);
-  const [firstEmiDate, setFirstEmiDate] = useState('');
+  // When the next EMI is due. The loan's own first-EMI date is worked out from it
+  // when saving (the next due, less the EMIs already paid), so the two can never
+  // disagree about how many have been paid.
+  const [nextEmiDate, setNextEmiDate] = useState('');
   const [emiAmount, setEmiAmount] = useState(0);
   const [emiEdited, setEmiEdited] = useState(false);
   const [startingAmount, setStartingAmount] = useState(0);
@@ -777,6 +778,18 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
   // play its own `layout` transition, so resetting the fields' state right as
   // the sheet opens (below) doesn't layer a reflow slide on top of the
   // sheet's own opening slide.
+  // The sheet doesn't start sliding until its content has been measured (see
+  // `open` on InlineSheet below) — otherwise the first open, when the sheet has
+  // only just mounted, slides at a guessed height and then snaps to the real
+  // one mid-slide, with the options arriving after the card.
+  //
+  // A new debt's content is put back on its first step once the sheet has
+  // finished closing, off-screen, so the next open finds the content it will
+  // show already laid out rather than swapping it (and its height) mid-slide.
+  const handleClosed = useCallback(() => {
+    if (!goal) setDebtType(null);
+    if (onClosed) onClosed();
+  }, [goal, onClosed]);
   const [rowsReady, setRowsReady] = useState(false);
   useEffect(() => {
     if (!open) { setRowsReady(false); return; }
@@ -802,14 +815,15 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
     setTenureMonths(goal?.tenureMonths ? String(goal.tenureMonths) : '0');
     setRulerSession(n => n + 1);
     setEmisPaidBefore(goal?.emisPaidBefore ? String(goal.emisPaidBefore) : '');
-    // The same day next month, not blank, for a new loan. Left unset this field
-    // reads as optional, but nothing downstream works without it: no first EMI
-    // means no schedule to hang dates off, so the circle tracker doesn't render
-    // at all and "Next payment" stays hidden. A loan added around the time it
-    // starts has its first EMI due a month on (a 31st lands on the month's last
-    // day), so that is the likeliest answer and one less field to go and fill
-    // in; it is still a plain editable row.
-    setFirstEmiDate(goal?.firstEmiDate || toDateStr(addMonths(parseISO(today()), 1)));
+    // For a new loan, the same day next month rather than blank: nothing
+    // downstream works without it (no schedule to hang dates off, so the circle
+    // tracker doesn't render), and a loan added around when it starts has its
+    // first EMI due a month on. For an existing loan, its next due date.
+    setNextEmiDate(
+      goal?.firstEmiDate
+        ? toDateStr(addMonths(parseISO(goal.firstEmiDate), goal.emisPaid ?? goal.emisPaidBefore ?? 0))
+        : toDateStr(addMonths(parseISO(today()), 1)),
+    );
     setEmiAmount(goal?.emiAmount ?? 0);
     // An existing loan's EMI is its own — never recomputed under the user.
     // A new one's follows the borrowed amount and tenure until it is typed
@@ -831,7 +845,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
   // payment (see useSavings.js's own `emisPaid`), so a null EMI amount
   // meant payments kept landing in history while "remaining", "% paid" and
   // the tracker never moved, with nothing on screen saying why.
-  const emiFieldsReady = !isEmiType || (parseInt(tenureMonths, 10) > 0 && emiAmount > 0 && !!firstEmiDate);
+  const emiFieldsReady = !isEmiType || (parseInt(tenureMonths, 10) > 0 && emiAmount > 0 && !!nextEmiDate);
   const canSubmit = name.trim().length > 0 && amount > 0
     && (kind !== 'debt' || isEdit || !!debtType)
     && emiFieldsReady;
@@ -857,7 +871,10 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
     setError('');
     const tenure = isEmiType && parseInt(tenureMonths, 10) > 0 ? parseInt(tenureMonths, 10) : null;
     const paidBefore = isEmiType && parseInt(emisPaidBefore, 10) > 0 ? Math.min(parseInt(emisPaidBefore, 10), tenure || 0) : 0;
-    const emiDate = isEmiType && firstEmiDate ? firstEmiDate : null;
+    // The loan stores its first EMI: the next one due, less every EMI paid so far
+    // (those entered here plus any logged since, which an edit keeps).
+    const loggedSince = isEdit && goal ? Math.max(0, (goal.emisPaid ?? 0) - (goal.emisPaidBefore ?? 0)) : 0;
+    const emiDate = isEmiType && nextEmiDate ? toDateStr(addMonths(parseISO(nextEmiDate), -(paidBefore + loggedSince))) : null;
     const emi = isEmiType && emiAmount > 0 ? emiAmount : null;
     const starting = !isEdit && kind === 'savings' && startingAmount > 0 ? startingAmount : 0;
     const result = await onSubmit({
@@ -874,7 +891,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
       return;
     }
     onClose();
-  }, [canSubmit, submitting, onSubmit, isEdit, kind, debtType, isEmiType, name, amount, location, tenureMonths, emisPaidBefore, firstEmiDate, emiAmount, startingAmount, onClose]);
+  }, [canSubmit, submitting, onSubmit, isEdit, kind, debtType, isEmiType, name, amount, location, tenureMonths, emisPaidBefore, nextEmiDate, emiAmount, startingAmount, onClose, goal]);
 
   const insets = useSafeAreaInsets();
   const footer = (
@@ -906,9 +923,9 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
     // content now, not to a guessed share of the screen, so there's nothing
     // left here to gate on `openField`.
     <InlineSheet
-      open={open}
+      open={open && contentH > 0}
       onClose={onClose}
-      onClosed={onClosed}
+      onClosed={handleClosed}
       light={light}
       heightRatio={sheetHeightRatio}
       contentHeight={contentH || null}
@@ -1076,20 +1093,20 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
                   tintCompleted
                 />
               </ReanimatedView.View>
-              {/* Only labels the calendar ("Next payment", "Estimated
-                  finish" — see useSavings.js's own derivation) — EMIs
-                  already paid above is what actually drives progress, not
-                  this date. */}
+              {/* When the next EMI is due; the calendar ("Next payment",
+                  "Estimated finish" — see useSavings.js's own derivation) is
+                  built from it. EMIs already paid above is what actually
+                  drives progress. */}
               <ReanimatedView.View layout={rowsReady ? FIELD_LAYOUT_TRANSITION : undefined} style={{ overflow: 'hidden' }}>
               <FieldCard light={light}>
                 <DateRow
-                  label="First EMI"
-                  value={firstEmiDate}
-                  onChangeText={setFirstEmiDate}
+                  label="Next EMI"
+                  value={nextEmiDate}
+                  onChangeText={setNextEmiDate}
                   placeholder="Not set"
                   light={light}
-                  open={openField === 'firstEmiDate'}
-                  onOpen={() => openRow('firstEmiDate')}
+                  open={openField === 'nextEmiDate'}
+                  onOpen={() => openRow('nextEmiDate')}
                   onClose={closeRow}
                 />
               </FieldCard>
@@ -1192,7 +1209,6 @@ export function MoneySheet({ open, onClose, onClosed, goalName, goal, entry, ini
       modes={kind === 'debt' ? DEBT_MONEY_MODES : MONEY_MODES}
       labels={MONEY_LABELS}
       initialMode={initialType}
-      subtitle={goalName}
       fieldPlaceholder="Note (optional)"
       fieldRequired={false}
       extraValidate={validateWithdraw}

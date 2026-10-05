@@ -36,3 +36,20 @@ export function hapticHeavy() {
 export function hapticTick() {
   fire(H => H.selectionAsync())
 }
+
+// How close together two ticks of a dragged control may be felt.
+const SCROLL_TICK_MS = 45
+
+// The tick for a control being dragged THROUGH values — a ruler, a wheel, a row
+// of months. Dropped when one has only just fired: a fast fling crosses values
+// quicker than taps can be told apart anyway, and every one of them is a native
+// call, so an ungated fling queues dozens of them and stutters the very drag the
+// ticks are meant to accompany. One timestamp for the whole app on purpose —
+// nothing can be flung in two places at once.
+let lastScrollTick = 0
+export function hapticScrollTick() {
+  const now = Date.now()
+  if (now - lastScrollTick < SCROLL_TICK_MS) return
+  lastScrollTick = now
+  hapticTick()
+}

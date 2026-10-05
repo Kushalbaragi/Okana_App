@@ -1,18 +1,15 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { View, Text, FlatList, Pressable, InteractionManager } from 'react-native';
-import Animated, {
-  FadeIn,
-  withTiming,
-} from 'react-native-reanimated';
+import { View, Text, FlatList, Pressable, StyleSheet, InteractionManager } from 'react-native';
+import Animated, { withTiming } from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
 import TransactionItem from './TransactionItem';
-import { formatCurrency, shiftDate, today } from '../utils/format';
+import { ChevronRight } from './icons';
+import { formatCurrency, formatCurrencyPlain } from '../utils/format';
 import { textColor, INCOME_TEXT } from '../utils/colors';
-import { BODY, TABULAR, FONT } from '../utils/type';
+import { BODY, TABULAR } from '../utils/type';
 import { GUTTER, LEDGER_PILL_INSET } from '../utils/spacing';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { SETTLE_EASING, SPRING_SMOOTH, layoutTransition } from '../utils/motion';
-import { ChevronRight } from './icons';
 
 // SPRING_SMOOTH — the app's calmer preset, for heavier content reflowing
 // (a taller list row settling into place reads better a bit more gently
@@ -41,6 +38,18 @@ const MONTH_GAP = 32;
 const DEMO_SWIPE_HOLD_MS = 1300;
 const DEMO_SWIPE_PAUSE_MS = 1100;
 
+// How wide one character of a row's amount is, at the body size. The amounts are
+// plain digits (no commas) in tabular figures, so every character is the same
+// width and a column as wide as the longest amount lines up the dashes after them.
+const AMOUNT_CHAR_WIDTH = 10;
+// A month's total is written with grouping commas ("₹12,000"), which are narrower
+// than a digit, so it is measured a character at a time.
+function totalColumnWidth(text) {
+  let width = 0;
+  for (const ch of text) width += /[0-9₹]/.test(ch) ? AMOUNT_CHAR_WIDTH : AMOUNT_CHAR_WIDTH / 2;
+  return width;
+}
+
 // One running ledger — every month that has anything in it, newest first,
 // each with a total; every transaction under its own month, newest first.
 //
@@ -55,66 +64,34 @@ const DEMO_SWIPE_PAUSE_MS = 1100;
 // month's expense total, Income its income total, Overview shows nothing
 // (see TransactionList's own comment on why Overview has no single figure
 // that means anything here) — `amount == null` is what skips it below.
-function MonthHeader({ label, amount, light, isOpen, isIncome, onPress }) {
+function MonthHeader({ label, amount, amountWidth, light, isOpen, isIncome, onPress }) {
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${label}, ${isOpen ? 'expanded' : 'collapsed'}`}>
-      {/* Laid out like a transaction row: the month at the same left edge as a
-          row's date chip, the total at the same right edge as a row's amount
-          (both rows and headers pad LEDGER_PILL_INSET each side), so the
-          amounts run down one straight column across this month and the
-          collapsed ones. A plain row, no card behind it. */}
+      {/* Laid out like a transaction row: the month's total on the left, in a
+          column as wide as the widest total so every month name starts at the
+          same place, a dash, then the month. A hairline above separates it from
+          whatever is above — the last month's rows, or the month before. No
+          card behind it. */}
       <View
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'space-between',
           paddingHorizontal: LEDGER_PILL_INSET,
           paddingVertical: 14,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: light ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)',
         }}
       >
-        <Text numberOfLines={1} style={[BODY, { color: textColor(light).primary }]}>{label}</Text>
         {amount != null && (
-          <Text style={[BODY, TABULAR, { color: isIncome ? INCOME_TEXT : textColor(light).primary }]}>{formatCurrency(amount)}</Text>
+          <>
+            <Text numberOfLines={1} style={[BODY, TABULAR, { width: amountWidth, color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>{formatCurrency(amount)}</Text>
+            <Text style={[BODY, { marginLeft: 8, marginRight: 18, color: textColor(light).secondary }]}>–</Text>
+          </>
         )}
-        {/* At the far right, out past the amount rather than taking room from it
-            (into the list's side margin), so the amounts still end where a row's
-            amount does, with a little space before the chevron.
-            Points right when collapsed, down when open — same treatment
-            SavingsSection's own "Completed" toggle uses. */}
-        <View pointerEvents="none" style={{ position: 'absolute', right: -8, top: 0, bottom: 0, justifyContent: 'center', transform: [{ rotate: isOpen ? '90deg' : '0deg' }] }}>
-          <ChevronRight color={light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)'} />
-        </View>
+        <Text numberOfLines={1} style={[BODY, { flex: 1, color: textColor(light).secondary }]}>{label}</Text>
+        <ChevronRight size={16} color={textColor(light).secondary} />
       </View>
     </Pressable>
-  );
-}
-
-// "Today", "Yesterday", or "2 Oct".
-function dayLabel(dateStr, todayStr, yesterdayStr) {
-  if (dateStr === todayStr) return 'Today';
-  if (dateStr === yesterdayStr) return 'Yesterday';
-  const d = parseISO(dateStr);
-  return `${d.getDate()} ${MONTH_NAMES[d.getMonth()].slice(0, 3)}`;
-}
-
-// The small muted label above a run of rows from the same day.
-function DayLabel({ label, light }) {
-  return (
-    <Text style={{ fontSize: FONT.label, color: textColor(light).disabled, paddingHorizontal: LEDGER_PILL_INSET, marginTop: 14, marginBottom: 2 }}>
-      {label}
-    </Text>
-  );
-}
-
-// The line under the first transaction while the swipe demo is playing.
-function DemoHint({ light }) {
-  return (
-    <Animated.Text
-      entering={FadeIn.duration(500)}
-      style={{ fontSize: FONT.caption, color: textColor(light).tertiary, textAlign: 'center', marginTop: 8, marginBottom: 4 }}
-    >
-      Try swiping left to delete
-    </Animated.Text>
   );
 }
 
@@ -152,15 +129,14 @@ function TransactionList({
   }, []);
 
   // The swipe demo (see demoSwipe below) repeats until the user touches the
-  // screen; `demoOn` is what shows the line under the first transaction.
-  const [demoOn, setDemoOn] = useState(false);
+  // screen. The row sliding open is the whole of it — there is no caption under
+  // it any more.
   const demoOnRef = useRef(false);
   const demoTimerRef = useRef(null);
   const endDemo = useCallback(() => {
     if (!demoOnRef.current) return;
     demoOnRef.current = false;
     clearTimeout(demoTimerRef.current);
-    setDemoOn(false);
   }, []);
 
   // Any touch anywhere reaches this (see the capture handler on Home), so it is
@@ -200,7 +176,6 @@ function TransactionList({
     if (demoOnRef.current) return true;
     if (!firstTxIdRef.current || !swipeRefs.current.get(firstTxIdRef.current)) return false;
     demoOnRef.current = true;
-    setDemoOn(true);
     const run = () => {
       const id = firstTxIdRef.current;
       const swipeable = id && swipeRefs.current.get(id);
@@ -269,9 +244,6 @@ function TransactionList({
   //
   const flatData = useMemo(() => {
     const out = [];
-    const todayStr = today();
-    const yesterdayStr = shiftDate(todayStr, -1);
-    let hintPlaced = false;
     for (const g of groups) {
       const isCurrent = g.key === currentMonthKey;
       // Room before a month's header whenever the rows of an open month sit right
@@ -301,24 +273,19 @@ function TransactionList({
         });
       }
       if (isOpen) {
-        // A small day label above each run of rows from the same day, so the
-        // date is said once instead of on every row.
-        let prevDate = null;
-        for (const { tx } of g.items) {
-          if (tx.date !== prevDate) {
-            prevDate = tx.date;
-            out.push({ type: 'day', key: `d-${tx.date}-${g.key}`, label: dayLabel(tx.date, todayStr, yesterdayStr) });
-          }
-          out.push({ type: 'tx', key: tx.id, tx });
-          // The demo's line sits right under the first transaction.
-          if (demoOn && !hintPlaced) { hintPlaced = true; out.push({ type: 'hint', key: 'swipe-hint' }); }
-        }
+        for (const { tx } of g.items) out.push({ type: 'tx', key: tx.id, tx });
       }
     }
     return out;
-  }, [groups, currentMonthKey, expandedKey, mode, demoOn]);
+  }, [groups, currentMonthKey, expandedKey, mode]);
 
   firstTxIdRef.current = flatData.find(item => item.type === 'tx')?.key ?? null;
+
+  // As wide as the widest month total, so the month names line up.
+  const headerAmountWidth = useMemo(
+    () => flatData.reduce((max, item) => (item.type === 'header' && item.amount != null ? Math.max(max, totalColumnWidth(formatCurrency(item.amount))) : max), 0),
+    [flatData],
+  );
 
   // False for the first commit only, true once it has settled. Gates the
   // two per-row costs that profiling showed dominate a first paint —
@@ -336,6 +303,13 @@ function TransactionList({
   // Hoisted rather than inlined at the call site so memo(TransactionItem)
   // keeps getting stable props and can actually bail out of re-rendering
   // rows that haven't changed.
+  // As wide as the longest amount in the list, so each row's dash sits in one
+  // vertical line whatever the amounts are.
+  const amountWidth = useMemo(
+    () => transactions.reduce((max, tx) => Math.max(max, formatCurrencyPlain(tx.amount).length), 1) * AMOUNT_CHAR_WIDTH,
+    [transactions],
+  );
+
   const renderTransaction = useCallback((item) => (
     <Animated.View
       layout={settled ? ROW_LAYOUT_TRANSITION : undefined}
@@ -353,19 +327,19 @@ function TransactionList({
         light={light}
         cardColor={cardColor}
         swipeable={settled}
+        amountWidth={amountWidth}
       />
     </Animated.View>
-  ), [settled, justAddedId, cardColor, onEdit, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light]);
+  ), [settled, justAddedId, cardColor, onEdit, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light, amountWidth]);
 
   const renderItem = useCallback(({ item }) => {
     if (item.type === 'gap') return <View style={{ height: MONTH_GAP }} />;
-    if (item.type === 'day') return <DayLabel label={item.label} light={light} />;
-    if (item.type === 'hint') return <DemoHint light={light} />;
     if (item.type === 'header') {
       return (
         <MonthHeader
           label={item.label}
           amount={item.amount}
+          amountWidth={headerAmountWidth}
           light={light}
           isOpen={item.isOpen}
           isIncome={mode === 'income'}
@@ -374,7 +348,7 @@ function TransactionList({
       );
     }
     return renderTransaction(item.tx);
-  }, [renderTransaction, light, toggleMonth, mode]);
+  }, [renderTransaction, light, toggleMonth, mode, headerAmountWidth]);
 
   const empty = (
     <View className="items-center justify-center py-14 px-4">
@@ -394,7 +368,7 @@ function TransactionList({
           renderItem={renderItem}
           ListEmptyComponent={empty}
           onScrollBeginDrag={closeOpenRow}
-          contentContainerStyle={{ paddingHorizontal: GUTTER, paddingBottom: 112 }}
+          contentContainerStyle={{ paddingHorizontal: GUTTER, paddingTop: 16, paddingBottom: 112 }}
           showsVerticalScrollIndicator={false}
           style={{ flex: 1 }}
           // Tuned down from the defaults (10/21) — each row's real cost is

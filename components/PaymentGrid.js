@@ -12,7 +12,7 @@ const MONTH_LETTERS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D
 // actually use it rather than floating in a wider column around the same
 // small circle.
 const DOT = 17;
-const LABEL_W = 38;
+const LABEL_W = 46;
 const FILLED = '#4ade80';
 
 function Dot({ paid, inRange, light }) {
@@ -69,7 +69,7 @@ function PaymentGrid({ years, light }) {
           {/* paddingRight, not a wider LABEL_W alone — keeps the year clear
               of the first dot's column without shifting every month column
               after it out of line with its own header letter above. */}
-          <Text style={{ width: LABEL_W, paddingRight: 8, fontSize: FONT.caption, color: textColor(light).tertiary }}>{year}</Text>
+          <Text numberOfLines={1} style={{ width: LABEL_W, paddingRight: 8, fontSize: FONT.caption, color: textColor(light).tertiary }}>{year}</Text>
           {cells.map((cell, i) => (
             <View key={i} style={{ flex: 1, alignItems: 'center' }}>
               <Dot paid={cell.paid} inRange={cell.inRange} light={light} />
