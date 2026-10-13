@@ -599,10 +599,12 @@ export default function AccountPage() {
         if (budgetError) throw budgetError;
         const { error: planError } = await supabase.from('budget_plan_items').delete().eq('user_id', user.id);
         if (planError) throw planError;
-        // Entries go with their goals (ON DELETE CASCADE).
+        // Entries go with their goals, payments with their debts (ON DELETE CASCADE).
         step = 'savings';
         const { error: savingsError } = await supabase.from('savings_goals').delete().eq('user_id', user.id);
         if (savingsError) throw savingsError;
+        const { error: debtsError } = await supabase.from('debts').delete().eq('user_id', user.id);
+        if (debtsError) throw debtsError;
       })()]);
       // The server side is done, so clear the device's copy — including the
       // offline queue, which would otherwise be replayed on the next refresh and
@@ -660,6 +662,8 @@ export default function AccountPage() {
         step = 'savings';
         const { error: savingsError } = await supabase.from('savings_goals').delete().eq('user_id', user.id);
         if (savingsError) throw savingsError;
+        const { error: debtsError } = await supabase.from('debts').delete().eq('user_id', user.id);
+        if (debtsError) throw debtsError;
         step = 'account';
         const { error: rpcError } = await supabase.rpc('delete_user');
         if (rpcError) throw rpcError;

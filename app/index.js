@@ -3,6 +3,7 @@ import { Redirect } from 'expo-router';
 import { View, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../context/AuthContext';
+import { hideSplash } from '../utils/splash';
 import { ONBOARDING_SEEN_KEY } from './onboarding';
 import { welcomeSeenKey } from './(auth)/welcome';
 
@@ -27,7 +28,16 @@ export default function Index() {
       .catch(() => setWelcomeSeen(false));
   }, [user]);
 
-  if (loading || onboardingSeen === null || (user && welcomeSeen === null)) {
+  const checking = loading || onboardingSeen === null || (user && welcomeSeen === null);
+  // Every destination except Home is its own full screen, ready the moment it
+  // mounts, so the native splash can go as the redirect happens. Home hides it
+  // itself, once it has data to show (see Dashboard's entrance).
+  const toHome = !!user && !!user.user_metadata?.name && welcomeSeen === true;
+  useEffect(() => {
+    if (!checking && !toHome) hideSplash();
+  }, [checking, toHome]);
+
+  if (checking) {
     return (
       <View className="flex-1 bg-bg items-center justify-center">
         <ActivityIndicator color="#ffffff" />

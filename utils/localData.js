@@ -16,6 +16,8 @@ export async function clearDataCaches(userId) {
   await AsyncStorage.multiRemove([
     storageKeys.transactions(userId),
     storageKeys.savings(userId),
+    // No longer written (the plan feature is gone), but earlier versions left it
+    // on devices, and it holds a user's own figures.
     storageKeys.budgetPlan(userId),
     storageKeys.syncedBudget(userId),
     storageKeys.pendingBudget(userId),

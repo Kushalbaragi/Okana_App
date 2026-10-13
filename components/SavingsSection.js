@@ -482,8 +482,7 @@ function paymentGrid(firstEmiDate, tenureMonths, emisPaid = 0) {
   return { years };
 }
 
-// The label + round "+" row above the goal/loan list, same layout as
-// BudgetPlan's own "Plan your next salary" row — a plus icon in a dim
+// The label + round "+" row above the goal/loan list — a plus icon in a dim
 // circle, not a labelled pill, since it sits right above the cards it adds
 // to rather than floating at the bottom of the page unlabelled by context.
 function ListHeader({ label, onPress, addLabel, light }) {
@@ -492,8 +491,7 @@ function ListHeader({ label, onPress, addLabel, light }) {
       {/* marginLeft matches the card's own inner padding below (see
           GoalCard's `padding: 16`), so this label lines up with the goal
           name text inside the card rather than sitting flush with the
-          card's bare left edge — same alignment BudgetPlan's own header
-          gives its "Plan your next salary" label. */}
+          card's bare left edge. */}
       <Text style={{ fontSize: FONT.body, color: textColor(light).tertiary, marginLeft: 16 }}>{label}</Text>
       <Pressable
         onPress={onPress}

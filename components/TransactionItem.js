@@ -2,14 +2,32 @@ import { memo, useCallback, useEffect, useRef } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
-import { parseISO } from 'date-fns';
-import { formatCurrencyPlain } from '../utils/format';
-import { MONTH_NAMES } from '../utils/monthlyRecap';
+import { formatCurrencyPlain, dateBoxParts } from '../utils/format';
 import { SwipeDeleteAction, useSwipeDelete } from './SwipeDeleteAction';
 import { CARD_COLOR } from './Glass';
 import { textColor, INCOME_TEXT } from '../utils/colors';
-import { BODY, TABULAR, FONT } from '../utils/type';
+import { BODY, TABULAR } from '../utils/type';
 import { LEDGER_PILL_INSET } from '../utils/spacing';
+
+// The day over the month's three letters, in a small pill on the left — the same
+// chip the savings history uses.
+function DatePill({ dateStr, light }) {
+  const { day, month } = dateBoxParts(dateStr);
+  return (
+    <View style={{ width: 30, height: 30, borderRadius: 7, marginRight: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: light ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.07)' }}>
+      {/* Both lines are shrink-wrapped to their own text and centred by this
+          column, so each sits on the pill's middle line whatever its width. */}
+      <View style={{ alignItems: 'center' }}>
+        <Text style={[TABULAR, { includeFontPadding: false, fontSize: 11, lineHeight: 12, fontWeight: '500', color: textColor(light).tertiary }]}>{String(day).padStart(2, '0')}</Text>
+        {/* letterSpacing also trails the last letter, which pulls the word left of
+            centre; the matching left padding puts it back. */}
+        <View style={{ paddingLeft: 0.5, marginTop: 1 }}>
+          <Text style={{ includeFontPadding: false, fontSize: 7, lineHeight: 8, fontWeight: '500', letterSpacing: 0.5, color: textColor(light).tertiary }}>{month}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
 
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard — see the matching comment in Header.js.
@@ -20,14 +38,7 @@ import { LEDGER_PILL_INSET } from '../utils/spacing';
 // the list paints rows flat first and flips this to true once the initial
 // commit has settled (see `settled` in TransactionList), moving the setup
 // off the critical path instead of removing the feature.
-// "4 Oct", in a column of fixed width (DATE_WIDTH) so the dates line up at the right edge.
-const DATE_WIDTH = 50;
-function shortDate(dateStr) {
-  const d = parseISO(dateStr);
-  return `${d.getDate()} ${MONTH_NAMES[d.getMonth()].slice(0, 3)}`;
-}
-
-function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, onSwipeOpen, onCardPress, light = false, swipeable = true, cardColor = CARD_COLOR, amountWidth }) {
+function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, onSwipeOpen, onCardPress, light = false, swipeable = true, cardColor = CARD_COLOR }) {
   // Tapping the trash slides the row shut and asks `onDelete` (which opens a
   // confirmation) at once, rather than waiting for the slide to finish.
   const { setSwipeableRef, handleDelete } = useSwipeDelete(tx.id, onDelete, registerSwipeable);
@@ -68,31 +79,27 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
     <Pressable
       onPress={handleCardPress}
       className="py-3"
-      // Matches MonthHeader's own paddingHorizontal (both read
-      // LEDGER_PILL_INSET), so a row's amount starts under the pill's text
-      // above it rather than further left at the raw list edge.
+      // Paints the list's own card colour (opaque, so a swiped-open row can't
+      // show its delete button through itself). Padding is LEDGER_PILL_INSET,
+      // as MonthHeader's is, so text lines up with the month headers.
       style={{ backgroundColor: cardColor, paddingLeft: LEDGER_PILL_INSET, paddingRight: LEDGER_PILL_INSET }}
     >
-      {/* Just the amount and the description, like a line in a note: the amount, a
-          dash, then the description, with the day at the right edge. */}
+      {/* A date pill, then the description on the left and the amount on the right
+          so the figures line up down the list. */}
       <Animated.View className="flex-row items-center" style={contentStyle}>
         {/* Not yet synced to the server — sitting in the offline queue, or
             an insert/update still in flight. */}
         {tx._pending && (
           <View style={{ width: 5, height: 5, borderRadius: 2.5, marginRight: 8, backgroundColor: light ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }} />
         )}
-        {/* A column as wide as the list's longest amount, so the dashes line up. */}
-        <Text numberOfLines={1} style={[BODY, TABULAR, { width: amountWidth, color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>
-          {formatCurrencyPlain(tx.amount)}
-        </Text>
-        {/* Same colour as the amount, so the row reads as one line. */}
-        <Text style={[BODY, { marginLeft: 8, marginRight: 18, color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>–</Text>
+        <DatePill dateStr={tx.date} light={light} />
         <Text numberOfLines={1} style={[BODY, { flex: 1, color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>
           {tx.description || (isIncome ? 'Income' : 'Expense')}
         </Text>
-        {/* The day, plain and faint at the right edge, in a column of the same width
-            on every row so the dates line up. */}
-        <Text numberOfLines={1} style={{ width: DATE_WIDTH, marginLeft: 12, textAlign: 'right', fontSize: FONT.caption, color: light ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.18)' }}>{shortDate(tx.date)}</Text>
+        {/* Same colour as the description, so the row reads as one line. */}
+        <Text numberOfLines={1} style={[BODY, TABULAR, { marginLeft: 16, textAlign: 'right', color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>
+          {formatCurrencyPlain(tx.amount)}
+        </Text>
       </Animated.View>
     </Pressable>
   );

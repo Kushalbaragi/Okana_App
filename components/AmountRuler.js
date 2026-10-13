@@ -51,7 +51,7 @@ const DONE_MAJOR = 'rgba(74,222,128,0.90)';
 // The step between ticks grows with the amount. A flat step can't serve both
 // ends: fine enough for a ₹20,000 goal means thousands of ticks to reach ₹20
 // lakh. Widening it keeps small goals precise and big ones a few swipes away.
-// One shared set of bands now — every ruler in the app (Budget Plan, budget
+// One shared set of bands now — every ruler in the app (budget
 // setup, savings, debt) feels identical: ₹100 steps up to ₹1 lakh, ₹1,000
 // steps up to ₹10 lakh, ₹10,000 beyond that.
 //

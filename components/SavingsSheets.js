@@ -405,11 +405,10 @@ const AmountTextRow = memo(function AmountTextRow({ label, value, onChangeValue,
           placeholder={placeholder}
           placeholderTextColor={textColor(light).tertiary}
           keyboardType="number-pad"
-          // 9 digits — up to ₹99,99,99,999 — matches BudgetPlan's own
-          // amount field (ItemRow), the app's one other bare currency
-          // TextInput; the old ruler's manual-entry fallback had no cap
-          // at all, which was never a deliberate choice, just leftover
-          // from typing being an afterthought instead of the main path.
+          // 9 digits — up to ₹99,99,99,999. The old ruler's manual-entry
+          // fallback had no cap at all, which was never a deliberate choice,
+          // just leftover from typing being an afterthought instead of the
+          // main path.
           maxLength={9}
           returnKeyType="done"
           onSubmitEditing={() => { Keyboard.dismiss(); setEditing(false); onBlurRow?.(); }}

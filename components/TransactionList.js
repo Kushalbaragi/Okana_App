@@ -1,15 +1,15 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { View, Text, FlatList, Pressable, StyleSheet, InteractionManager } from 'react-native';
-import Animated, { withTiming } from 'react-native-reanimated';
+import { View, Text, FlatList, Pressable, InteractionManager } from 'react-native';
+import Animated, { FadeIn, FadeOut, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
 import TransactionItem from './TransactionItem';
 import { ChevronRight } from './icons';
-import { formatCurrency, formatCurrencyPlain } from '../utils/format';
+import { formatCurrency } from '../utils/format';
 import { textColor, INCOME_TEXT } from '../utils/colors';
 import { BODY, TABULAR } from '../utils/type';
 import { GUTTER, LEDGER_PILL_INSET } from '../utils/spacing';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
-import { SETTLE_EASING, SPRING_SMOOTH, layoutTransition } from '../utils/motion';
+import { RANGE_FADE_IN_MS, RANGE_FADE_OUT_MS, SETTLE_EASING, SPRING_SMOOTH, layoutTransition } from '../utils/motion';
 
 // SPRING_SMOOTH — the app's calmer preset, for heavier content reflowing
 // (a taller list row settling into place reads better a bit more gently
@@ -30,70 +30,195 @@ function rowEntering() {
   };
 }
 
-// The space between the last row of an open month and the next month's header.
-const MONTH_GAP = 32;
+// The motions a group opens and closes with. Overdamped on purpose (damping is
+// just past 2·sqrt(stiffness·mass)): a spring keeps velocity continuous, so
+// the content below is carried along without a start or a stop, but height must
+// never overshoot its natural size or the group would visibly spring past it and
+// come back. Soft and unhurried rather than snappy — the whole column below moves
+// with it, and that reads better taking its time.
+const OPEN_SPRING = { damping: 24, stiffness: 135, mass: 0.9 };
+// Closing is brisker than opening: there is nothing to read on the way out, and a
+// group that lingers while it empties feels slow. Overdamped as well, so the
+// height still cannot overshoot and bounce.
+const CLOSE_SPRING = { damping: 26, stiffness: 240, mass: 0.7 };
+
+// A transaction row's and a header's own height, used only as the opening height
+// of a group that has never been measured yet (the first frame of the very first
+// open). Both are fixed: every row is one line (numberOfLines={1} throughout) over
+// a 30pt date pill, padded 12 top and bottom; a header is one line padded 14. The
+// real height replaces these as soon as the group has been laid out once.
+// Long enough to be clear of the spring's last frames, short enough that a group
+// reopened by a quick second tap has not been torn down yet.
+const TEARDOWN_DELAY_MS = 180;
+
+// Comfortably past the opening spring, so the rows gain their swipe gestures only
+// once everything has come to rest.
+const ARM_AFTER_MS = 520;
+
+
+const ROW_HEIGHT = 54;
+const HEADER_HEIGHT = 49;
+
+// A whole group — a month's transactions, or a year's months — opening and
+// closing as ONE animated height, rather than each row animating itself. That is
+// what makes it smooth in both directions and anywhere in the list: there is a
+// single value moving on the UI thread, the content below is carried by the
+// layout every frame, and nothing has to be kept in step with anything else.
+// Fully open it carries no height of its own at all, so the group is just its
+// natural size (and measures itself for the next close) and rows inside it
+// behave normally.
+function Collapsible({ open, estimate, onClosed, children }) {
+  const natural = useSharedValue(estimate);
+  const progress = useSharedValue(open ? 1 : 0);
+  const [, bump] = useState(0);
+
+  // Whether the group is on its way out is worked out as the render happens, not
+  // afterwards in an effect: `open` goes false in the same commit that would stop
+  // rendering the contents, so by the time an effect could say "still closing" the
+  // group has already painted one frame empty and then filled itself back in —
+  // which is the blink. A ref, because this has to be known in the very render
+  // that learns `open` has changed.
+  const prevOpen = useRef(open);
+  const closing = useRef(false);
+  if (prevOpen.current !== open) {
+    prevOpen.current = open;
+    closing.current = !open;
+  }
+
+  // Dropping the contents means unmounting a month's worth of rows and taking
+  // their swipe gestures down with them — the single heaviest thing this component
+  // ever does. Run on the frame the spring lands, it is a stutter right at the end
+  // of the animation. The group is already at zero height by then and nothing of it
+  // can be seen, so it waits a moment and tears down well clear of the motion.
+  const openRef = useRef(open);
+  openRef.current = open;
+  const teardown = useRef(null);
+  const finishClose = useCallback(() => {
+    clearTimeout(teardown.current);
+    teardown.current = setTimeout(() => {
+      // Reopened in the meantime: its contents are wanted after all.
+      if (openRef.current) return;
+      closing.current = false;
+      bump(n => n + 1);
+      onClosed?.();
+    }, TEARDOWN_DELAY_MS);
+  }, [onClosed]);
+  useEffect(() => () => clearTimeout(teardown.current), []);
+
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (firstRun.current) { firstRun.current = false; return; }
+    if (open) {
+      progress.value = withSpring(1, OPEN_SPRING);
+      return;
+    }
+    progress.value = withSpring(0, CLOSE_SPRING, finished => {
+      if (finished) runOnJS(finishClose)();
+    });
+  }, [open, progress, finishClose]);
+
+  // The height the collapse animates from must not move once that collapse has
+  // started — a re-measure landing mid-animation changes the target under it and
+  // the group visibly jerks. Measurements are taken only while the group is open
+  // and unclipped, which is also the only time the figure means anything.
+  const onLayout = useCallback(e => {
+    const h = e.nativeEvent.layout.height;
+    if (h > 0 && !closing.current) natural.value = h;
+  }, [natural]);
+
+  const style = useAnimatedStyle(() => (
+    progress.value === 1 ? {} : { height: natural.value * progress.value, opacity: progress.value, overflow: 'hidden' }
+  ));
+
+  return (
+    <Animated.View style={style} pointerEvents={open ? 'auto' : 'none'}>
+      <View onLayout={onLayout}>{open || closing.current ? children : null}</View>
+    </Animated.View>
+  );
+}
+
+// Memoised, and given props that keep their identity (see flatData and
+// renderRow), so opening or closing one group doesn't re-render the rows of every
+// other open group. Rebuilding a month's worth of armed rows is what put a pause
+// between the tap and the collapse starting, and it grew with each month left
+// open — the first header felt instant, the ones below it did not.
+//
+// A group's rows, armed a beat after they appear. Mounting a row's swipe gesture
+// (ReanimatedSwipeable sets up a gesture handler and its worklets) is by far the
+// most expensive part of putting one on screen, and a month's worth of that in
+// the same commit as the tap is what put a pause between pressing a header and
+// the group starting to move. The rows go up plain and gain their swipe once
+// they are already there, so the tap is answered immediately.
+const Group = memo(function Group({ open, rows, estimate, renderRow }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!open) return undefined;
+    // After the group has finished opening, not during it: wrapping a month's rows
+    // in their swipe gestures re-lays the group out, and anything that changes
+    // layout while the list is moving shows up as a stumble.
+    const t = setTimeout(() => setArmed(true), ARM_AFTER_MS);
+    return () => clearTimeout(t);
+  }, [open]);
+  // Deliberately NOT disarmed when the group starts closing: tearing every row's
+  // swipe gesture back down mid-collapse is a whole month's worth of work landing
+  // in the middle of the animation, which is exactly what made it stutter. The
+  // rows are let go once the group is shut and they have left the tree anyway.
+  const handleClosed = useCallback(() => setArmed(false), []);
+  // The rows are built from the rows themselves and nothing else, so toggling the
+  // group hands React the very same elements it already has and it skips the whole
+  // subtree. Without this, every tap rebuilt a month's worth of rows before the
+  // collapse could even start, which is the pause between pressing a header and
+  // anything moving — and it grew with the number of rows in the group.
+  const content = useMemo(() => rows.map(({ tx }) => renderRow(tx, armed)), [rows, armed, renderRow]);
+  return (
+    <Collapsible open={open} estimate={estimate} onClosed={handleClosed}>
+      {content}
+    </Collapsible>
+  );
+});
 
 // How long the tour's demo swipe holds the delete button in view before closing,
 // and how long the row rests shut before it swipes again.
 const DEMO_SWIPE_HOLD_MS = 1300;
 const DEMO_SWIPE_PAUSE_MS = 1100;
 
-// How wide one character of a row's amount is, at the body size. The amounts are
-// plain digits (no commas) in tabular figures, so every character is the same
-// width and a column as wide as the longest amount lines up the dashes after them.
-const AMOUNT_CHAR_WIDTH = 10;
-// A month's total is written with grouping commas ("₹12,000"), which are narrower
-// than a digit, so it is measured a character at a time.
-function totalColumnWidth(text) {
-  let width = 0;
-  for (const ch of text) width += /[0-9₹]/.test(ch) ? AMOUNT_CHAR_WIDTH : AMOUNT_CHAR_WIDTH / 2;
-  return width;
-}
-
-// One running ledger — every month that has anything in it, newest first,
-// each with a total; every transaction under its own month, newest first.
-//
-// The current month has no header at all any more — see flatData's own
-// comment on why. Every OTHER month is collapsed by default behind this
-// header (its total stays, since nowhere else on screen says it) and opens
-// on tap — the `total` this list shows was never a drill-down destination,
-// just a summary, so there's nothing lost by not unrolling every month at
-// once.
-//
-// `amount` follows whichever tab the Home chart is on: Expense shows the
-// month's expense total, Income its income total, Overview shows nothing
-// (see TransactionList's own comment on why Overview has no single figure
-// that means anything here) — `amount == null` is what skips it below.
-function MonthHeader({ label, amount, amountWidth, light, isOpen, isIncome, onPress }) {
+// A month's (or, on the All chart, a year's) header, laid out like a row: the
+// name on the left, its total on the right, and a chevron that turns down when
+// it's open. `amount` follows the Expense/Income tab. `level` 1 is a month under a
+// year (All chart) and sits a little further in.
+const GroupHeader = memo(function GroupHeader({ label, amount, light, isOpen, isIncome, level, toggleKey, onToggle }) {
+  // The chevron swings from pointing right to pointing down on a spring, rather
+  // than jumping when `isOpen` flips — on the calmer preset, so it turns at about
+  // the pace the group itself opens.
+  const turn = useSharedValue(isOpen ? 1 : 0);
+  useEffect(() => {
+    turn.value = withSpring(isOpen ? 1 : 0, SPRING_SMOOTH);
+  }, [isOpen, turn]);
+  const chevronStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.value * 90}deg` }] }));
+  const labelColor = textColor(light)[isOpen ? 'primary' : 'secondary'];
+  const handlePress = useCallback(() => onToggle(toggleKey), [onToggle, toggleKey]);
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${label}, ${isOpen ? 'expanded' : 'collapsed'}`}>
-      {/* Laid out like a transaction row: the month's total on the left, in a
-          column as wide as the widest total so every month name starts at the
-          same place, a dash, then the month. A hairline above separates it from
-          whatever is above — the last month's rows, or the month before. No
-          card behind it. */}
+    <Pressable onPress={handlePress} accessibilityRole="button" accessibilityLabel={`${label}, ${isOpen ? 'expanded' : 'collapsed'}`}>
       <View
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          paddingHorizontal: LEDGER_PILL_INSET,
+          paddingLeft: LEDGER_PILL_INSET + (level ? 16 : 0),
+          paddingRight: LEDGER_PILL_INSET,
           paddingVertical: 14,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: light ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)',
         }}
       >
-        {amount != null && (
-          <>
-            <Text numberOfLines={1} style={[BODY, TABULAR, { width: amountWidth, color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>{formatCurrency(amount)}</Text>
-            <Text style={[BODY, { marginLeft: 8, marginRight: 18, color: textColor(light).secondary }]}>–</Text>
-          </>
-        )}
-        <Text numberOfLines={1} style={[BODY, { flex: 1, color: textColor(light).secondary }]}>{label}</Text>
-        <ChevronRight size={16} color={textColor(light).secondary} />
+        {/* The month and its total read as one line: the same colour as each other,
+            and both brighten together when the group is open. */}
+        <Text numberOfLines={1} style={[BODY, { flex: 1, color: labelColor }]}>{label}</Text>
+        <Text numberOfLines={1} style={[BODY, TABULAR, { marginLeft: 16, color: isIncome ? INCOME_TEXT : labelColor }]}>{formatCurrency(amount)}</Text>
+        <Animated.View style={[{ marginLeft: 10 }, chevronStyle]}>
+          <ChevronRight size={16} color={textColor(light).secondary} />
+        </Animated.View>
       </View>
     </Pressable>
   );
-}
+});
 
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard — see the matching comment in Header.js.
@@ -106,10 +231,13 @@ function TransactionList({
   // rowEntering (fade + rise) and everything below it pushes down via
   // ROW_LAYOUT_TRANSITION.
   justAddedId,
-  // Same Expense/Income/Overview value the Home chart's slider is on —
+  // Same Expense/Income value the Home chart's pill is on —
   // decides which figure (if any) each month's header shows, see
-  // MonthHeader's own comment.
+  // GroupHeader's own comment.
   mode = 'expense',
+  // The chart's range: 'month' lists this month's transactions, 'year' this
+  // year's months, '5y' (All) every year and, inside it, its months.
+  timeRange = 'month',
 }, ref) {
   // The page's own background, not a raised fill — the rows sit directly on
   // the screen. They still have to paint an opaque colour of their own — a
@@ -194,17 +322,42 @@ function TransactionList({
 
   useImperativeHandle(ref, () => ({ closeOpenRow, demoSwipe }), [closeOpenRow, demoSwipe]);
 
-  // The current month is always expanded — it's the one someone opens the
-  // app to check today. Every other month starts collapsed behind its
-  // header and only unrolls on tap; at most one at a time (opening a new
-  // one closes whatever was open), so the ledger stays a single screen of
-  // headers rather than growing into the old page-long scroll again.
+  // What the list shows follows the chart above it. Month: this month's
+  // transactions, no header. Year: this year's months as headers. All: a header
+  // per year, with its months inside it once opened.
+  //
+  // Opening a group never closes another one, so the only thing that ever changes
+  // size is the group BELOW the header that was tapped: nothing above it moves,
+  // and the header stays exactly where the finger left it, opening or closing.
+  // Several months can be read at once, and each is closed by tapping it again.
   const now = useRef(new Date()).current;
   const currentMonthKey = now.getFullYear() * 12 + now.getMonth();
-  const [expandedKey, setExpandedKey] = useState(null);
-  const toggleMonth = useCallback(key => {
-    setExpandedKey(k => (k === key ? null : key));
+  const currentYear = now.getFullYear();
+  const [openKeys, setOpenKeys] = useState([]);
+  const toggleGroup = useCallback(key => {
+    setOpenKeys(ks => (ks.includes(key) ? ks.filter(k => k !== key) : [...ks, key]));
   }, []);
+  // Changing the chart's range rebuilds the list around a different span, so
+  // whatever was left open under the old one is closed. The rows that replace it
+  // go up plain and gain their swipe gestures once the chart has finished sliding
+  // — mounting a month of them in the same frame as the swipe is what made the
+  // change drag.
+  // The range changes here on the same commit the chart swaps its own data to —
+  // the chart has already slid out by then and is about to slide back in with the
+  // new range, and the two have to arrive together. Nothing about the swap is
+  // deferred; what IS deferred is the rows gaining their swipe gestures, which is
+  // the expensive part and is invisible either way.
+  // The range changes here on the very commit the chart swaps its own data on, so
+  // the new rows and the new chart arrive together. Whatever was left open under
+  // the old range is closed, and the new rows gain their swipe gestures a little
+  // later — that part is the expensive one, and it is invisible either way.
+  const [rangeSettled, setRangeSettled] = useState(false);
+  useEffect(() => {
+    setOpenKeys([]);
+    setRangeSettled(false);
+    const t = setTimeout(() => setRangeSettled(true), ARM_AFTER_MS);
+    return () => clearTimeout(t);
+  }, [timeRange]);
 
   // Every month that has anything in it, newest first, with its own
   // transactions (also newest first) and BOTH an expense and an income
@@ -232,60 +385,77 @@ function TransactionList({
     return list;
   }, [transactions]);
 
-  // Flattened into one array — a header entry, then that month's
-  // transactions, then the next month's header, and so on — because FlatList
-  // (unlike the plain ScrollView this used to be) needs one flat `data` to
-  // virtualize over. That virtualization is the whole reason for this shape:
-  // a personal ledger open for a while runs to hundreds of rows, each one a
-  // real ReanimatedSwipeable (gesture-handler + worklet setup) once `settled`
-  // arms them — mounting every single one at once, as the old ScrollView
-  // did, is what made scrolling janky. FlatList only ever mounts what's on
-  // screen plus a small buffer.
-  //
+  // One flat array for FlatList. A group (a month's rows, or a year's months) is
+  // a single item holding its own contents, so it can open and close as one
+  // height — see Collapsible. In Month the rows are items of their own instead:
+  // there is no group to open there, and one long month is better virtualized.
   const flatData = useMemo(() => {
+    const figure = g => (mode === 'income' ? g.incomeTotal : g.expenseTotal);
+    const monthHeader = (g, isOpen, level, scope) => ({
+      type: 'header',
+      key: `h-${g.key}`,
+      label: MONTH_NAMES[g.month],
+      amount: figure(g),
+      isOpen,
+      level,
+      scope,
+      toggleKey: g.key,
+    });
     const out = [];
-    for (const g of groups) {
-      const isCurrent = g.key === currentMonthKey;
-      // Room before a month's header whenever the rows of an open month sit right
-      // above it (the current month's, or one the user expanded), so one month
-      // visibly ends before the next begins.
-      if (!isCurrent && out.length > 0 && out[out.length - 1].type === 'tx') {
-        out.push({ type: 'gap', key: `gap-${g.key}` });
-      }
-      const isOpen = isCurrent || g.key === expandedKey;
-      // No header at all for the current month — everything it would have
-      // said (the month name, the amount) is already on screen three other
-      // ways above the list (the period caption, the page dots, the chart's
-      // own label), and it wasn't tappable like the past-month pills below
-      // it, just pill-shaped chrome around nothing.
-      if (!isCurrent) {
-        out.push({
-          type: 'header',
-          key: `h-${g.key}`,
-          groupKey: g.key,
-          label: `${MONTH_NAMES[g.month].slice(0, 3).toUpperCase()}-${g.year}`,
-          // Overview shows neither figure — expense-only and income-only
-          // are each an answer to "what happened", but there's no single
-          // net number this list has ever meant to show (see the chart's
-          // own expense-only convention this used to just inherit).
-          amount: mode === 'income' ? g.incomeTotal : mode === 'expense' ? g.expenseTotal : null,
-          isOpen,
-        });
-      }
-      if (isOpen) {
+
+    if (timeRange === 'month') {
+      for (const g of groups) {
+        if (g.key !== currentMonthKey) continue;
         for (const { tx } of g.items) out.push({ type: 'tx', key: tx.id, tx });
       }
+      return out;
+    }
+
+    if (timeRange === 'year') {
+      for (const g of groups) {
+        if (g.year !== currentYear) continue;
+        const isOpen = openKeys.includes(g.key);
+        out.push(monthHeader(g, isOpen, 0, 'year'));
+        out.push({ type: 'group', key: `g-${g.key}`, rows: g.items, open: isOpen });
+      }
+      return out;
+    }
+
+    // All: years newest first, each with its months inside it.
+    const years = [];
+    for (const g of groups) {
+      let y = years[years.length - 1];
+      if (!y || y.year !== g.year) { y = { year: g.year, months: [], expenseTotal: 0, incomeTotal: 0 }; years.push(y); }
+      y.months.push(g);
+      y.expenseTotal += g.expenseTotal;
+      y.incomeTotal += g.incomeTotal;
+    }
+    for (const y of years) {
+      const yearOpen = openKeys.includes(`y${y.year}`);
+      out.push({ type: 'header', key: `y-${y.year}`, label: String(y.year), amount: figure(y), isOpen: yearOpen, level: 0, scope: 'allYear', toggleKey: `y${y.year}` });
+      out.push({
+        type: 'yearBody',
+        key: `yb-${y.year}`,
+        open: yearOpen,
+        months: y.months.map(g => ({ key: `g-${g.key}`, header: monthHeader(g, openKeys.includes(g.key), 1, 'allMonth'), rows: g.items, open: openKeys.includes(g.key) })),
+      });
     }
     return out;
-  }, [groups, currentMonthKey, expandedKey, mode]);
+  }, [groups, currentMonthKey, currentYear, openKeys, mode, timeRange]);
 
-  firstTxIdRef.current = flatData.find(item => item.type === 'tx')?.key ?? null;
-
-  // As wide as the widest month total, so the month names line up.
-  const headerAmountWidth = useMemo(
-    () => flatData.reduce((max, item) => (item.type === 'header' && item.amount != null ? Math.max(max, totalColumnWidth(formatCurrency(item.amount))) : max), 0),
-    [flatData],
-  );
+  // The tour's demo swipe needs a row that is actually on screen: the first row
+  // of the open group, or of the plain Month list.
+  firstTxIdRef.current = (() => {
+    for (const item of flatData) {
+      if (item.type === 'tx') return item.key;
+      if (item.type === 'group' && item.open) return item.rows[0]?.tx.id ?? null;
+      if (item.type === 'yearBody' && item.open) {
+        const m = item.months.find(x => x.open);
+        if (m) return m.rows[0]?.tx.id ?? null;
+      }
+    }
+    return null;
+  })();
 
   // False for the first commit only, true once it has settled. Gates the
   // two per-row costs that profiling showed dominate a first paint —
@@ -303,22 +473,16 @@ function TransactionList({
   // Hoisted rather than inlined at the call site so memo(TransactionItem)
   // keeps getting stable props and can actually bail out of re-rendering
   // rows that haven't changed.
-  // As wide as the longest amount in the list, so each row's dash sits in one
-  // vertical line whatever the amounts are.
-  const amountWidth = useMemo(
-    () => transactions.reduce((max, tx) => Math.max(max, formatCurrencyPlain(tx.amount).length), 1) * AMOUNT_CHAR_WIDTH,
-    [transactions],
-  );
-
-  const renderTransaction = useCallback((item) => (
+  const renderRow = useCallback((tx, armed = true) => (
     <Animated.View
-      layout={settled ? ROW_LAYOUT_TRANSITION : undefined}
-      entering={item.id === justAddedId ? rowEntering : undefined}
+      key={tx.id}
+      layout={settled && armed ? ROW_LAYOUT_TRANSITION : undefined}
+      entering={tx.id === justAddedId ? rowEntering : undefined}
       style={{ backgroundColor: cardColor }}
     >
       <TransactionItem
-        tx={item}
-        isIncome={item.type === 'income'}
+        tx={tx}
+        isIncome={tx.type === 'income'}
         onEdit={onEdit}
         onDelete={onDelete}
         registerSwipeable={registerSwipeable}
@@ -326,29 +490,43 @@ function TransactionList({
         onCardPress={onCardPress}
         light={light}
         cardColor={cardColor}
-        swipeable={settled}
-        amountWidth={amountWidth}
+        swipeable={settled && armed}
       />
     </Animated.View>
-  ), [settled, justAddedId, cardColor, onEdit, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light, amountWidth]);
+  ), [settled, justAddedId, cardColor, onEdit, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light]);
+
+  const renderHeader = useCallback((item) => (
+    <GroupHeader
+      label={item.label}
+      amount={item.amount}
+      light={light}
+      isOpen={item.isOpen}
+      isIncome={mode === 'income'}
+      level={item.level}
+      toggleKey={item.toggleKey}
+      onToggle={toggleGroup}
+    />
+  ), [light, mode, toggleGroup]);
 
   const renderItem = useCallback(({ item }) => {
-    if (item.type === 'gap') return <View style={{ height: MONTH_GAP }} />;
-    if (item.type === 'header') {
-      return (
-        <MonthHeader
-          label={item.label}
-          amount={item.amount}
-          amountWidth={headerAmountWidth}
-          light={light}
-          isOpen={item.isOpen}
-          isIncome={mode === 'income'}
-          onPress={() => toggleMonth(item.groupKey)}
-        />
-      );
+    if (item.type === 'tx') return renderRow(item.tx, rangeSettled);
+    if (item.type === 'header') return renderHeader(item);
+    if (item.type === 'group') {
+      return <Group open={item.open} rows={item.rows} estimate={item.rows.length * ROW_HEIGHT} renderRow={renderRow} />;
     }
-    return renderTransaction(item.tx);
-  }, [renderTransaction, light, toggleMonth, mode, headerAmountWidth]);
+    // A year: its months, each of which opens and closes inside it. The year's own
+    // height is natural while it is open, so a month opening simply grows it.
+    return (
+      <Collapsible open={item.open} estimate={item.months.length * HEADER_HEIGHT}>
+        {item.months.map(m => (
+          <View key={m.key}>
+            {renderHeader(m.header)}
+            <Group open={m.open} rows={m.rows} estimate={m.rows.length * ROW_HEIGHT} renderRow={renderRow} />
+          </View>
+        ))}
+      </Collapsible>
+    );
+  }, [renderRow, renderHeader, rangeSettled]);
 
   const empty = (
     <View className="items-center justify-center py-14 px-4">
@@ -362,24 +540,33 @@ function TransactionList({
   return (
     <Pressable onPress={closeOpenRow} style={{ flex: 1 }}>
       <View style={{ flex: 1 }}>
-        <FlatList
-          data={flatData}
-          keyExtractor={item => item.key}
-          renderItem={renderItem}
-          ListEmptyComponent={empty}
-          onScrollBeginDrag={closeOpenRow}
-          contentContainerStyle={{ paddingHorizontal: GUTTER, paddingTop: 16, paddingBottom: 112 }}
-          showsVerticalScrollIndicator={false}
-          style={{ flex: 1 }}
-          // Tuned down from the defaults (10/21) — each row's real cost is
-          // its ReanimatedSwipeable, not its plain-text content, so keeping
-          // fewer of them mounted at once (a smaller window either side of
-          // what's on screen) matters more here than it would for a row of
-          // pure text.
-          initialNumToRender={14}
-          maxToRenderPerBatch={10}
-          windowSize={9}
-        />
+        {/* Keyed by the range, so changing it replaces the whole list as one piece:
+            the old one fades out as the new one fades in over it, on the same
+            timings the chart above uses. A fresh list also mounts its
+            first screenful in a single commit (see initialNumToRender), so the rows
+            arrive together instead of filling in one after another, and it starts
+            at the top, where a new range should start. */}
+        <Animated.View key={timeRange} style={{ flex: 1 }} entering={FadeIn.duration(RANGE_FADE_IN_MS)} exiting={FadeOut.duration(RANGE_FADE_OUT_MS)}>
+          <FlatList
+            data={flatData}
+            keyExtractor={item => item.key}
+            renderItem={renderItem}
+            ListEmptyComponent={empty}
+            onScrollBeginDrag={closeOpenRow}
+            contentContainerStyle={{ paddingHorizontal: GUTTER, paddingTop: 16, paddingBottom: 112 }}
+            showsVerticalScrollIndicator={false}
+            style={{ flex: 1 }}
+            // Tuned down from the defaults (10/21) — each row's real cost is
+            // its ReanimatedSwipeable, not its plain-text content, so keeping
+            // fewer of them mounted at once (a smaller window either side of
+            // what's on screen) matters more here than it would for a row of
+            // pure text.
+            // A full screen of rows and a little more, all in the first commit.
+            initialNumToRender={16}
+            maxToRenderPerBatch={10}
+            windowSize={9}
+          />
+        </Animated.View>
       </View>
     </Pressable>
   );

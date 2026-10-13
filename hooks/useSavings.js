@@ -63,6 +63,16 @@ function entryFromRow(row) {
   }
 }
 
+// Debt lives in its own tables (debts / debt_payments); a debt is mapped onto
+// the same goal/entry shape here so everything downstream treats the two alike.
+const debtFromRow = (row) => goalFromRow({ ...row, kind: 'debt' })
+const paymentFromRow = (row) => entryFromRow({ ...row, goal_id: row.debt_id })
+
+// Which table a goal's rows, and its entries' rows, live in.
+const goalsTable = (kind) => (kind === 'debt' ? 'debts' : 'savings_goals')
+const entriesTable = (kind) => (kind === 'debt' ? 'debt_payments' : 'savings_entries')
+const entryGoalKey = (kind) => (kind === 'debt' ? 'debt_id' : 'goal_id')
+
 const EMPTY = { goals: [], entries: [] }
 const FALLBACK_MESSAGE = 'Something went wrong. Please try again.'
 
@@ -105,10 +115,9 @@ function byDateDesc(a, b) {
 // also announces when the connection returns) — so the caller shows no error of
 // its own on top of it. Reads still fall back to the cached copy, so the list is
 // viewable offline.
-// `onEntryLogged` (optional) mirrors useBudgetPlan's own `onChecked`: told
-// once `logEntryAsExpense` below actually lands a row, so the caller's own
-// transaction list (which has no way to know about a write here on its own)
-// can refresh.
+// `onEntryLogged` (optional): told once `logEntryAsExpense` below actually lands
+// a row, so the caller's own transaction list (which has no way to know about a
+// write here on its own) can refresh.
 export function useSavings(onEntryLogged) {
   const { user } = useAuth()
   const { isOnlineRef, notifyOffline } = useNetwork()
@@ -143,11 +152,13 @@ export function useSavings(onEntryLogged) {
     const run = (async () => {
       try {
         if (!isOnlineRef.current) return
-        const [goalsRes, entriesRes] = await Promise.all([
-          supabase.from('savings_goals').select('*').eq('user_id', user.id).order('created_at', { ascending: true }),
+        const [goalsRes, entriesRes, debtsRes, paymentsRes] = await Promise.all([
+          supabase.from('savings_goals').select('*').eq('user_id', user.id).neq('kind', 'debt').order('created_at', { ascending: true }),
           supabase.from('savings_entries').select('*').eq('user_id', user.id),
+          supabase.from('debts').select('*').eq('user_id', user.id).order('created_at', { ascending: true }),
+          supabase.from('debt_payments').select('*').eq('user_id', user.id),
         ])
-        const failure = goalsRes.error || entriesRes.error
+        const failure = goalsRes.error || entriesRes.error || debtsRes.error || paymentsRes.error
         if (failure) {
           // Keep showing what we have; being offline isn't worth a report, a rejection is.
           if (!isConnectivityError(failure, isOnlineRef.current)) reportError(failure)
@@ -155,9 +166,14 @@ export function useSavings(onEntryLogged) {
         }
         if (writesInFlightRef.current > 0) return
         hydratedRef.current = true
+        // Savings entries of a debt that still sits in savings_goals (the
+        // pre-split copy) point at no goal here, so they're dropped.
+        const goals = [...goalsRes.data.map(goalFromRow), ...debtsRes.data.map(debtFromRow)]
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        const goalIds = new Set(goals.map(g => g.id))
         setStore({
-          goals: goalsRes.data.map(goalFromRow),
-          entries: entriesRes.data.map(entryFromRow),
+          goals,
+          entries: [...entriesRes.data.map(entryFromRow), ...paymentsRes.data.map(paymentFromRow)].filter(e => goalIds.has(e.goalId)),
         })
       } catch (err) {
         // Keep showing cached data; a dropped connection is expected, anything else is reported.
@@ -257,15 +273,17 @@ export function useSavings(onEntryLogged) {
     }
     const result = await write({
       apply: () => setStore(s => ({ ...s, goals: [...s.goals, goal] })),
-      request: () => supabase.from('savings_goals')
-        .insert({
-          id, user_id: user.id, name: goal.name, target_amount: goal.target, location: goal.location, kind,
-          debt_type: debtType, tenure_months: tenureMonths, emis_paid: emisPaidBefore,
-          first_emi_date: firstEmiDate, emi_amount: emiAmount,
-        })
+      request: () => supabase.from(goalsTable(kind))
+        .insert(kind === 'debt'
+          ? {
+            id, user_id: user.id, name: goal.name, target_amount: goal.target, location: goal.location,
+            debt_type: debtType || 'flexible', tenure_months: tenureMonths, emis_paid: emisPaidBefore,
+            first_emi_date: firstEmiDate, emi_amount: emiAmount,
+          }
+          : { id, user_id: user.id, name: goal.name, target_amount: goal.target, location: goal.location, kind })
         .select().single(),
       rollback: () => setStore(s => ({ ...s, goals: s.goals.filter(g => g.id !== id) })),
-      onSuccess: row => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? goalFromRow(row) : g) })),
+      onSuccess: row => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? (kind === 'debt' ? debtFromRow(row) : goalFromRow(row)) : g) })),
     })
     if (result.success) {
       hapticAdded()
@@ -288,7 +306,7 @@ export function useSavings(onEntryLogged) {
     const saved = netFor(storeRef.current.entries, id)
     const result = await write({
       apply: () => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? next : g) })),
-      request: () => supabase.from('savings_goals')
+      request: () => supabase.from(goalsTable(prev.kind))
         .update({
           name: next.name, target_amount: next.target, location: next.location,
           tenure_months: tenureMonths, emis_paid: emisPaidBefore, first_emi_date: firstEmiDate, emi_amount: emiAmount,
@@ -312,7 +330,7 @@ export function useSavings(onEntryLogged) {
         goals: s.goals.filter(g => g.id !== id),
         entries: s.entries.filter(e => e.goalId !== id),
       })),
-      request: () => supabase.from('savings_goals').delete().eq('id', id).eq('user_id', user.id),
+      request: () => supabase.from(goalsTable(prevGoal.kind)).delete().eq('id', id).eq('user_id', user.id),
       rollback: () => setStore(s => ({
         goals: [...s.goals, prevGoal].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
         entries: [...s.entries, ...prevEntries],
@@ -328,7 +346,7 @@ export function useSavings(onEntryLogged) {
     const completedAt = done ? new Date().toISOString() : null
     const result = await write({
       apply: () => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? { ...g, completedAt } : g) })),
-      request: () => supabase.from('savings_goals')
+      request: () => supabase.from(goalsTable(prev.kind))
         .update({ completed_at: completedAt })
         .eq('id', id).eq('user_id', user.id),
       rollback: () => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? prev : g) })),
@@ -348,6 +366,9 @@ export function useSavings(onEntryLogged) {
     return sum + (e.type === 'add' ? e.amount : -e.amount)
   }, 0)
 
+  // The entries table for whichever goal an entry belongs to.
+  const entriesTableFor = (goalId) => entriesTable(storeRef.current.goals.find(g => g.id === goalId)?.kind)
+
   // `date` is the day the money was set aside or taken out, chosen in the
   // sheet; it defaults to today.
   const addEntry = useCallback(async (goalId, { type, amount, note, date }) => {
@@ -361,8 +382,8 @@ export function useSavings(onEntryLogged) {
     const entry = { id, goalId, type, amount: value, date: date || today(), note: (note || '').trim(), createdAt: new Date().toISOString(), transactionId: null }
     const result = await write({
       apply: () => setStore(s => ({ ...s, entries: [...s.entries, entry] })),
-      request: () => supabase.from('savings_entries').insert({
-        id, goal_id: goalId, user_id: user.id, type, amount: value, date: entry.date, note: entry.note,
+      request: () => supabase.from(entriesTable(goal?.kind)).insert({
+        id, [entryGoalKey(goal?.kind)]: goalId, user_id: user.id, type, amount: value, date: entry.date, note: entry.note,
       }),
       rollback: () => setStore(s => ({ ...s, entries: s.entries.filter(e => e.id !== id) })),
     })
@@ -383,10 +404,9 @@ export function useSavings(onEntryLogged) {
   // own confirm prompt), never automatic: paying down a loan isn't itself a
   // home-screen expense unless the user says it should be counted as one.
   // The caller (SavingsSheetsHost's resolveEmiConfirm) links the returned id
-  // back onto the entry via linkEntryTransaction below, the same way Budget's
-  // own checked lines link theirs (see useBudgetPlan.setChecked) — so
-  // deleting the entry later takes this expense with it instead of leaving
-  // it behind (see deleteEntry).
+  // back onto the entry via linkEntryTransaction below, so deleting the entry
+  // later takes this expense with it instead of leaving it behind (see
+  // deleteEntry).
   const logEntryAsExpense = useCallback(async ({ amount, date, description }) => {
     const id = Crypto.randomUUID()
     const result = await write({
@@ -408,7 +428,7 @@ export function useSavings(onEntryLogged) {
     if (!prev) return { success: false, error: FALLBACK_MESSAGE }
     return write({
       apply: () => setStore(s => ({ ...s, entries: s.entries.map(e => e.id === entryId ? { ...e, transactionId } : e) })),
-      request: () => supabase.from('savings_entries').update({ transaction_id: transactionId }).eq('id', entryId).eq('user_id', user.id),
+      request: () => supabase.from(entriesTableFor(prev.goalId)).update({ transaction_id: transactionId }).eq('id', entryId).eq('user_id', user.id),
       rollback: () => setStore(s => ({ ...s, entries: s.entries.map(e => e.id === entryId ? prev : e) })),
     })
   }, [write, user])
@@ -428,7 +448,7 @@ export function useSavings(onEntryLogged) {
     const before = netFor(storeRef.current.entries, prev.goalId)
     const result = await write({
       apply: () => setStore(s => ({ ...s, entries: s.entries.map(e => e.id === id ? next : e) })),
-      request: () => supabase.from('savings_entries')
+      request: () => supabase.from(entriesTable(goal?.kind))
         .update({ type, amount: value, note: next.note, date: next.date })
         .eq('id', id).eq('user_id', user.id),
       rollback: () => setStore(s => ({ ...s, entries: s.entries.map(e => e.id === id ? prev : e) })),
@@ -446,15 +466,14 @@ export function useSavings(onEntryLogged) {
     }
     const result = await write({
       apply: () => setStore(s => ({ ...s, entries: s.entries.filter(e => e.id !== id) })),
-      request: () => supabase.from('savings_entries').delete().eq('id', id).eq('user_id', user.id),
+      request: () => supabase.from(entriesTableFor(prev.goalId)).delete().eq('id', id).eq('user_id', user.id),
       rollback: () => setStore(s => ({ ...s, entries: [...s.entries, prev] })),
     })
     if (!result.success) return result
     hapticDeleted()
     // The expense this payment was mirrored into (if the user said yes to
     // that prompt) goes with it — left behind, it would show on Home with
-    // nothing in the loan's own history left to explain it. Mirrors Budget's
-    // own checked-line delete (see useBudgetPlan.deleteItem).
+    // nothing in the loan's own history left to explain it.
     if (prev.transactionId) {
       const { error: txError } = await supabase.from('transactions').delete().eq('id', prev.transactionId).eq('user_id', user.id)
       if (txError) { reportError(txError); return result }
@@ -477,7 +496,8 @@ export function useSavings(onEntryLogged) {
     if (!goals.length && !entries.length) return { success: true, goals: 0, entries: 0 }
     if (!isOnlineRef.current) { notifyOffline(); return { success: false, offline: true, goals: 0, entries: 0 } }
 
-    const idByName = new Map(storeRef.current.goals.map(g => [g.name.toLowerCase(), g.id]))
+    // Savings only: debt payments live in their own table, so an entry never lands on a debt.
+    const idByName = new Map(storeRef.current.goals.filter(g => g.kind !== 'debt').map(g => [g.name.toLowerCase(), g.id]))
     const createdAt = new Date().toISOString()
     const newGoals = []
     for (const g of goals) {

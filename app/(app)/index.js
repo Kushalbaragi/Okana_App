@@ -11,7 +11,6 @@ import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../hooks/useTransactions';
 import { useBudget } from '../../hooks/useBudget';
 import { useSavings } from '../../hooks/useSavings';
-import { useBudgetPlan } from '../../hooks/useBudgetPlan';
 import { useWidgetSync } from '../../hooks/useWidgetSync';
 import { useSubscription } from '../../hooks/useSubscription';
 import { getSubscriptionDisplayStatus } from '../../utils/trial';
@@ -27,6 +26,7 @@ import BudgetSetupModal from '../../components/BudgetSetupModal';
 import { askForReviewIfDue } from '../../utils/reviewPrompt';
 import { UpdateSheet } from '../../components/UpdateSheet';
 import { useAppUpdate } from '../../hooks/useAppUpdate';
+import { hideSplash } from '../../utils/splash';
 import { AnimatedModal } from '../../components/AnimatedModal';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useTourStep } from '../../hooks/useTourStep';
@@ -109,13 +109,8 @@ export default function Dashboard() {
   // first time it opens, same as the budget above. `refreshTransactions` so
   // logging an EMI payment as an expense (optional, asked about after the
   // payment itself is logged — see SavingsSheetsHost's own confirm prompt)
-  // shows up on Home right away, same reasoning as budgetPlan below.
+  // shows up on Home right away.
   const savings = useSavings(refreshTransactions);
-  // Same reasoning as savings above — lives here so the plan is already
-  // loaded the first time the calendar page opens. `refreshTransactions` so
-  // checking a line off (which writes a real expense) shows up on Home
-  // without waiting for its own next natural refresh.
-  const budgetPlan = useBudgetPlan(refreshTransactions);
   useWidgetSync({ transactions, budget, goals: savings.goals });
   const { subscription, refresh: refreshSubscription } = useSubscription(user);
   const trialInfo = useMemo(() => getSubscriptionDisplayStatus(subscription, today()), [subscription]);
@@ -139,7 +134,7 @@ export default function Dashboard() {
   const transactionListRef = useRef(null);
   const { showUpdate, latestVersion, dismiss: dismissUpdate } = useAppUpdate();
 
-  // Slow fade-in on mount — Dashboard only ever mounts once per app session
+  // Short fade-in on mount (cross-fading with the native splash) — Dashboard only ever mounts once per app session
   // (it stays mounted underneath Settings/Subscription when navigating
   // there and back, standard stack behavior), so this plays on the actual
   // app-open moment only, not on every visit here.
@@ -168,7 +163,10 @@ export default function Dashboard() {
   useEffect(() => {
     if (entranceStartedRef.current || txInitialLoading) return;
     entranceStartedRef.current = true;
-    entranceProgress.value = withTiming(1, { duration: 1100, easing: SETTLE_EASING });
+    // The splash is still up (see utils/splash.js) until this moment — Home has
+    // its first data and starts to appear, so the two cross-fade.
+    hideSplash();
+    entranceProgress.value = withTiming(1, { duration: 450, easing: SETTLE_EASING });
   }, [txInitialLoading]);
 
   // The Calendar page slides in over Home, and Home eases back and dims beneath
@@ -214,14 +212,15 @@ export default function Dashboard() {
 
   const { month: currMonth, year: currYear } = currentMonthYear();
 
-  // 'year' — the chart opens on monthly candles (12 bars, one per month of the
-  // current year), not 'month''s daily bars; swiping the chart moves between ranges.
-  const [timeRange, setTimeRange] = useState('year');
+  // 'month' — the chart opens on the current month's daily bars; the three
+  // labels under it (Month, Year, All) change the range. Income has
+  // no month view, so switching to either one moves the chart to 'year' (see
+  // handleModeChange).
+  const [timeRange, setTimeRange] = useState('month');
   const [year, setYear] = useState(currYear);
   const [selectedMonth, setSelectedMonth] = useState(currMonth);
-  // Header's Expense/Income/Overview pill — each tap moves to the next, round
-  // again. Always starts on Expense, and nothing persists it, so a fresh load
-  // always opens the same way.
+  // Header's Expense/Income switch. Always starts on Expense, and nothing
+  // persists it, so a fresh load always opens the same way.
   const [mode, setMode] = useState('expense');
   const [selectedDay, setSelectedDay] = useState(null);
 
@@ -519,7 +518,7 @@ export default function Dashboard() {
     }
   }, [currYear]);
 
-  // Income/Overview never show Month — a daily income figure is mostly
+  // Income never shows Month — a daily income figure is mostly
   // zeros with one payday spike, so it doesn't tell you anything at that
   // granularity (see SummaryCard's own skip in its swipe handler). Tapping
   // straight into one of those two modes while already on Month has to
@@ -539,7 +538,7 @@ export default function Dashboard() {
   }, [trialInfo.status, transactions]);
 
   // What the Wallet page uses for anything new it can't add without a
-  // subscription (a goal, a loan, a plan line).
+  // subscription (a goal or a loan).
   const walletLocked = trialInfo.status === 'expired' || trialInfo.status === 'not_started';
   const openProRequired = useCallback(() => setProRequired(true), []);
   const closeProRequired = useCallback(() => setProRequired(false), []);
@@ -734,6 +733,7 @@ export default function Dashboard() {
         onDelete={requestDelete}
         light={LIGHT_HOME}
         mode={mode}
+        timeRange={timeRange}
       />
 
       <Animated.View
@@ -849,7 +849,6 @@ export default function Dashboard() {
       onClose={closeCalendar}
       budget={budgetForCalendar}
       savings={savings}
-      budgetPlan={budgetPlan}
       light={LIGHT_HOME}
       userId={user?.id}
       slideX={calendarSlideX}

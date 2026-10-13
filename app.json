@@ -37,6 +37,15 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#000000",
+          "image": "./assets/android-icon-foreground.png",
+          "imageWidth": 240,
+          "resizeMode": "contain"
+        }
+      ],
       "./plugins/withAndroidSoftInputMode",
       [
         "expo-image-picker",

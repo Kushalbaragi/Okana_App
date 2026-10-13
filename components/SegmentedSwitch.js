@@ -8,7 +8,7 @@ import { SPRING_QUICK } from '../utils/motion';
 const PAD = 2;
 
 // A pill-shaped switch between a few fixed options — the same look and
-// motion as Header's Expense/Income/Overview toggle, made generic. Each
+// motion as Header's Expense/Income switch, made generic. Each
 // button is a fixed width so the sliding pill's position is just
 // index * width, done as a transform (compositor, not layout).
 function SegmentedSwitch({ options, value, onChange, buttonWidth = 88, trackColor = '#161616', light = false }) {

@@ -6,19 +6,18 @@ import { textColor, EXPENSE, INCOME } from '../utils/colors';
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
-// The two bar colours; isIncome picks which one a chart uses. Only the current
-// bar is at full strength; every other one is at 40% opacity, so the chart
-// reads as one figure with a quiet history behind it. See the data colour block
+// The two bar colours; isIncome picks which one a chart uses. A bar named by
+// activeIndex/accentIndex is at full strength and every other one is at `rest`
+// (58% opacity; SummaryCard currently names none, so all its bars are `rest`).
+// `dim` (40%) is for MonthSlider's off state.
+// See the data colour block
 // in utils/colors.js for what the colours mean and why these two are the only
 // colours in the app.
-const GREEN_TONE = { active: INCOME, dim: 'rgba(74,222,128,0.4)' };
-const RED_TONE   = { active: EXPENSE, dim: 'rgba(255,75,75,0.4)' };
+const GREEN_TONE = { active: INCOME, dim: 'rgba(74,222,128,0.4)', rest: 'rgba(74,222,128,0.58)' };
+const RED_TONE   = { active: EXPENSE, dim: 'rgba(255,75,75,0.4)', rest: 'rgba(255,75,75,0.58)' };
 
 const BAR_HEIGHT = 110;
 const CHART_W    = 264;
-// The chart's box is always this shape (width / height) — SummaryCard reserves
-// the same box for the Overview line chart so the page doesn't shift between tabs.
-export const BAR_CHART_ASPECT = CHART_W / (BAR_HEIGHT + 22);
 // Fixed edge inset for the bar row, independent of how many bars there are.
 // Centering each bar within an equal GROUP_W slot (the old approach) left a
 // margin that grew with the slot size whenever there were few bars — e.g.
@@ -133,7 +132,7 @@ function Bar({ x, width, rx, targetHeight, delay, fill, maskColor, instant = fal
 
   // Two stacked paths, not one: `fill` is semi-transparent (the dim/active
   // distinction), so on its own it lets whatever's drawn behind it —
-  // namely the average line — show through instead of being covered. The
+  // namely the dashed baseline — show through instead of being covered. The
   // first path is an opaque, background-colored mask in the exact same
   // shape, painted first so it actually blocks the line; the real
   // (semi-transparent) colored path draws on top of that for the intended
@@ -240,7 +239,7 @@ function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAft
                 rx={BAR_W / 2.6}
                 targetHeight={h}
                 delay={Math.min(i * BAR_STAGGER_STEP_MS, BAR_STAGGER_CAP_MS)}
-                fill={isActive ? tone.active : tone.dim}
+                fill={isActive ? tone.active : tone.rest}
                 maskColor={bgColor}
                 instant={instant}
               />
