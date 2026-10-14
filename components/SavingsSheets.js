@@ -24,9 +24,7 @@ import { TABULAR, FONT } from '../utils/type';
 import { SPRING_QUICK, layoutTransition } from '../utils/motion';
 import { KIND_COPY, dim, money } from './savingsShared';
 
-// SPRING_QUICK, not SPRING_SMOOTH — same choice AmountEntrySheet's own
-// AMOUNT_POSITION_TRANSITION makes for the same reason (see its comment):
-// this fires the instant a row is tapped, so it should read as a direct
+// SPRING_QUICK, not SPRING_SMOOTH: this fires the instant a row is tapped, so it should read as a direct
 // response to that tap, not a calmer passive list reflow. It also has to
 // keep pace with the tapped row's own height change (below) — with
 // SMOOTH's slower settle, the sibling animated a beat behind the row that
@@ -772,8 +770,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
     ? titleH + 12 + bodyH + rowReserve
     : 0;
 
-  // Same reasoning as AmountEntrySheet's own `positionReady` — held off for
-  // exactly InlineSheet's open animation before any field row is allowed to
+  // Held off for exactly InlineSheet's open animation before any field row is allowed to
   // play its own `layout` transition, so resetting the fields' state right as
   // the sheet opens (below) doesn't layer a reflow slide on top of the
   // sheet's own opening slide.

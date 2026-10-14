@@ -1,9 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { BackHandler, InteractionManager, View, Text, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
+import { BackHandler, InteractionManager, View, Text, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, Easing } from 'react-native-reanimated';
-import BudgetStatusBar from './BudgetStatusBar';
-import BudgetSetupModal from './BudgetSetupModal';
 import { BackIcon } from './icons';
 import SegmentedSwitch from './SegmentedSwitch';
 import SavingsSection, { SavingsSheetsHost, useSavingsUI } from './SavingsSection';
@@ -12,13 +10,11 @@ import ErrorBoundary from './ErrorBoundary';
 import { SETTLE_EASING } from '../utils/motion';
 import { FONT } from '../utils/type';
 
-// The page has three sections, switched from the header: the budget bar it
-// always was, savings goals, and debt (loans tracked the same way as a
-// savings goal, just paid down instead of built up — see savingsShared.js's
-// KIND_COPY and useSavings.js's own comment on how one goal shape covers
-// both).
+// The page has two sections, switched from the header: savings goals, and debt
+// (loans tracked the same way as a savings goal, just paid down instead of built
+// up — see savingsShared.js's KIND_COPY and useSavings.js's own comment on how one
+// goal shape covers both). The budget lives on Home now, under the amount.
 const SECTIONS = [
-  { id: 'budget', label: 'Budget' },
   { id: 'savings', label: 'Savings' },
   { id: 'debt', label: 'Debt' },
 ];
@@ -39,19 +35,15 @@ const WALLET_SLIDE_DURATION = 480;
 // read it to move in step with the page — Home uses it for its parallax. It is the
 // page's own value rather than a second animation started elsewhere, so the two
 // can never fall out of step.
-// `budget` (or null) carries what the Budget section shows — loading, hasBudget,
-// amount, spent, percent — plus what setting one needs: `onSubmit`, last month's
-// amount and spend, and `onSetupClosed` for the caller's own bookkeeping when the
-// sheet closes. The sheet opens right here on the page, not by closing it first.
-function WalletPage({ open, onClose, onClosed, budget, savings, light = false, userId, slideX, locked = false, onLocked }) {
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+function WalletPage({ open, onClose, onClosed, savings, light = false, userId, slideX, locked = false, onLocked }) {
+  const { width: windowWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
   // Which section is showing. Deliberately survives closing and reopening
   // (this component stays mounted between opens), so it comes back where it
   // was left. Both sections stay mounted and crossfade rather than swapping,
   // so switching costs nothing.
-  const [section, setSection] = useState('budget');
+  const [section, setSection] = useState('savings');
   const [detailGoalId, setDetailGoalId] = useState(null);
   // `locked` is an account with no access to add new things (trial over, or
   // never started): a new goal or loan asks for a subscription
@@ -64,7 +56,7 @@ function WalletPage({ open, onClose, onClosed, budget, savings, light = false, u
   const debtUI = useSavingsUI({ locked, onLocked });
   const [detailDebtId, setDetailDebtId] = useState(null);
 
-  // Switching Budget/Savings/Debt via the segmented control always lands on
+  // Switching Savings/Debt via the segmented control always lands on
   // that section's own goal/debt list, not wherever it was last left mid-
   // detail — landing back inside whichever goal happened to be open before
   // meant the switch itself no longer showed "all your goals," which is the
@@ -78,26 +70,19 @@ function WalletPage({ open, onClose, onClosed, budget, savings, light = false, u
     setSection(next);
   }, []);
 
-  // One opacity per section rather than a single 0..1 slider (that only
-  // ever worked for exactly two) — each animates toward 1 when it's the
-  // active section and 0 otherwise, same duration/easing for all three, so
-  // the crossfade reads identically regardless of which pair is swapping.
-  const budgetProgress = useSharedValue(1);
-  const savingsProgress = useSharedValue(0);
+  // One opacity per section — each animates toward 1 when it's the active
+  // section and 0 otherwise, same duration/easing for both, so the crossfade
+  // reads identically whichever way it is swapping.
+  const savingsProgress = useSharedValue(1);
   const debtProgress = useSharedValue(0);
   useEffect(() => {
     const opts = { duration: SECTION_FADE_MS, easing: Easing.out(Easing.cubic) };
-    budgetProgress.value = withTiming(section === 'budget' ? 1 : 0, opts);
     savingsProgress.value = withTiming(section === 'savings' ? 1 : 0, opts);
     debtProgress.value = withTiming(section === 'debt' ? 1 : 0, opts);
-  }, [section, budgetProgress, savingsProgress, debtProgress]);
-  const budgetLayerStyle = useAnimatedStyle(() => ({ opacity: budgetProgress.value }));
+  }, [section, savingsProgress, debtProgress]);
   const savingsLayerStyle = useAnimatedStyle(() => ({ opacity: savingsProgress.value }));
   const debtLayerStyle = useAnimatedStyle(() => ({ opacity: debtProgress.value }));
 
-  const { onSubmit: submitBudget, onSetupClosed, lastMonthAmount, lastMonthSpent, ...budgetBar } = budget || {};
-  const [budgetSheetOpen, setBudgetSheetOpen] = useState(false);
-  const openBudgetSheet = useCallback(() => setBudgetSheetOpen(true), []);
   // A small bottom toast confirming a write to the real ledger actually
   // happened — a debt or savings entry's own "add to transactions?" pill (see
   // SavingsSheetsHost, which gets this passed down as `showToast`) — not the top
@@ -124,11 +109,6 @@ function WalletPage({ open, onClose, onClosed, budget, savings, light = false, u
     // as it handing off to this toast rather than two unrelated slides.
     transform: [{ translateY: (1 - toastProgress.value) * 80 }],
   }));
-  const closeBudgetSheet = useCallback(() => {
-    setBudgetSheetOpen(false);
-    onSetupClosed?.();
-  }, [onSetupClosed]);
-
   const openGoal = useCallback((id) => setDetailGoalId(id), []);
   const closeGoal = useCallback(() => setDetailGoalId(null), []);
   const openDebt = useCallback((id) => setDetailDebtId(id), []);
@@ -142,7 +122,6 @@ function WalletPage({ open, onClose, onClosed, budget, savings, light = false, u
   const { sheetOpen, closeSheet, confirmOpen, closeConfirm } = savingsUI;
   const { sheetOpen: debtSheetOpen, closeSheet: closeDebtSheet, confirmOpen: debtConfirmOpen, closeConfirm: closeDebtConfirm } = debtUI;
   const handleBack = useCallback(() => {
-    if (budgetSheetOpen) { closeBudgetSheet(); return; }
     if (confirmOpen) { closeConfirm(); return; }
     if (debtConfirmOpen) { closeDebtConfirm(); return; }
     if (sheetOpen) { closeSheet(); return; }
@@ -151,7 +130,7 @@ function WalletPage({ open, onClose, onClosed, budget, savings, light = false, u
     if (section === 'debt' && detailDebtId != null) { setDetailDebtId(null); return; }
     onClose();
   }, [
-    budgetSheetOpen, closeBudgetSheet, confirmOpen, closeConfirm, debtConfirmOpen, closeDebtConfirm,
+    confirmOpen, closeConfirm, debtConfirmOpen, closeDebtConfirm,
     sheetOpen, closeSheet, debtSheetOpen, closeDebtSheet, section, detailGoalId, detailDebtId, onClose,
   ]);
 
@@ -191,7 +170,6 @@ function WalletPage({ open, onClose, onClosed, budget, savings, light = false, u
       // whichever goal or sheet it was closed from.
       setDetailGoalId(null);
       setDetailDebtId(null);
-      setBudgetSheetOpen(false);
       savingsUI.closeSheet();
       savingsUI.closeConfirm();
       debtUI.closeSheet();
@@ -252,13 +230,9 @@ function WalletPage({ open, onClose, onClosed, budget, savings, light = false, u
                 <BackIcon color={light ? 'rgba(0,0,0,0.7)' : undefined} />
               </Pressable>
               {/* Fixed to the back button's own height so the switch (a couple
-                  of px taller) can't push everything below it down — the
-                  Budget section sits exactly where it always did. */}
+                  of px taller) can't push everything below it down. */}
               <View style={{ flex: 1, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-                {/* Narrower than the old 2-option width (92) — a third
-                    option at that width would run right up against the
-                    header's own side margins on a narrower phone. */}
-                <SegmentedSwitch options={SECTIONS} value={section} onChange={changeSection} buttonWidth={78} light={light} />
+                <SegmentedSwitch options={SECTIONS} value={section} onChange={changeSection} buttonWidth={92} light={light} />
               </View>
               <View style={{ width: 36 }} />
             </View>
@@ -266,19 +240,6 @@ function WalletPage({ open, onClose, onClosed, budget, savings, light = false, u
             {/* Both sections fill the space under the header and crossfade;
                 only the visible one takes touches. */}
             <View style={{ flex: 1 }}>
-              <Animated.View style={[StyleSheet.absoluteFill, budgetLayerStyle]} pointerEvents={section === 'budget' ? 'auto' : 'none'}>
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: windowHeight * 0.06, paddingBottom: insets.bottom + 40 }}
-            >
-                {/* The budget bar draws its own gray card (see BudgetStatusBar.js),
-                    full width. */}
-                {budget && <BudgetStatusBar {...budgetBar} onSetup={openBudgetSheet} light={light} />}
-            </ScrollView>
-
-              </Animated.View>
-
               <Animated.View style={[StyleSheet.absoluteFill, savingsLayerStyle]} pointerEvents={section === 'savings' ? 'auto' : 'none'}>
                 {/* Gated on `contentReady` (see its own comment above) — this
                     and Debt below are the two heaviest things this page
@@ -341,24 +302,6 @@ function WalletPage({ open, onClose, onClosed, budget, savings, light = false, u
                   <SavingsSheetsHost savings={savings} ui={debtUI} light={light} kind="debt" showToast={showToast} />
                 </ErrorBoundary>
               </>
-            )}
-
-            {/* Setting a budget happens here, on the page: this is the same sheet the
-                home screen opens in a window of its own, drawn as an overlay inside
-                this one. It is above the page and the savings sheets, below the
-                offline banner. */}
-            {budget && (
-              <ErrorBoundary resetKeys={[budgetSheetOpen]} onError={() => setBudgetSheetOpen(false)}>
-                <BudgetSetupModal
-                  inline
-                  open={budgetSheetOpen}
-                  onClose={closeBudgetSheet}
-                  onSubmit={submitBudget}
-                  currentAmount={budgetBar.amount}
-                  lastMonthAmount={lastMonthAmount}
-                  lastMonthSpent={lastMonthSpent}
-                />
-              </ErrorBoundary>
             )}
 
             {/* The toast (see above) — a bottom pill, out of OfflineBanner's way at

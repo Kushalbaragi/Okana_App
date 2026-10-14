@@ -1,6 +1,6 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { View, Text, FlatList, Pressable, InteractionManager } from 'react-native';
-import Animated, { FadeIn, FadeOut, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, FadeOut, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
 import TransactionItem from './TransactionItem';
 import { ChevronRight } from './icons';
@@ -9,7 +9,7 @@ import { textColor, INCOME_TEXT } from '../utils/colors';
 import { BODY, TABULAR } from '../utils/type';
 import { GUTTER, LEDGER_PILL_INSET } from '../utils/spacing';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
-import { RANGE_FADE_IN_MS, RANGE_FADE_OUT_MS, SETTLE_EASING, SPRING_SMOOTH, layoutTransition } from '../utils/motion';
+import { RANGE_FADE_IN_MS, SETTLE_EASING, SPRING_SMOOTH, layoutTransition } from '../utils/motion';
 
 // SPRING_SMOOTH — the app's calmer preset, for heavier content reflowing
 // (a taller list row settling into place reads better a bit more gently
@@ -26,6 +26,19 @@ function rowEntering() {
     animations: {
       opacity: withTiming(1, { duration: 320, easing: SETTLE_EASING }),
       transform: [{ translateY: withTiming(0, { duration: 320, easing: SETTLE_EASING }) }],
+    },
+  };
+}
+
+// A new range's list arrives with a fade and the faintest rise, on the app's own
+// settle curve, so it eases to rest instead of just appearing.
+function rangeEntering() {
+  'worklet';
+  return {
+    initialValues: { opacity: 0, transform: [{ translateY: 8 }] },
+    animations: {
+      opacity: withTiming(1, { duration: RANGE_FADE_IN_MS, easing: Easing.out(Easing.cubic) }),
+      transform: [{ translateY: withTiming(0, { duration: RANGE_FADE_IN_MS, easing: SETTLE_EASING }) }],
     },
   };
 }
@@ -55,6 +68,10 @@ const TEARDOWN_DELAY_MS = 180;
 // once everything has come to rest.
 const ARM_AFTER_MS = 520;
 
+
+// The + button floats over the bottom of the list: 48 from the screen edge plus its
+// own 68 reaches 116, so the last row has to scroll up past that, with room to spare.
+const FAB_CLEARANCE = 148;
 
 const ROW_HEIGHT = 54;
 const HEADER_HEIGHT = 49;
@@ -127,7 +144,11 @@ function Collapsible({ open, estimate, onClosed, children }) {
   }, [natural]);
 
   const style = useAnimatedStyle(() => (
-    progress.value === 1 ? {} : { height: natural.value * progress.value, opacity: progress.value, overflow: 'hidden' }
+    // Fully open must say so explicitly: an animated style that merely stops
+    // returning `height` leaves the last animated value in place, so a year that
+    // opened to its month headers stayed clipped at that height (overflow hidden)
+    // when one of its months then opened inside it, hiding the last rows.
+    progress.value === 1 ? { height: 'auto', opacity: 1, overflow: 'visible' } : { height: natural.value * progress.value, opacity: Math.min(1, Math.max(0, (progress.value - 0.15) / 0.85)), overflow: 'hidden' }
   ));
 
   return (
@@ -537,6 +558,11 @@ function TransactionList({
     </View>
   );
 
+  // Each range's list sits above the one before it (see the wrapper below).
+  const layerRef = useRef(0);
+  const layerRange = useRef(timeRange);
+  if (layerRange.current !== timeRange) { layerRange.current = timeRange; layerRef.current += 1; }
+
   return (
     <Pressable onPress={closeOpenRow} style={{ flex: 1 }}>
       <View style={{ flex: 1 }}>
@@ -546,14 +572,23 @@ function TransactionList({
             first screenful in a single commit (see initialNumToRender), so the rows
             arrive together instead of filling in one after another, and it starts
             at the top, where a new range should start. */}
-        <Animated.View key={timeRange} style={{ flex: 1 }} entering={FadeIn.duration(RANGE_FADE_IN_MS)} exiting={FadeOut.duration(RANGE_FADE_OUT_MS)}>
+        <Animated.View
+          key={timeRange}
+          // Opaque and stacked above the list it replaces: two see-through layers
+          // crossfading never add up to full coverage, which is the dip that read as a
+          // blink. Here the new list fades in over the old one, which stays whole
+          // underneath and is only removed once the new one has fully arrived.
+          style={{ flex: 1, backgroundColor: cardColor, zIndex: layerRef.current }}
+          entering={rangeEntering}
+          exiting={FadeOut.delay(RANGE_FADE_IN_MS).duration(1)}
+        >
           <FlatList
             data={flatData}
             keyExtractor={item => item.key}
             renderItem={renderItem}
             ListEmptyComponent={empty}
             onScrollBeginDrag={closeOpenRow}
-            contentContainerStyle={{ paddingHorizontal: GUTTER, paddingTop: 16, paddingBottom: 112 }}
+            contentContainerStyle={{ paddingHorizontal: GUTTER, paddingTop: 8, paddingBottom: FAB_CLEARANCE }}
             showsVerticalScrollIndicator={false}
             style={{ flex: 1 }}
             // Tuned down from the defaults (10/21) — each row's real cost is

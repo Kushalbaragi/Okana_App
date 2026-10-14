@@ -31,10 +31,12 @@ import { AnimatedModal } from '../../components/AnimatedModal';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useTourStep } from '../../hooks/useTourStep';
 import { PlusIcon } from '../../components/icons';
-import { POPUP_RADIUS, SMOOTH, CTA_COLOR } from '../../components/Glass';
+import { POPUP_RADIUS, SMOOTH } from '../../components/Glass';
 import { currentMonthYear, today, formatCurrency } from '../../utils/format';
 import { getMonthlyRecapSlides, hasAnyRecapData, prevMonthYear, MONTH_NAMES } from '../../utils/monthlyRecap';
 import { SETTLE_EASING } from '../../utils/motion';
+import { FAB_COLOR } from '../../utils/colors';
+
 
 // One-flag experiment: a light theme for just this screen (Header,
 // SummaryCard, TransactionList). Flip back to false to fully revert —
@@ -218,11 +220,9 @@ export default function Dashboard() {
   // handleModeChange).
   const [timeRange, setTimeRange] = useState('month');
   const [year, setYear] = useState(currYear);
-  const [selectedMonth, setSelectedMonth] = useState(currMonth);
   // Header's Expense/Income switch. Always starts on Expense, and nothing
   // persists it, so a fresh load always opens the same way.
   const [mode, setMode] = useState('expense');
-  const [selectedDay, setSelectedDay] = useState(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editData, setEditData] = useState(null);
@@ -485,18 +485,15 @@ export default function Dashboard() {
     setTimeout(() => { askForReviewIfDue(user?.id, { maxAsks: 1 }); }, 900);
   }, [user?.id]);
 
-  const budgetForCalendar = useMemo(() => ({
+  // What the line under the headline amount needs: whether there is a budget, its
+  // amount and what has been spent against it this month.
+  const budgetLine = useMemo(() => ({
     loading: budget.loading,
     hasBudget: budget.hasBudget,
     amount: budget.amount,
     spent: budget.spentThisMonth,
-    percent: budget.percent,
-    // Setting one happens on the calendar page itself.
-    onSubmit: budget.setBudget,
-    lastMonthAmount: budget.lastMonthAmount,
-    lastMonthSpent: budget.lastMonthSpent,
-    onSetupClosed: markBudgetSetupShown,
-  }), [budget.loading, budget.hasBudget, budget.amount, budget.spentThisMonth, budget.percent, budget.setBudget, budget.lastMonthAmount, budget.lastMonthSpent, markBudgetSetupShown]);
+  }), [budget.loading, budget.hasBudget, budget.amount, budget.spentThisMonth]);
+  const openBudgetSetup = useCallback(() => setBudgetSetupOpen(true), []);
 
   // Switching tabs itself is instant — every bar in the chart fully
   // remounts (a fresh, genuinely-new instance, not a reused one) whenever
@@ -509,13 +506,7 @@ export default function Dashboard() {
   // (BarChart's height rounding) were in, so it's gone.
   const handleTimeRangeChange = useCallback((next) => {
     setTimeRange(next);
-    setSelectedDay(null);
-    if (next === 'year') {
-      setYear(currYear);
-      // null = whole year selected (no specific month candle tapped yet) —
-      // shows the year's total/transactions until a bar is clicked.
-      setSelectedMonth(null);
-    }
+    if (next === 'year') setYear(currYear);
   }, [currYear]);
 
   // Income never shows Month — a daily income figure is mostly
@@ -715,9 +706,9 @@ export default function Dashboard() {
         timeRange={timeRange}
         onTimeRangeChange={handleTimeRangeChange}
         mode={mode}
-        selectedMonth={selectedMonth}
         year={year}
-        selectedDay={selectedDay}
+        budget={budgetLine}
+        onBudgetPress={openBudgetSetup}
         light={LIGHT_HOME}
       />
 
@@ -741,13 +732,11 @@ export default function Dashboard() {
         // applies no safe-area inset — so it can't go much lower without
         // crowding the ~34pt home-indicator area.
         //
-        // Flat CTA_COLOR, not the metallic gradient this used to carry — the
-        // rest of the screen went flat (bars, chart, rows) in the redesign,
-        // and a lone glossy dome next to them read as the one leftover piece
-        // of the old look. Same fill every other primary CTA in the app uses
-        // (Add Goal, Save, New goal).
+        // A flat dark grey with a white plus, not the metallic gradient this used to
+        // carry — the rest of the screen went flat (bars, chart, rows), and a lone
+        // glossy dome next to them read as the one leftover piece of the old look.
         className="absolute bottom-12 self-center w-[68px] h-[68px] rounded-full items-center justify-center"
-        style={[{ left: '50%', marginLeft: -34, zIndex: 50, elevation: 50, backgroundColor: CTA_COLOR }, fabAnimStyle]}
+        style={[{ left: '50%', marginLeft: -34, zIndex: 50, elevation: 50, backgroundColor: FAB_COLOR }, fabAnimStyle]}
       >
         <Pressable
           onPress={openAdd}
@@ -757,7 +746,7 @@ export default function Dashboard() {
           accessibilityRole="button"
           accessibilityLabel="Add transaction"
         >
-          <PlusIcon size={30} color="#1a1a1a" />
+          <PlusIcon size={30} color="#ffffff" />
         </Pressable>
       </Animated.View>
 
@@ -847,7 +836,6 @@ export default function Dashboard() {
     <WalletPage
       open={calendarOpen}
       onClose={closeCalendar}
-      budget={budgetForCalendar}
       savings={savings}
       light={LIGHT_HOME}
       userId={user?.id}

@@ -70,9 +70,8 @@ const TYPE_LABELS = { expense: 'Expense', income: 'Income' };
 // this exact sheet instead of a separately-built lookalike — every new prop
 // below defaults to Home's own existing behaviour, so its own call site
 // needs no changes. (Savings/Debt's goal sheet — name, target, location,
-// tenure — stays on AmountEntrySheet's own boxed-name design instead, the
-// same one Budget's own "Add plan" sheet uses; only the money-entry sheet
-// reuses this one.)
+// tenure — has its own boxed-name sheet in SavingsSheets; only the
+// money-entry sheet reuses this one.)
 // - `modes`/`labels` swap what the SegmentedSwitch offers (Add/Withdraw instead
 //   of Expense/Income); a single mode skips the toggle entirely (debt only
 //   ever logs a payment, so there's nothing to pick between).

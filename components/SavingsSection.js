@@ -17,7 +17,7 @@ import { GoalSheet, MoneySheet } from './SavingsSheets';
 import GoalCard from './GoalCard';
 import { SwipeDeleteAction, useSwipeDelete, useSwipeGroup } from './SwipeDeleteAction';
 import { Card, ProgressBar, POSITIVE, cardFill, dim, money, KIND_COPY } from './savingsShared';
-import { textColor } from '../utils/colors';
+import { textColor, FAB_COLOR } from '../utils/colors';
 import { TABULAR, FONT } from '../utils/type';
 import { CheckIcon, ChevronRight, EditIcon, PlusIcon } from './icons';
 import { currentMonthYear, dateBoxParts, formatDateFull, today } from '../utils/format';
@@ -482,44 +482,24 @@ function paymentGrid(firstEmiDate, tenureMonths, emisPaid = 0) {
   return { years };
 }
 
-// The label + round "+" row above the goal/loan list — a plus icon in a dim
-// circle, not a labelled pill, since it sits right above the cards it adds
-// to rather than floating at the bottom of the page unlabelled by context.
-function ListHeader({ label, onPress, addLabel, light }) {
+// The round "+" at the bottom of the page: on a goal's page it opens the add /
+// withdraw sheet, on the list it opens the new goal / loan sheet.
+function AddFab({ onPress, label }) {
+  // The home screen's button, same size, colour and distance from the screen edge.
+  // Centred by a full-width wrapper rather than left: '50%' on the button itself, and
+  // a plain style object rather than a function, so nothing depends on how a
+  // percentage offset or a style callback is resolved here.
   return (
-    <View className="flex-row items-center justify-between" style={{ marginBottom: 14 }}>
-      {/* marginLeft matches the card's own inner padding below (see
-          GoalCard's `padding: 16`), so this label lines up with the goal
-          name text inside the card rather than sitting flush with the
-          card's bare left edge. */}
-      <Text style={{ fontSize: FONT.body, color: textColor(light).tertiary, marginLeft: 16 }}>{label}</Text>
+    <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: 48, alignItems: 'center', zIndex: 50, elevation: 50 }}>
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
-        accessibilityLabel={addLabel}
-        style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: dim(light, 0.08) }}
+        accessibilityLabel={label}
+        style={[CENTERED, { width: 68, height: 68, borderRadius: 34, backgroundColor: FAB_COLOR }]}
       >
-        <PlusIcon size={16} color={dim(light, 0.5)} />
+        <PlusIcon size={30} color="#ffffff" />
       </Pressable>
     </View>
-  );
-}
-
-// The round "+" at the bottom of a goal's page, opening the add / withdraw
-// sheet.
-function AddFab({ onPress, label }) {
-  const insets = useSafeAreaInsets();
-  return (
-    <GlassPressable
-      variant="pillActive"
-      radius={9999}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      style={[CENTERED, { position: 'absolute', left: '50%', marginLeft: -32, bottom: insets.bottom + 24, width: 64, height: 64 }]}
-    >
-      <PlusIcon size={28} color="#ffffff" />
-    </GlassPressable>
   );
 }
 
@@ -553,17 +533,14 @@ function Divider({ inset = 16, light }) {
 }
 
 // A first visit, kept to one question, one line of examples and one button.
-function EmptyState({ onNew, light, kind = 'savings' }) {
+function EmptyState({ light, kind = 'savings' }) {
   const copy = KIND_COPY[kind];
   return (
     <View className="items-center" style={{ paddingTop: 96, paddingHorizontal: 16 }}>
       <Text className="text-xl text-center" style={{ fontWeight: '400', color: light ? '#111111' : '#ffffff' }}>{copy.emptyTitle}</Text>
-      <Text className="text-[16px] text-center" style={{ color: textColor(light).tertiary, marginTop: 8, marginBottom: 24, lineHeight: 22 }}>
+      <Text className="text-[16px] text-center" style={{ color: textColor(light).tertiary, marginTop: 8, lineHeight: 22 }}>
         {copy.emptyBody}
       </Text>
-      <GlassPressable variant="active" radius={9999} onPress={() => onNew('')} style={{ paddingHorizontal: 32, paddingVertical: 12, alignItems: 'center' }}>
-        <Text className="text-black text-[16px]" style={{ fontWeight: '500' }}>{copy.emptyAction}</Text>
-      </GlassPressable>
     </View>
   );
 }
@@ -1078,7 +1055,6 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
 // ---------------------------------------------------------------------------
 function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOpenGoal, onCloseGoal, kind = 'savings', showToast }) {
   const copy = KIND_COPY[kind];
-  const insets = useSafeAreaInsets();
   // What is shown is held while a sheet is open, and let go once it has
   // finished closing. The held copy is whatever was current the last time no
   // sheet was up, i.e. the moment before the one now open appeared.
@@ -1138,10 +1114,10 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
           // GUTTER (20), not 16 — matches the goal detail page's own
           // paddingHorizontal below, and the app's screen edge everywhere
           // else. Was the one screen still at 16.
-          contentContainerStyle={{ paddingHorizontal: GUTTER, paddingTop: 8, paddingBottom: insets.bottom + 40 }}
+          contentContainerStyle={{ paddingHorizontal: GUTTER, paddingTop: 8, paddingBottom: 148 }}
         >
           {isEmpty ? (
-            <EmptyState onNew={ui.openNewGoal} light={light} kind={kind} />
+            <EmptyState light={light} kind={kind} />
           ) : (
             <>
               <View className="items-center" style={{ paddingTop: 16, paddingBottom: 22 }}>
@@ -1155,8 +1131,6 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
                   {money(totalSaved)}
                 </Text>
               </View>
-
-              <ListHeader label={copy.listLabel} onPress={() => ui.openNewGoal('')} addLabel={copy.newLabel} light={light} />
 
               {goals.map(g => <GoalCard key={g.id} goal={g} {...cardProps} />)}
 
@@ -1184,6 +1158,7 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
             </>
           )}
         </ScrollView>
+        <AddFab onPress={() => ui.openNewGoal('')} label={copy.newLabel} />
       </Animated.View>
 
       <Animated.View style={[StyleSheet.absoluteFill, detailStyle]} pointerEvents={detailOpen ? 'auto' : 'none'}>

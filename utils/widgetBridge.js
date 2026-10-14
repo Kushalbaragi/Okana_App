@@ -1,4 +1,4 @@
-import { Platform, Alert } from 'react-native'
+import { Platform } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { ExtensionStorage } from '@bacons/apple-targets'
 import { reportError } from './errors'
@@ -16,24 +16,6 @@ const APP_GROUP = 'group.com.kushalbaragi.okana'
 
 let lastPushed = null
 
-// TEMP — widget diagnostic. Remove once the iOS widget shows data.
-// Reads back what was just written to the app group and tells you once per launch
-// whether the app can see it. A mismatch means the app itself has no working
-// group; a match is NOT proof the widget extension can read it (a target without
-// the group entitlement gets a private store), so that case still points at the
-// widget's provisioning profile.
-let diagShown = false
-function diagnoseWidgetStorage(json) {
-  if (diagShown) return
-  diagShown = true
-  let back = null
-  try { back = new ExtensionStorage(APP_GROUP).get(KEY) } catch {}
-  const ok = back === json
-  Alert.alert('Widget storage check', ok
-    ? 'App wrote and read back the snapshot (' + json.length + ' chars). If the widget is still empty, its provisioning profile is missing the app group.'
-    : 'Read-back FAILED: wrote ' + json.length + ' chars, read ' + (back == null ? 'nothing' : back.length + ' chars') + '. The app group is not working in this build.')
-}
-
 export async function pushWidgetSnapshot(snapshot) {
   const json = JSON.stringify(snapshot)
   // The app rebuilds the snapshot on every change to its data; most of them
@@ -45,7 +27,6 @@ export async function pushWidgetSnapshot(snapshot) {
     if (Platform.OS === 'ios') {
       new ExtensionStorage(APP_GROUP).set(KEY, json)
       ExtensionStorage.reloadWidget()
-      diagnoseWidgetStorage(json) // TEMP
     } else if (Platform.OS === 'android') {
       await AsyncStorage.setItem(KEY, json)
       // Lazy, so iOS and web never load the Android widget library or its components.

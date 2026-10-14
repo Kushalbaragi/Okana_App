@@ -38,6 +38,7 @@ import { ActionOverlay } from '../../components/ActionOverlay';
 import * as SettingsUI from '../../components/SettingsUI';
 import { CARD_RADIUS, POPUP_RADIUS, SMOOTH } from '../../components/Glass';
 import { SETTLE_EASING } from '../../utils/motion';
+import { REMINDER_HOURS, getReminderHour, hourLabel, setReminderHour } from '../../utils/dailyReminder';
 import { GUTTER } from '../../utils/spacing';
 import { FONT } from '../../utils/type';
 
@@ -410,6 +411,17 @@ export default function AccountPage() {
   const hasRealSubscription = status === 'subscribed';
   const planTone = status === 'expired' ? 'red' : 'green';
 
+  // The evening reminder's hour (24-hour), or null when it is off.
+  const [reminderHour, setReminderHourState] = useState(null);
+  const [reminderError, setReminderError] = useState('');
+  useEffect(() => { getReminderHour().then(setReminderHourState); }, []);
+  const chooseReminder = useCallback(async hour => {
+    setReminderError('');
+    const ok = await setReminderHour(hour, profile?.name).catch(err => { reportError(err); return false; });
+    if (!ok) { setReminderError('Couldn’t set the reminder. Check that notifications are allowed for Okana in Settings.'); return; }
+    setReminderHourState(hour);
+    setModal(null);
+  }, [profile?.name]);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(profile?.name || '');
   const [savingName, setSavingName] = useState(false);
@@ -499,6 +511,8 @@ export default function AccountPage() {
     try {
       const { error } = await supabase.auth.updateUser({ data: { name: nameInput.trim() } });
       if (error) throw error;
+      // The reminder's greeting carries the name, so it is scheduled again with the new one.
+      if (reminderHour != null) setReminderHour(reminderHour, nameInput.trim()).catch(reportError);
       setEditingName(false);
     } catch (err) {
       if (isConnectivityError(err, isOnline)) { notifyOffline(); }
@@ -1089,6 +1103,13 @@ export default function AccountPage() {
             />
             <Divider />
             <Row
+              icon={<Feather name="bell" size={18} color={textColor(LIGHT_SETTINGS).tertiary} />}
+              label="Daily Reminder"
+              value={reminderHour == null ? 'Off' : hourLabel(reminderHour)}
+              onPress={() => { setReminderError(''); setModal('reminder'); }}
+            />
+            <Divider />
+            <Row
               icon={<Feather name="shield" size={18} color={textColor(LIGHT_SETTINGS).tertiary} />}
               label="Legal"
               onPress={() => setModal('legal')}
@@ -1184,6 +1205,22 @@ export default function AccountPage() {
         error={nameError}
         unchanged={nameInput.trim() === (profile?.name || '')}
       />
+
+      <InfoModal open={modal === 'reminder'} title="Daily Reminder" onClose={() => setModal(null)}>
+        <Text className="text-base mb-4" style={{ lineHeight: 22, color: textColor(LIGHT_SETTINGS).tertiary }}>
+          A quiet nudge each evening to log what you spent.
+        </Text>
+        <Card>
+          <Row label="Off" onPress={() => chooseReminder(null)} right={reminderHour == null ? <CheckIcon size={16} color={textColor(LIGHT_SETTINGS).tertiary} /> : <View />} />
+          {REMINDER_HOURS.map(h => (
+            <View key={h}>
+              <Divider />
+              <Row label={hourLabel(h)} onPress={() => chooseReminder(h)} right={reminderHour === h ? <CheckIcon size={16} color={textColor(LIGHT_SETTINGS).tertiary} /> : <View />} />
+            </View>
+          ))}
+        </Card>
+        {!!reminderError && <Text className="text-red-400 text-[13px] mt-3">{reminderError}</Text>}
+      </InfoModal>
 
       <InfoModal open={modal === 'feedback'} title={feedbackSent ? '✓ Message sent!' : 'Support'} onClose={closeFeedbackModal}>
         {!feedbackSent && (

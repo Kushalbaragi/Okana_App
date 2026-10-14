@@ -15,7 +15,7 @@ export const PILL_ACTIVE_COLOR = '#3a3a3a';
 // exported so the home screen's own add button, which isn't a
 // GlassPressable (it has its own bespoke press animation), can match it
 // exactly instead of hardcoding the hex a second time.
-export const CTA_COLOR = '#d4d4d4';
+const CTA_COLOR = '#d4d4d4';
 // Same reasoning as PILL_ACTIVE_COLOR: the transaction list builds its card
 // out of its own stacked rows rather than a GlassView, so it needs this hex
 // directly. Exported so it can't drift from the surface every other card in

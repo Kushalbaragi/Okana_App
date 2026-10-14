@@ -23,12 +23,10 @@ export const SPRING_SMOOTH = { damping: 22, stiffness: 180, mass: 0.6 };
 // what makes a press feel "alive" rather than just a linear resize.
 export const SPRING_BOUNCY = { damping: 12, stiffness: 220, mass: 1 };
 
-// Changing the chart's range (Month / Year / All) crossfades the transaction list
-// under it. The way out is shorter than the way in — the old rows are done with,
-// the new ones are what get read — and the two overlap, so the screen never dips
-// to empty between them. (The chart itself doesn't fade: its bars grow instead.)
-export const RANGE_FADE_OUT_MS = 160;
-export const RANGE_FADE_IN_MS = 280;
+// Changing the chart's range (Month / Year / All): the new transaction list fades in
+// over the old one, which stays whole underneath until it has fully arrived, so the
+// screen never dips while the two cross. (The chart itself doesn't fade: its bars grow.)
+export const RANGE_FADE_IN_MS = 380;
 
 // Builds a `layout` transition from one of the presets above, so a
 // LinearTransition and a plain withSpring animating the same kind of thing

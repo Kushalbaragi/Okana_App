@@ -18,8 +18,8 @@ const MIN_TOP_GAP = 12;
 // growing and simply overflows instead.
 const MAX_HEIGHT_RATIO = 0.92;
 // Exported so a caller's own content can hold off playing its own layout
-// animations until the sheet's own open slide has actually finished (see
-// AmountEntrySheet's positionReady) — a content reflow mid-slide reads as
+// animations until the sheet's own open slide has actually finished — a
+// content reflow mid-slide reads as
 // the sheet stopping partway rather than one continuous motion.
 export const OPEN_MS = 340;
 const CLOSE_MS = 240;

@@ -16,7 +16,7 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 const GREEN_TONE = { active: INCOME, dim: 'rgba(74,222,128,0.4)', rest: 'rgba(74,222,128,0.58)' };
 const RED_TONE   = { active: EXPENSE, dim: 'rgba(255,75,75,0.4)', rest: 'rgba(255,75,75,0.58)' };
 
-const BAR_HEIGHT = 110;
+const BAR_HEIGHT = 125;
 const CHART_W    = 264;
 // Fixed edge inset for the bar row, independent of how many bars there are.
 // Centering each bar within an equal GROUP_W slot (the old approach) left a
@@ -42,8 +42,12 @@ export const ALL_TIME_BAR_W = Math.min(19, Math.max(THIN_BAR_W, CHART_W / 12 - M
 // A flat step keeps the same visible gap between the first several bars
 // regardless of how many are on screen; the cap just stops a many-bar view
 // (like "All Time") from taking forever for the *later* ones to start.
-const BAR_STAGGER_STEP_MS = 55;
-const BAR_STAGGER_CAP_MS  = 450;
+const BAR_STAGGER_STEP_MS = 45;
+const BAR_STAGGER_CAP_MS  = 380;
+
+// How long one bar takes to grow. Longer, with the stagger tightened, so the bars
+// overlap into one wave instead of reading as a row of separate rises.
+const GROW_MS = 300;
 
 function Bar({ x, width, rx, targetHeight, delay, fill, maskColor, instant = false }) {
   // Animates the actual pixel height directly (not a 0-1 progress scaled by
@@ -92,9 +96,9 @@ function Bar({ x, width, rx, targetHeight, delay, fill, maskColor, instant = fal
       // before its neighbour has started — a row of discrete pops rather
       // than a reveal. cubic is only ~47% at 50ms, so roughly five bars are
       // visibly growing at once and it reads as one wave.
-      animatedHeight.value = withDelay(delay, withTiming(targetHeight, { duration: 260, easing: Easing.out(Easing.cubic) }));
+      animatedHeight.value = withDelay(delay, withTiming(targetHeight, { duration: GROW_MS, easing: Easing.out(Easing.cubic) }));
     } else {
-      animatedHeight.value = withTiming(targetHeight, { duration: 260, easing: Easing.out(Easing.cubic) });
+      animatedHeight.value = withTiming(targetHeight, { duration: GROW_MS, easing: Easing.out(Easing.cubic) });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetHeight]);
@@ -173,7 +177,7 @@ function toneFor(v, isIncome) {
   return v < 0 ? RED_TONE : (isIncome ? GREEN_TONE : RED_TONE);
 }
 
-function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAfterIndex, disabledBeforeIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, instant = false, barWidth }) {
+function BarChart({ values, labels, activeIndex, accentIndex = null, currentIndex = null, disabledAfterIndex, disabledBeforeIndex, isIncome, animKey, labelStep = 1, useSqrtScale = false, light = false, noSpendDots = false, instant = false, barWidth, onBarPress, onDeselect }) {
   const n       = values.length;
   const GROUP_W = CHART_W / n;
   const BAR_W   = barWidth ?? Math.min(19, Math.max(THIN_BAR_W, GROUP_W - MIN_BAR_GAP));
@@ -223,7 +227,11 @@ function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAft
         const isDisabled = disabledAfterIndex != null && i > disabledAfterIndex;
         const isBeforeStart = disabledBeforeIndex != null && i < disabledBeforeIndex;
         const hasData    = h > 0;
-        const showLabel  = (i % labelStep === 0 || (i === n - 1 && (n - 1) - Math.floor((n - 2) / labelStep) * labelStep > 1));
+        const isCurrent  = i === currentIndex;
+        // The current period's label is always drawn; on a stepped axis (Month) a
+        // label right beside it gives way so the two don't touch. Year and All label
+        // every bar, so nothing is dropped there.
+        const showLabel  = isCurrent || (!(labelStep > 1 && currentIndex != null && Math.abs(i - currentIndex) === 1) && (i % labelStep === 0 || (i === n - 1 && (n - 1) - Math.floor((n - 2) / labelStep) * labelStep > 1)));
 
         return (
           // Keyed by animKey too, not just index — this is what forces a
@@ -253,8 +261,8 @@ function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAft
                 y={BAR_HEIGHT + 15}
                 textAnchor="middle"
                 fontSize="9"
-                fill={isActive ? labelActiveColor : labelDimColor}
-                fontWeight={isActive ? '600' : '400'}
+                fill={isActive || isCurrent ? labelActiveColor : labelDimColor}
+                fontWeight={isActive || isCurrent ? '600' : '400'}
               >
                 {labels[i]}
               </SvgText>
@@ -283,6 +291,35 @@ function BarChart({ values, labels, activeIndex, accentIndex = null, disabledAft
           </Fragment>
         );
       })}
+
+      {/* Tap targets, drawn last so they sit on top of everything. Each is the
+          bar's whole slot, full height — not just the bar — because on a month
+          of thirty-one thin bars the bar itself is far too narrow to hit. A
+          period that hasn't happened yet, or that came before the account
+          existed, has nothing to show and isn't tappable. Empty space in the
+          chart clears the selection. */}
+      {onBarPress && (
+        <>
+          <Rect x={0} y={0} width={CHART_W} height={svgH} fill="transparent" onPress={onDeselect} />
+          {values.map((_, i) => {
+            if (disabledAfterIndex != null && i > disabledAfterIndex) return null;
+            if (disabledBeforeIndex != null && i < disabledBeforeIndex) return null;
+            const slotW = n > 1 ? barStep : BAR_W + 12;
+            const cx = groupStart + i * barStep + BAR_W / 2;
+            return (
+              <Rect
+                key={`tap-${animKey}-${i}`}
+                x={cx - slotW / 2}
+                y={0}
+                width={slotW}
+                height={svgH}
+                fill="transparent"
+                onPress={() => onBarPress(i)}
+              />
+            );
+          })}
+        </>
+      )}
     </Svg>
   );
 }

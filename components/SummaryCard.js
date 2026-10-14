@@ -1,18 +1,18 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import Animated, { withTiming } from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
 import BarChart, { ALL_TIME_BAR_W } from './BarChart';
 import {
-  getMonthTotal,
   getMonthlyTotals,
   getDailyTotals,
   getLifetimeYearly,
   getEarliestDate,
   firstBarWithData,
   currentMonthYear,
+  formatCurrency,
 } from '../utils/format';
-import { textColor } from '../utils/colors';
+import { textColor, EXPENSE_HEX } from '../utils/colors';
 import { CAPTION, TABULAR, FONT } from '../utils/type';
 
 import { MONTH_NAMES } from '../utils/monthlyRecap';
@@ -138,6 +138,39 @@ function PeriodCaption({ periodLabel, light }) {
   );
 }
 
+// One line under the headline amount: what is left of this month's budget ("₹4,000
+// budget left"), or, once spent passes it, what it is over by in red. With no
+// budget set it offers to set one. Tapping it opens the budget sheet. It always
+// takes its line (a non-breaking space when there is nothing to say) so the chart
+// below doesn't slide up and down as it comes and goes.
+function BudgetLine({ budget, onPress, light }) {
+  if (!budget || budget.loading) return <Text style={{ fontSize: FONT.caption, marginTop: 6 }}>{'\u00A0'}</Text>;
+  const over = budget.hasBudget && budget.spent > budget.amount;
+  const text = !budget.hasBudget
+    ? 'Set a budget ›'
+    : over
+      ? `${formatCurrency(budget.spent - budget.amount)} over budget`
+      : `${formatCurrency(budget.amount - budget.spent)} budget left`;
+  return (
+    <Pressable onPress={onPress} hitSlop={10} accessibilityRole="button" accessibilityLabel={text}>
+      <Text style={{ fontSize: FONT.caption, fontWeight: '400', marginTop: 6, color: over ? EXPENSE_HEX : textColor(light).tertiary, letterSpacing: -0.3, ...TABULAR }}>{text}</Text>
+    </Pressable>
+  );
+}
+
+// Shown only while a Year/All bar is picked: how that bar's amount moved against the
+// bar before it ("↑ 12% vs March"). Nothing when there is no earlier bar or it was
+// zero, since a percentage of zero means nothing. It always takes its line, like
+// the budget line, so the chart doesn't shift when it appears.
+function ChangeLine({ change, light }) {
+  if (!change) return <Text style={{ fontSize: FONT.caption, marginTop: 6 }}>{'\u00A0'}</Text>;
+  return (
+    <Text style={{ fontSize: FONT.caption, fontWeight: '400', marginTop: 6, color: textColor(light).tertiary, letterSpacing: -0.3, ...TABULAR }}>
+      {`${change.pct >= 0 ? '↑' : '↓'} ${Math.abs(change.pct)}% vs ${change.label}`}
+    </Text>
+  );
+}
+
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard — see the matching comment in Header.js.
 function SummaryCard({
@@ -145,9 +178,9 @@ function SummaryCard({
   timeRange,
   onTimeRangeChange,
   mode,
-  selectedMonth,
   year,
-  selectedDay,
+  budget,
+  onBudgetPress,
   light = false,
 }) {
   const { month: currMonth, year: currYear } = currentMonthYear();
@@ -187,6 +220,14 @@ function SummaryCard({
     return null;
   }, [timeRange, year, currYear]);
 
+  // Which bar is the current day / month / year, so its label can stand out.
+  const currentIndex = useMemo(() => {
+    if (timeRange === 'month') return new Date().getDate() - 1;
+    if (timeRange === 'year') return year === currYear ? new Date().getMonth() : null;
+    const i = chartData.labels.indexOf(String(currYear));
+    return i >= 0 ? i : null;
+  }, [timeRange, year, currYear, chartData]);
+
   // Mirrors the Calendar page's own "before earliest known activity" cutoff
   // (see spendShadeFor/getEarliestDate in utils/format.js) — a new account
   // that starts partway through the month otherwise has no way to tell "no
@@ -208,21 +249,29 @@ function SummaryCard({
 
   // The income and expense totals for whatever period is currently shown; the
   // headline is whichever of the two the header's switch is on.
+  // The bar the user tapped, by its position in the chart (day, month or year
+  // depending on the range). It is stored together with the chart it was made on
+  // and only counts while that is still the chart on screen: an index means
+  // nothing in another chart (day 20 is not a month), and clearing it in an effect
+  // would leave one render of the new chart reading the old index.
+  const animKey = `${timeRange}-${year}-${mode}`;
+  const [pick, setPick] = useState(null);
+  const picked = pick && pick.key === animKey ? pick.index : null;
+  const pickBar = useCallback(i => setPick(p => (p && p.key === animKey && p.index === i ? null : { key: animKey, index: i })), [animKey]);
+  const clearPick = useCallback(() => setPick(null), []);
+  // A pick belongs to the chart it was made on. Without this it only went dormant on
+  // a range switch and came back when returning to that chart; drop it for good.
+  if (pick && pick.key !== animKey) setPick(null);
+
   const periodTotals = useMemo(() => {
-    if (timeRange === 'month' && selectedDay != null) {
-      return { income: chartData.income[selectedDay - 1] ?? 0, expense: chartData.expense[selectedDay - 1] ?? 0 };
-    }
-    if (timeRange === 'year' && selectedMonth != null) {
-      return {
-        income: getMonthTotal(transactions, 'income', selectedMonth, year),
-        expense: getMonthTotal(transactions, 'expense', selectedMonth, year),
-      };
+    if (picked != null) {
+      return { income: chartData.income[picked] ?? 0, expense: chartData.expense[picked] ?? 0 };
     }
     return {
       income: chartData.income.reduce((a, b) => a + b, 0),
       expense: chartData.expense.reduce((a, b) => a + b, 0),
     };
-  }, [timeRange, chartData, transactions, selectedMonth, year, selectedDay]);
+  }, [chartData, picked]);
 
   // Always white, for both tabs — red/green stay on the chart itself, which is
   // where "this is expense vs income" is actually being said; the amount doesn't
@@ -231,20 +280,36 @@ function SummaryCard({
   const headlineColor = textColor(light).primary;
 
   const periodLabel = useMemo(() => {
-    if (timeRange === 'month') {
-      return selectedDay != null ? `${MONTH_NAMES[currMonth]} ${selectedDay}` : MONTH_NAMES[currMonth];
+    if (picked != null) {
+      if (timeRange === 'month') return `${MONTH_NAMES[currMonth]} ${picked + 1}`;
+      if (timeRange === 'year') return MONTH_NAMES[picked] ?? String(year);
+      return String(chartData.labels[picked] ?? currYear);
     }
-    if (timeRange === 'year') {
-      return selectedMonth != null ? MONTH_NAMES[selectedMonth] : String(year);
-    }
-    if (timeRange === '5y') {
-      return earliestYear === currYear ? String(currYear) : `${earliestYear} – ${currYear}`;
-    }
-    return String(currYear);
-  }, [timeRange, selectedMonth, currYear, currMonth, earliestYear, selectedDay, year]);
+    if (timeRange === 'month') return MONTH_NAMES[currMonth];
+    if (timeRange === 'year') return String(year);
+    return earliestYear === currYear ? String(currYear) : `${earliestYear} – ${currYear}`;
+  }, [timeRange, picked, chartData, currYear, currMonth, earliestYear, year]);
 
-
-  const animKey   = `${timeRange}-${year}-${mode}`;
+  // Year and All only: the picked bar against the one before it. In the year chart
+  // January's earlier bar is last year's December, which isn't in the chart, so it
+  // is looked up on its own.
+  const change = useMemo(() => {
+    if (picked == null || timeRange === 'month') return null;
+    const cur = barValues[picked];
+    if (cur == null) return null;
+    let prev;
+    let label;
+    if (picked >= 1) {
+      prev = barValues[picked - 1];
+      label = timeRange === 'year' ? MONTH_NAMES[picked - 1] : String(chartData.labels[picked - 1]);
+    } else if (timeRange === 'year') {
+      const last = getMonthlyTotals(transactions, year - 1);
+      prev = (mode === 'income' ? last.income : last.expense)[11];
+      label = MONTH_NAMES[11];
+    }
+    if (!prev) return null;
+    return { pct: Math.round(((cur - prev) / prev) * 100), label };
+  }, [picked, timeRange, barValues, chartData, transactions, year, mode]);
 
   // The bars grow up from the baseline, one after another, whenever the chart
   // becomes a different chart: a mode switch (Expense/Income) or a range change
@@ -297,11 +362,10 @@ function SummaryCard({
   return (
     // mx-5 (20), not mx-4 (16) — matches the Header's own px-5 and the
     // transaction list's gutter, so the amount, the header icons and the
-    // row text all sit on one shared left edge instead of two. pb-8 (32),
-    // not pb-5 (20): the list right below is a different group (this
-    // card's month/range vs. that period's actual transactions), and wants
-    // the larger between-groups gap rather than the tighter within-card one.
-    <View className="mx-5 mb-1 pt-5 pb-8">
+    // row text all sit on one shared left edge instead of two. pb-5 (20): the
+    // list right below is a different group, but the gap was trimmed from pb-8
+    // (32) to keep the chart and the transactions feeling like one screen.
+    <View className="mx-5 mb-1 pt-10 pb-5">
         <View className="items-center justify-center mb-7">
           {/* Above the figure now, not below it — the period reads as a
               heading for the number underneath rather than a caption
@@ -309,19 +373,27 @@ function SummaryCard({
           <PeriodCaption periodLabel={periodLabel} light={light} />
 
           <AnimatedAmount value={Math.abs(headlineValue)} color={headlineColor} />
+
+          {/* This month's budget, only where it means something: the month view, on
+              Expense, with the whole month showing rather than one tapped day. */}
+          {timeRange === 'month' && mode === 'expense' && picked == null ? (
+            <BudgetLine budget={budget} onPress={onBudgetPress} light={light} />
+          ) : (
+            <ChangeLine change={change} light={light} />
+          )}
         </View>
 
         <View style={{ position: 'relative' }}>
           <View className="mt-4">
-                // No onBarClick/onDeselect: this chart isn't a drill-down at
-                // any range. Omitting them is what removes the interaction —
-                // BarChart renders its per-bar touch-target Rects and the
-                // deselect-background Rect only when those props are present.
                 <BarChart
                   values={barValues}
                   labels={chartData.labels}
-                  // No bar is picked out: every bar is the same neutral strength.
-                  activeIndex={-1}
+                  // Every bar is the same neutral strength until one is tapped; that
+                  // one comes up to full colour and the headline above shows it.
+                  activeIndex={picked ?? -1}
+                  currentIndex={currentIndex}
+                  onBarPress={pickBar}
+                  onDeselect={clearPick}
                   disabledAfterIndex={disabledAfterIndex}
                   disabledBeforeIndex={disabledBeforeIndex}
                   // Expense mode's values are all >= 0 magnitudes with
