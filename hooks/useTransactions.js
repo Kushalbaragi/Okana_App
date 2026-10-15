@@ -4,8 +4,8 @@ import * as Crypto from 'expo-crypto'
 import { usePostHog } from 'posthog-react-native'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { useNetwork } from '../context/NetworkContext'
-import { isConnectivityError, reportError } from '../utils/errors'
+import { useNetwork, useOnReconnect } from '../context/NetworkContext'
+import { friendlyError, isConnectivityError, reportError } from '../utils/errors'
 import { storageKeys } from '../utils/storageKeys'
 import { hapticAdded, hapticDeleted } from '../utils/haptics'
 import { loadQueue, saveQueue, enqueue, collapseQueue, mergeWithPending, withQueueLock } from '../utils/syncQueue'
@@ -93,7 +93,7 @@ async function flushQueue(userId) {
 
 export function useTransactions() {
   const { user } = useAuth()
-  const { isOnline, isOnlineRef, notifyOffline } = useNetwork()
+  const { isOnlineRef, notifyOffline, notifySavedOffline } = useNetwork()
   const posthog = usePostHog()
   const [transactions, setTransactions] = useState([])
   // Starts true (not false) so consumers that gate a once-a-day decision on
@@ -182,20 +182,11 @@ export function useTransactions() {
     return () => { cancelled = true }
   }, [user])
 
-  // Coming back online specifically — not just "isOnline is true", which
-  // would also fire on a normal mount that happens to already be online,
-  // duplicating the mount effect's own refresh() above — kicks off a
-  // refresh (which flushes the queue first) so a pending add/edit/delete
-  // doesn't just sit there until the screen happens to refocus.
-  const wasOnlineRef = useRef(isOnline)
-  useEffect(() => {
-    const wasOffline = !wasOnlineRef.current
-    wasOnlineRef.current = isOnline
-    if (user && wasOffline && isOnline) refresh()
-  }, [user, isOnline, refresh])
+  // Back online: a refresh sends whatever was saved offline first.
+  useOnReconnect(refresh, !!user)
 
   const addTransaction = useCallback(async ({ type, amount, date, description }) => {
-    if (!user) return { success: false, error: 'Not signed in' }
+    if (!user) return { success: false, error: 'Please sign in again.' }
 
     // Client-generated up front (not left to the DB default) so the same
     // id is used whether this syncs immediately or sits queued for a
@@ -235,6 +226,7 @@ export function useTransactions() {
 
     if (!isOnlineRef.current) {
       await enqueue(user.id, { type: 'add', txId: id, payload })
+      notifySavedOffline()
       return { success: true, queued: true }
     }
 
@@ -249,7 +241,7 @@ export function useTransactions() {
           saveCache(user.id, updated)
           return updated
         })
-        return { success: false, error: error.message }
+        return { success: false, error: friendlyError(error) }
       }
       setTransactions(prev => {
         const updated = prev.map(tx => tx.id === id ? fromRow(data) : tx)
@@ -263,6 +255,7 @@ export function useTransactions() {
         // attempt. Keep the optimistic entry showing and queue it instead
         // of discarding what the user just typed.
         await enqueue(user.id, { type: 'add', txId: id, payload })
+        notifySavedOffline()
         return { success: true, queued: true }
       }
       // Not connectivity — an unexpected error that would just fail the
@@ -274,12 +267,12 @@ export function useTransactions() {
         saveCache(user.id, updated)
         return updated
       })
-      return { success: false, error: err.message || 'Something went wrong. Please try again.' }
+      return { success: false, error: friendlyError(err) }
     }
   }, [user])
 
   const editTransaction = useCallback(async (id, { type, amount, date, description }) => {
-    if (!user) return { success: false, error: 'Not signed in' }
+    if (!user) return { success: false, error: 'Please sign in again.' }
 
     const payload = { type, amount: parseFloat(amount), date, description: description.trim() }
 
@@ -291,6 +284,7 @@ export function useTransactions() {
 
     if (!isOnlineRef.current) {
       await enqueue(user.id, { type: 'edit', txId: id, payload })
+      notifySavedOffline()
       return { success: true, queued: true }
     }
 
@@ -307,7 +301,7 @@ export function useTransactions() {
         // to roll back to locally.
         reportError(error)
         await refresh()
-        return { success: false, error: error.message }
+        return { success: false, error: friendlyError(error) }
       }
       setTransactions(prev => {
         const updated = prev.map(tx => tx.id === id ? { ...tx, _pending: false } : tx)
@@ -318,18 +312,21 @@ export function useTransactions() {
     } catch (err) {
       if (isConnectivityError(err, isOnlineRef.current)) {
         await enqueue(user.id, { type: 'edit', txId: id, payload })
+        notifySavedOffline()
         return { success: true, queued: true }
       }
       // Not connectivity — resync rather than leaving an edit applied
       // locally that's doomed to keep failing on retry.
       reportError(err)
       await refresh()
-      return { success: false, error: err.message || 'Something went wrong. Please try again.' }
+      return { success: false, error: friendlyError(err) }
     }
   }, [user, refresh])
 
+  // Resolves to { success, error? } — a delete the server refuses brings the row
+  // back (a refresh) and says why, rather than it silently reappearing.
   const deleteTransaction = useCallback(async (id) => {
-    if (!user) return
+    if (!user) return { success: false, error: 'Please sign in again.' }
 
     setTransactions(prev => {
       const updated = prev.filter(tx => tx.id !== id)
@@ -340,7 +337,8 @@ export function useTransactions() {
 
     if (!isOnlineRef.current) {
       await enqueue(user.id, { type: 'delete', txId: id })
-      return
+      notifySavedOffline()
+      return { success: true, queued: true }
     }
 
     try {
@@ -355,16 +353,20 @@ export function useTransactions() {
         // actually there server-side.
         reportError(error)
         await refresh()
+        return { success: false, error: friendlyError(error, "Couldn't delete that transaction. Please try again.") }
       }
+      return { success: true }
     } catch (err) {
       if (isConnectivityError(err, isOnlineRef.current)) {
         await enqueue(user.id, { type: 'delete', txId: id })
-      } else {
-        // Not connectivity — resync rather than leaving the row hidden
-        // locally when the delete never actually went through.
-        reportError(err)
-        await refresh()
+        notifySavedOffline()
+        return { success: true, queued: true }
       }
+      // Not connectivity — resync rather than leaving the row hidden
+      // locally when the delete never actually went through.
+      reportError(err)
+      await refresh()
+      return { success: false, error: friendlyError(err, "Couldn't delete that transaction. Please try again.") }
     }
   }, [user, refresh])
 
@@ -393,7 +395,7 @@ export function useTransactions() {
       for (let i = 0; i < payload.length; i += CHUNK_SIZE) {
         const chunk = payload.slice(i, i + CHUNK_SIZE)
         const { error } = await supabase.from('transactions').insert(chunk)
-        if (error) return { success: false, error: error.message, imported }
+        if (error) return { success: false, error: friendlyError(error), imported }
         imported += chunk.length
         // Lets the UI show real per-chunk progress rather than a single
         // opaque jump from 0 to 100 — most imports are one chunk, but a
@@ -408,7 +410,7 @@ export function useTransactions() {
         return { success: false, offline: true, imported }
       }
       reportError(err)
-      return { success: false, error: err.message || 'Something went wrong. Please try again.', imported }
+      return { success: false, error: friendlyError(err), imported }
     }
 
     await refresh()

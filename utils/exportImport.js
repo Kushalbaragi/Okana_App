@@ -1,5 +1,6 @@
 import { isValid, parseISO } from 'date-fns';
 import { toDateStr } from './format';
+import { userError } from './errors';
 
 const TX_SHEET = 'Transactions';
 const GOALS_SHEET = 'Savings Goals';
@@ -115,7 +116,7 @@ function sheetRows(XLSX, ws, headerPattern) {
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
   const rest = rows[0] && headerPattern.test(String(rows[0][0])) ? rows.slice(1) : rows;
   if (rest.length > MAX_IMPORT_ROWS) {
-    throw new Error(`That file has more than ${MAX_IMPORT_ROWS.toLocaleString('en-IN')} rows — split it into smaller files and import them one at a time.`);
+    throw userError(`That file has more than ${MAX_IMPORT_ROWS.toLocaleString('en-IN')} rows — split it into smaller files and import them one at a time.`);
   }
   return rest.filter(row => !isBlank(row));
 }
@@ -228,7 +229,7 @@ export function parseWorkbook(base64) {
     // Not a valid xlsx/xls at all (corrupted, wrong format, mislabeled
     // file) — XLSX.read throws its own internal parser error here, which
     // reads as gibberish to a user. A clear, actionable message instead.
-    throw new Error("That file couldn't be read — make sure it's a valid Excel file (.xlsx).");
+    throw userError("That file couldn't be read — make sure it's a valid Excel file (.xlsx).");
   }
 
   const goalsName = findSheet(wb, GOALS_SHEET);

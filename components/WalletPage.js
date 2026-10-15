@@ -5,16 +5,19 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, Easing
 import { BackIcon } from './icons';
 import SegmentedSwitch from './SegmentedSwitch';
 import SavingsSection, { SavingsSheetsHost, useSavingsUI } from './SavingsSection';
-import SavingsBoundary from './SavingsBoundary';
+import SummarySection from './SummarySection';
+import SectionBoundary from './SectionBoundary';
 import ErrorBoundary from './ErrorBoundary';
 import { SETTLE_EASING } from '../utils/motion';
 import { FONT } from '../utils/type';
 
-// The page has two sections, switched from the header: savings goals, and debt
+// The page has three sections, switched from the header: a read-only summary of the
+// user's own numbers (first, and where the page opens), savings goals, and debt
 // (loans tracked the same way as a savings goal, just paid down instead of built
 // up — see savingsShared.js's KIND_COPY and useSavings.js's own comment on how one
 // goal shape covers both). The budget lives on Home now, under the amount.
 const SECTIONS = [
+  { id: 'summary', label: 'Summary' },
   { id: 'savings', label: 'Savings' },
   { id: 'debt', label: 'Debt' },
 ];
@@ -35,7 +38,7 @@ const WALLET_SLIDE_DURATION = 480;
 // read it to move in step with the page — Home uses it for its parallax. It is the
 // page's own value rather than a second animation started elsewhere, so the two
 // can never fall out of step.
-function WalletPage({ open, onClose, onClosed, savings, light = false, userId, slideX, locked = false, onLocked }) {
+function WalletPage({ open, onClose, onClosed, savings, transactions, budgetAmount, light = false, userId, slideX, locked = false, onLocked }) {
   const { width: windowWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
@@ -43,7 +46,7 @@ function WalletPage({ open, onClose, onClosed, savings, light = false, userId, s
   // (this component stays mounted between opens), so it comes back where it
   // was left. Both sections stay mounted and crossfade rather than swapping,
   // so switching costs nothing.
-  const [section, setSection] = useState('savings');
+  const [section, setSection] = useState('summary');
   const [detailGoalId, setDetailGoalId] = useState(null);
   // `locked` is an account with no access to add new things (trial over, or
   // never started): a new goal or loan asks for a subscription
@@ -73,15 +76,24 @@ function WalletPage({ open, onClose, onClosed, savings, light = false, userId, s
   // One opacity per section — each animates toward 1 when it's the active
   // section and 0 otherwise, same duration/easing for both, so the crossfade
   // reads identically whichever way it is swapping.
-  const savingsProgress = useSharedValue(1);
+  const summaryProgress = useSharedValue(1);
+  const savingsProgress = useSharedValue(0);
   const debtProgress = useSharedValue(0);
   useEffect(() => {
     const opts = { duration: SECTION_FADE_MS, easing: Easing.out(Easing.cubic) };
     savingsProgress.value = withTiming(section === 'savings' ? 1 : 0, opts);
     debtProgress.value = withTiming(section === 'debt' ? 1 : 0, opts);
-  }, [section, savingsProgress, debtProgress]);
+    summaryProgress.value = withTiming(section === 'summary' ? 1 : 0, opts);
+  }, [section, savingsProgress, debtProgress, summaryProgress]);
   const savingsLayerStyle = useAnimatedStyle(() => ({ opacity: savingsProgress.value }));
   const debtLayerStyle = useAnimatedStyle(() => ({ opacity: debtProgress.value }));
+  const summaryLayerStyle = useAnimatedStyle(() => ({ opacity: summaryProgress.value }));
+
+  // The summary is built the first time it is opened, and kept after that. Building
+  // it earlier would pick today's insight and mark it as seen for a page the user
+  // never looked at.
+  const [summaryVisited, setSummaryVisited] = useState(false);
+  useEffect(() => { if (open && section === 'summary') setSummaryVisited(true); }, [open, section]);
 
   // A small bottom toast confirming a write to the real ledger actually
   // happened — a debt or savings entry's own "add to transactions?" pill (see
@@ -164,6 +176,8 @@ function WalletPage({ open, onClose, onClosed, savings, light = false, userId, s
 
   useEffect(() => {
     if (open) {
+      // Always opens on the summary, where the page's one piece of motion plays.
+      changeSection('summary');
       pageTranslateX.value = withTiming(0, { duration: WALLET_SLIDE_DURATION, easing: SETTLE_EASING });
     } else {
       // Back to the list, sheet away — the page reopens fresh, not on
@@ -232,7 +246,7 @@ function WalletPage({ open, onClose, onClosed, savings, light = false, userId, s
               {/* Fixed to the back button's own height so the switch (a couple
                   of px taller) can't push everything below it down. */}
               <View style={{ flex: 1, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-                <SegmentedSwitch options={SECTIONS} value={section} onChange={changeSection} buttonWidth={92} light={light} />
+                <SegmentedSwitch options={SECTIONS} value={section} onChange={changeSection} buttonWidth={82} light={light} />
               </View>
               <View style={{ width: 36 }} />
             </View>
@@ -249,7 +263,7 @@ function WalletPage({ open, onClose, onClosed, savings, light = false, userId, s
                     would land on an empty pane for a frame rather than
                     nothing opening at all. */}
                 {contentReady && (
-                  <SavingsBoundary light={light} onReset={closeGoal}>
+                  <SectionBoundary what="your savings" light={light} onReset={closeGoal}>
                     <SavingsSection
                       savings={savings}
                       ui={savingsUI}
@@ -260,13 +274,13 @@ function WalletPage({ open, onClose, onClosed, savings, light = false, userId, s
                       onCloseGoal={closeGoal}
                       showToast={showToast}
                     />
-                  </SavingsBoundary>
+                  </SectionBoundary>
                 )}
               </Animated.View>
 
               <Animated.View style={[StyleSheet.absoluteFill, debtLayerStyle]} pointerEvents={section === 'debt' ? 'auto' : 'none'}>
                 {contentReady && (
-                  <SavingsBoundary light={light} onReset={closeDebt}>
+                  <SectionBoundary what="your loans" light={light} onReset={closeDebt}>
                     <SavingsSection
                       kind="debt"
                       savings={savings}
@@ -278,7 +292,15 @@ function WalletPage({ open, onClose, onClosed, savings, light = false, userId, s
                       onCloseGoal={closeDebt}
                       showToast={showToast}
                     />
-                  </SavingsBoundary>
+                  </SectionBoundary>
+                )}
+              </Animated.View>
+
+              <Animated.View style={[StyleSheet.absoluteFill, summaryLayerStyle]} pointerEvents={section === 'summary' ? 'auto' : 'none'}>
+                {summaryVisited && (
+                  <ErrorBoundary resetKeys={[userId]}>
+                    <SummarySection userId={userId} transactions={transactions} budgetAmount={budgetAmount} savings={savings} light={light} />
+                  </ErrorBoundary>
                 )}
               </Animated.View>
             </View>

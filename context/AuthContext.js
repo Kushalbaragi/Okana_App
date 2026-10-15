@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePostHog } from 'posthog-react-native';
@@ -91,7 +91,7 @@ export function AuthProvider({ children }) {
   // otherwise explain (there's no automatic retry anywhere in this app).
   // The timeout only stops the client from waiting — it doesn't cancel
   // whatever Supabase is doing server-side.
-  async function sendOtp({ email }) {
+  const sendOtp = useCallback(async ({ email }) => {
     // The review account never gets a real OTP — verifyOtp below routes it
     // through the server-side bypass instead, so there's nothing to send.
     if (email.trim().toLowerCase() === REVIEW_EMAIL) return;
@@ -105,13 +105,13 @@ export function AuthProvider({ children }) {
       ),
     ]);
     if (error) throw error;
-  }
+  }, []);
 
   // Verifies the code and reports back whether this is a brand-new account
   // (no name set yet) — the OTP screen uses that to decide whether to route
   // through a name-capture step before continuing, since the old signup
   // form (which used to collect it alongside a password) no longer exists.
-  async function verifyOtp({ email, token }) {
+  const verifyOtp = useCallback(async ({ email, token }) => {
     if (email.trim().toLowerCase() === REVIEW_EMAIL) {
       const res = await fetchWithTimeout(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/review-login`, {
         method: 'POST',
@@ -143,28 +143,32 @@ export function AuthProvider({ children }) {
     // reviewer, not a real user, and would otherwise pollute the funnel.
     if (isNewUser) posthog?.capture('signup_completed');
     return { isNewUser };
-  }
+  }, [posthog]);
 
-  async function setName({ name }) {
+  const setName = useCallback(async ({ name }) => {
     const { error } = await supabase.auth.updateUser({ data: { name } });
     if (error) throw error;
-  }
+  }, []);
 
-  async function logout() {
+  const logout = useCallback(async () => {
     await supabase.auth.signOut();
-  }
+  }, []);
 
   // Convenience getters from Supabase user object
-  const profile = user ? {
+  const profile = useMemo(() => (user ? {
     name: user.user_metadata?.name || user.email?.split('@')[0] || 'User',
     email: user.email,
     phone: user.user_metadata?.phone || '',
     joinDate: user.created_at,
     avatar: user.user_metadata?.avatar_url || null,
-  } : null;
+  } : null), [user]);
+
+  // Memoised, so every screen reading useAuth() re-renders only when one of these
+  // actually changes, not whenever this provider happens to render.
+  const value = useMemo(() => ({ user, profile, loading, sendOtp, verifyOtp, setName, logout }), [user, profile, loading, sendOtp, verifyOtp, setName, logout]);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, sendOtp, verifyOtp, setName, logout }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

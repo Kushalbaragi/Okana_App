@@ -5,6 +5,7 @@ import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-g
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, Easing } from 'react-native-reanimated';
 import { today, formatDayLabel } from '../utils/format';
 import { DateWheelPicker } from './wheel';
+import DayCalendar from './DayCalendar';
 import { GlassPressable, INPUT_TEXT_STYLE, POPUP_RADIUS, SMOOTH } from './Glass';
 import { NumericKeypad } from './NumericKeypad';
 import { useAmountEntry } from '../hooks/useAmountEntry';
@@ -85,6 +86,8 @@ const TYPE_LABELS = { expense: 'Expense', income: 'Income' };
 //   saved, which Home has no equivalent of.
 function AddModal({
   open, onClose, onClosed, onAdd, onEdit, editData, light = false,
+  // Home picks the date on a month calendar; Savings and Debt keep the wheels.
+  calendar = false,
   modes = TYPE_MODES,
   labels = TYPE_LABELS,
   initialMode,
@@ -152,6 +155,12 @@ function AddModal({
   const amountShake = useShake();
   const descriptionShake = useShake();
   const closeCalendar = useCallback(() => setCalOpen(false), []);
+  // Tapping a day picks it and closes the calendar, after a beat so the chosen day
+  // is seen taking the highlight first.
+  const pickCalendarDay = useCallback(d => {
+    setDate(d);
+    setTimeout(() => setCalOpen(false), 160);
+  }, []);
 
   // RN's built-in Modal animationType only animates the WHOLE modal content
   // as one transform — managed independently here instead so `visible`
@@ -648,16 +657,22 @@ function AddModal({
                 calendarCardStyle,
               ]}
             >
-              {/* The day, month and year as three wheels, like iOS's own date
-                  picker. A wheel has no single "pick" moment the way tapping a
-                  day on a calendar did, so it closes with Done (or a tap
-                  outside), and the date follows the wheels as they turn. */}
-              <View style={{ alignItems: 'flex-end', paddingHorizontal: 24, paddingBottom: 4 }}>
-                <Pressable onPress={closeCalendar} hitSlop={10} accessibilityRole="button" accessibilityLabel="Done">
-                  <Text style={{ fontSize: FONT.body, fontWeight: '500', color: light ? '#111111' : '#ffffff' }}>Done</Text>
-                </Pressable>
-              </View>
-              <DateWheelPicker value={date} onChange={setDate} light={light} maxDate={today()} />
+              {calendar ? (
+                <DayCalendar value={date} onChange={pickCalendarDay} light={light} maxDate={today()} />
+              ) : (
+                <>
+                  {/* The day, month and year as three wheels, like iOS's own date
+                      picker. A wheel has no single "pick" moment the way tapping a
+                      day on a calendar does, so it closes with Done (or a tap
+                      outside), and the date follows the wheels as they turn. */}
+                  <View style={{ alignItems: 'flex-end', paddingHorizontal: 24, paddingBottom: 4 }}>
+                    <Pressable onPress={closeCalendar} hitSlop={10} accessibilityRole="button" accessibilityLabel="Done">
+                      <Text style={{ fontSize: FONT.body, fontWeight: '500', color: light ? '#111111' : '#ffffff' }}>Done</Text>
+                    </Pressable>
+                  </View>
+                  <DateWheelPicker value={date} onChange={setDate} light={light} maxDate={today()} />
+                </>
+              )}
             </Animated.View>
           )}
         </View>

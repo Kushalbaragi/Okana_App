@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import Animated from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
-import { isConnectivityError, reportError } from '../../utils/errors';
+import { friendlyError, isConnectivityError, reportError } from '../../utils/errors';
 import { AuthBackground, AuthTitle, AuthField, PersonIcon, PillButton, useKeyboardLift, useTitleTop } from '../../components/AuthKit';
 import { GUTTER } from '../../utils/spacing';
 import { FONT } from '../../utils/type';
@@ -37,7 +37,7 @@ export default function NameScreen() {
       router.replace('/(auth)/welcome');
     } catch (err) {
       if (isConnectivityError(err, isOnline)) { notifyOffline(); }
-      else { reportError(err); setError(err.message || 'Something went wrong. Please try again.'); }
+      else { reportError(err); setError(friendlyError(err)); }
       setSaving(false);
     }
   }

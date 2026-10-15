@@ -22,7 +22,7 @@ import { WHEEL_ITEM_H, WHEEL_H, WHEEL_PAD, WHEEL_OVERSCROLL, WheelRow, DateWheel
 import { textColor } from '../utils/colors';
 import { TABULAR, FONT } from '../utils/type';
 import { SPRING_QUICK, layoutTransition } from '../utils/motion';
-import { KIND_COPY, dim, money } from './savingsShared';
+import { KIND_COPY, dim, ink, money } from './savingsShared';
 
 // SPRING_QUICK, not SPRING_SMOOTH: this fires the instant a row is tapped, so it should read as a direct
 // response to that tap, not a calmer passive list reflow. It also has to
@@ -124,6 +124,44 @@ function RowValueText({ value, placeholder, light }) {
   );
 }
 
+// The shared mechanics of a row whose value becomes a live field when tapped
+// (TextRow, AmountTextRow, and OptionsRow's "Other"). `start` dismisses whatever
+// keyboard is up before focusing — iOS only picks up a changed keyboard type, say
+// jumping here from an amount row's number pad, on a fresh focus after the old
+// keyboard has torn down; focusing straight over it left the previous one showing
+// until a second tap. `onStart` and `onEnd` are the row's own hooks into the sheet
+// (it knows which field is active). Stable, so a row can hand `start` on freely.
+function useInlineEdit({ onStart, onEnd, initial = false } = {}) {
+  const [editing, setEditing] = useState(initial);
+  const inputRef = useRef(null);
+  const hooks = useRef({ onStart, onEnd });
+  hooks.current = { onStart, onEnd };
+  const start = useCallback(() => {
+    hooks.current.onStart?.();
+    Keyboard.dismiss();
+    setEditing(true);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, []);
+  const stop = useCallback(() => {
+    setEditing(false);
+    hooks.current.onEnd?.();
+  }, []);
+  const submit = useCallback(() => { Keyboard.dismiss(); stop(); }, [stop]);
+  return { editing, start, inputProps: { ref: inputRef, onSubmitEditing: submit, onBlur: stop } };
+}
+
+// The field a row turns into: right-aligned on the row's own line.
+function InlineInput({ light, minWidth = 120, ...props }) {
+  return (
+    <TextInput
+      placeholderTextColor={textColor(light).tertiary}
+      returnKeyType="done"
+      style={[INPUT_TEXT_STYLE, { fontSize: FONT.body, textAlign: 'right', color: textColor(light).primary, minWidth, paddingVertical: 0 }]}
+      {...props}
+    />
+  );
+}
+
 // A free-text row whose own value becomes a live TextInput the moment it's
 // tapped — same mechanism OptionsRow's "Other" falls into (see below), so a
 // custom name/location and a genuinely free-text field like EMIs-paid share
@@ -131,36 +169,19 @@ function RowValueText({ value, placeholder, light }) {
 // memo'd — see FieldCard's own comment on why: unrelated fields shouldn't
 // re-render just because the amount ruler's drag updates GoalSheet's state.
 const TextRow = memo(function TextRow({ label, value, onChangeText, placeholder, light, keyboardType = 'default', autoCapitalize = 'sentences', maxLength, autoFocus = false, onFocusRow, onBlurRow }) {
-  const [editing, setEditing] = useState(autoFocus);
-  const inputRef = useRef(null);
-  const startEditing = () => {
-    onFocusRow?.();
-    // Dismissing before focusing (rather than focusing straight over
-    // whatever else was focused) matters specifically for this row's own
-    // keyboardType: iOS only picks up a changed keyboard type — say,
-    // jumping here from AmountTextRow's number-pad — on a fresh focus after
-    // the old keyboard has actually torn down; focusing straight over it
-    // left the previous keyboard showing until a second tap.
-    Keyboard.dismiss();
-    setEditing(true);
-    setTimeout(() => inputRef.current?.focus(), 50);
-  };
+  const edit = useInlineEdit({ onStart: onFocusRow, onEnd: onBlurRow, initial: autoFocus });
   return (
-    <RowHeader label={label} light={light} onPress={editing ? undefined : startEditing}>
-      {editing ? (
-        <TextInput
-          ref={inputRef}
+    <RowHeader label={label} light={light} onPress={edit.editing ? undefined : edit.start}>
+      {edit.editing ? (
+        <InlineInput
+          {...edit.inputProps}
+          light={light}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
-          placeholderTextColor={textColor(light).tertiary}
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
           maxLength={maxLength}
-          returnKeyType="done"
-          onSubmitEditing={() => { Keyboard.dismiss(); setEditing(false); onBlurRow?.(); }}
-          onBlur={() => { setEditing(false); onBlurRow?.(); }}
-          style={[INPUT_TEXT_STYLE, { fontSize: FONT.body, textAlign: 'right', color: textColor(light).primary, minWidth: 120, paddingVertical: 0 }]}
         />
       ) : (
         <RowValueText value={value} placeholder={placeholder} light={light} />
@@ -289,8 +310,8 @@ const OTHER_OPTION = 'Other';
 // tapping the header again collapses it.
 // memo'd — see FieldCard's own comment on why.
 const OptionsRow = memo(function OptionsRow({ label, value, onChangeText, options, placeholder, light, open, onOpen, onClose, maxLength, autoCapitalize = 'words', onFocusRow }) {
-  const [editingCustom, setEditingCustom] = useState(false);
-  const inputRef = useRef(null);
+  const custom = useInlineEdit({ onStart: onFocusRow, onEnd: onClose });
+  const editingCustom = custom.editing;
 
   const wheelItems = useMemo(() => [...options, OTHER_OPTION], [options]);
 
@@ -299,36 +320,24 @@ const OptionsRow = memo(function OptionsRow({ label, value, onChangeText, option
     if (open) onClose(); else onOpen();
   };
 
+  const { start: startCustom } = custom;
   const handleWheelSelect = useCallback((item) => {
-    if (item === OTHER_OPTION) {
-      onFocusRow?.();
-      // Same dismiss-before-focus as TextRow/AmountTextRow — landing here
-      // from a different-keyboardType field left the wrong keyboard on
-      // screen without it.
-      Keyboard.dismiss();
-      setEditingCustom(true);
-      setTimeout(() => inputRef.current?.focus(), 50);
-      return;
-    }
-    onChangeText(item);
-  }, [onChangeText, onFocusRow]);
+    if (item === OTHER_OPTION) startCustom();
+    else onChangeText(item);
+  }, [onChangeText, startCustom]);
 
   return (
     <View>
       <RowHeader label={label} light={light} onPress={editingCustom ? undefined : headerPress}>
         {editingCustom ? (
-          <TextInput
-            ref={inputRef}
+          <InlineInput
+            {...custom.inputProps}
+            light={light}
             value={value}
             onChangeText={onChangeText}
             placeholder={placeholder}
-            placeholderTextColor={textColor(light).tertiary}
             autoCapitalize={autoCapitalize}
             maxLength={maxLength}
-            returnKeyType="done"
-            onSubmitEditing={() => { Keyboard.dismiss(); setEditingCustom(false); onClose(); }}
-            onBlur={() => { setEditingCustom(false); onClose(); }}
-            style={[INPUT_TEXT_STYLE, { fontSize: FONT.body, textAlign: 'right', color: textColor(light).primary, minWidth: 120, paddingVertical: 0 }]}
           />
         ) : (
           <RowValueText value={value} placeholder={placeholder} light={light} />
@@ -379,39 +388,21 @@ const DateRow = memo(function DateRow({ label, value, onChangeText, placeholder,
 // TextInput on the system's own number-pad keyboard.
 // memo'd — see FieldCard's own comment on why.
 const AmountTextRow = memo(function AmountTextRow({ label, value, onChangeValue, placeholder, light, onFocusRow, onBlurRow }) {
-  const [editing, setEditing] = useState(false);
-  const inputRef = useRef(null);
+  const edit = useInlineEdit({ onStart: onFocusRow, onEnd: onBlurRow });
   const display = value > 0 ? formatCurrency(value) : '';
-
-  const startEditing = () => {
-    onFocusRow?.();
-    // Same dismiss-before-focus as TextRow — see its own comment. Matters
-    // here too since this is the field most often jumped to/from a
-    // different keyboardType (a plain text row).
-    Keyboard.dismiss();
-    setEditing(true);
-    setTimeout(() => inputRef.current?.focus(), 50);
-  };
-
   return (
-    <RowHeader label={label} light={light} onPress={editing ? undefined : startEditing}>
-      {editing ? (
-        <TextInput
-          ref={inputRef}
+    <RowHeader label={label} light={light} onPress={edit.editing ? undefined : edit.start}>
+      {edit.editing ? (
+        <InlineInput
+          {...edit.inputProps}
+          light={light}
+          minWidth={100}
           value={value ? String(value) : ''}
           onChangeText={t => onChangeValue(parseInt(t.replace(/[^0-9]/g, '') || '0', 10))}
           placeholder={placeholder}
-          placeholderTextColor={textColor(light).tertiary}
           keyboardType="number-pad"
-          // 9 digits — up to ₹99,99,99,999. The old ruler's manual-entry
-          // fallback had no cap at all, which was never a deliberate choice,
-          // just leftover from typing being an afterthought instead of the
-          // main path.
+          // 9 digits — up to ₹99,99,99,999.
           maxLength={9}
-          returnKeyType="done"
-          onSubmitEditing={() => { Keyboard.dismiss(); setEditing(false); onBlurRow?.(); }}
-          onBlur={() => { setEditing(false); onBlurRow?.(); }}
-          style={[INPUT_TEXT_STYLE, { fontSize: FONT.body, textAlign: 'right', color: textColor(light).primary, minWidth: 100, paddingVertical: 0 }]}
         />
       ) : (
         <RowValueText value={display} placeholder={placeholder} light={light} />
@@ -477,7 +468,7 @@ function DebtTypeOption({ label, description, onPress, light }) {
   return (
     <FieldCard light={light}>
       <GlassPressable variant="field" pressScale={false} onPress={onPress} style={{ padding: 16 }} accessibilityRole="button" accessibilityLabel={label}>
-        <Text style={{ fontSize: FONT.body, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}>{label}</Text>
+        <Text style={{ fontSize: FONT.body, fontWeight: '600', color: ink(light) }}>{label}</Text>
         <Text style={{ fontSize: FONT.caption, marginTop: 6, color: textColor(light).tertiary }}>{description}</Text>
       </GlassPressable>
     </FieldCard>
@@ -524,7 +515,7 @@ function LoanSummaryCard({ target, emiAmount, tenureMonths, light }) {
   if (!(target > 0) || !(emiAmount > 0) || !(tenure > 0)) return null;
   const totalRepayment = emiAmount * tenure;
   const extra = Math.max(0, totalRepayment - target);
-  const primary = light ? '#111111' : '#ffffff';
+  const primary = ink(light);
   return (
     <ReanimatedView.View layout={FIELD_LAYOUT_TRANSITION} entering={FadeIn} style={{ overflow: 'hidden' }}>
       <FieldCard light={light}>

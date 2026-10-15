@@ -18,7 +18,7 @@ import { usePostHog } from 'posthog-react-native';
 import { useSavings } from '../../hooks/useSavings';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
-import { isConnectivityError, reportError } from '../../utils/errors';
+import { ACCESS_EXPIRED_MESSAGE, friendlyError, isConnectivityError, reportError, userError } from '../../utils/errors';
 import { clearAllUserData, clearDataCaches } from '../../utils/localData';
 import { openLink, openStoreListing, TERMS_URL } from '../../utils/links';
 import { useSubscription } from '../../hooks/useSubscription';
@@ -375,6 +375,27 @@ function describeImported(transactions, goals, entries) {
   ].filter(Boolean).join(', ');
 }
 
+// Every row the account owns, table by table, for Erase data and Delete account.
+// monthly_budgets and budget_plan_items have no-cascade foreign keys to the user,
+// so they must go before delete_user() can; savings entries and debt payments go
+// with their goals and debts. Each is cleared on its own so a failure says how far
+// it got: `onStep` hears which group ('transactions' | 'budget' | 'savings') is
+// being cleared.
+const USER_TABLES = [
+  ['transactions', 'transactions'],
+  ['budget', 'monthly_budgets'],
+  ['budget', 'budget_plan_items'],
+  ['savings', 'savings_goals'],
+  ['savings', 'debts'],
+];
+async function deleteUserRows(userId, onStep) {
+  for (const [step, table] of USER_TABLES) {
+    onStep(step);
+    const { error } = await supabase.from(table).delete().eq('user_id', userId);
+    if (error) throw error;
+  }
+}
+
 export default function AccountPage() {
   const router = useRouter();
   const { user, profile, logout } = useAuth();
@@ -516,7 +537,7 @@ export default function AccountPage() {
       setEditingName(false);
     } catch (err) {
       if (isConnectivityError(err, isOnline)) { notifyOffline(); }
-      else { reportError(err); setNameError(err.message || 'Failed to update name. Please try again.'); }
+      else { reportError(err); setNameError(friendlyError(err, "Couldn't update your name. Please try again.")); }
     } finally {
       setSavingName(false);
     }
@@ -578,7 +599,7 @@ export default function AccountPage() {
     } catch (err) {
       setAvatarPhase('idle');
       if (isConnectivityError(err, isOnline)) { notifyOffline(); }
-      else { reportError(err); setActionError(err.message || 'Failed to update profile photo. Please try again.'); }
+      else { reportError(err); setActionError(friendlyError(err, "Couldn't update your photo. Please try again.")); }
     }
   }
 
@@ -605,21 +626,7 @@ export default function AccountPage() {
       // Held to a 4s minimum so the progress bar always has time to visibly
       // fill instead of flashing straight to success when the deletes
       // happen to finish almost instantly.
-      await Promise.all([minDelay(4000), (async () => {
-        const { error: txError } = await supabase.from('transactions').delete().eq('user_id', user.id);
-        if (txError) throw txError;
-        step = 'budget';
-        const { error: budgetError } = await supabase.from('monthly_budgets').delete().eq('user_id', user.id);
-        if (budgetError) throw budgetError;
-        const { error: planError } = await supabase.from('budget_plan_items').delete().eq('user_id', user.id);
-        if (planError) throw planError;
-        // Entries go with their goals, payments with their debts (ON DELETE CASCADE).
-        step = 'savings';
-        const { error: savingsError } = await supabase.from('savings_goals').delete().eq('user_id', user.id);
-        if (savingsError) throw savingsError;
-        const { error: debtsError } = await supabase.from('debts').delete().eq('user_id', user.id);
-        if (debtsError) throw debtsError;
-      })()]);
+      await Promise.all([minDelay(4000), deleteUserRows(user.id, (s) => { step = s; })]);
       // The server side is done, so clear the device's copy — including the
       // offline queue, which would otherwise be replayed on the next refresh and
       // put erased transactions straight back. This also lets the budget-setup
@@ -639,10 +646,10 @@ export default function AccountPage() {
       reportError(err);
       setActionError(
         step === 'budget'
-          ? `Your transactions were erased, but budgets couldn't be — ${err.message || 'please try again'}.`
+          ? `Your transactions were erased, but budgets couldn't be. ${friendlyError(err)}`
           : step === 'savings'
-            ? `Your transactions and budgets were erased, but savings goals couldn't be — ${err.message || 'please try again'}.`
-            : err.message || 'Something went wrong. Please try again.'
+            ? `Your transactions and budgets were erased, but savings goals couldn't be. ${friendlyError(err)}`
+            : friendlyError(err)
       );
     }
   }
@@ -659,25 +666,7 @@ export default function AccountPage() {
     let step = 'transactions';
     try {
       await Promise.all([minDelay(4000), (async () => {
-        const { error: txError } = await supabase.from('transactions').delete().eq('user_id', user.id);
-        if (txError) throw txError;
-        // monthly_budgets has a (no-cascade) FK to auth.users — must be cleared
-        // before delete_user() or the account delete itself fails.
-        step = 'budget';
-        const { error: budgetError } = await supabase.from('monthly_budgets').delete().eq('user_id', user.id);
-        if (budgetError) throw budgetError;
-        // budget_plan_items has the same no-cascade FK to auth.users —
-        // cleared here too, before delete_user().
-        const { error: planError } = await supabase.from('budget_plan_items').delete().eq('user_id', user.id);
-        if (planError) throw planError;
-        // Cleared explicitly like the rest, even though the FK cascades, so a
-        // failure here reads as a savings problem rather than a mystery
-        // failure of delete_user().
-        step = 'savings';
-        const { error: savingsError } = await supabase.from('savings_goals').delete().eq('user_id', user.id);
-        if (savingsError) throw savingsError;
-        const { error: debtsError } = await supabase.from('debts').delete().eq('user_id', user.id);
-        if (debtsError) throw debtsError;
+        await deleteUserRows(user.id, (s) => { step = s; });
         step = 'account';
         const { error: rpcError } = await supabase.rpc('delete_user');
         if (rpcError) throw rpcError;
@@ -703,8 +692,8 @@ export default function AccountPage() {
       const partial = step === 'budget' || step === 'savings' || step === 'account';
       setActionError(
         partial
-          ? `Your transactions were deleted, but your account couldn't be fully removed — ${err.message || 'please try again'}.`
-          : err.message || 'Something went wrong. Please try again.'
+          ? `Your transactions were deleted, but your account couldn't be fully removed. ${friendlyError(err)}`
+          : friendlyError(err)
       );
     }
   }
@@ -805,19 +794,19 @@ export default function AccountPage() {
     try {
       const { data } = await supabase.auth.getSession();
       const token = data?.session?.access_token;
-      if (!token) throw new Error('Not signed in');
+      if (!token) throw userError('Please sign in again to send feedback.');
       const res = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/send-feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ message: feedbackText.trim() }),
       });
       const result = await res.json();
-      if (!res.ok) throw new Error(result.error || 'Failed to send feedback');
+      if (!res.ok) throw new Error(result.error || `send-feedback ${res.status}`);
       setFeedbackSent(true);
       setTimeout(() => { setFeedbackSent(false); setFeedbackText(''); setModal(null); }, 1500);
     } catch (err) {
       if (isConnectivityError(err, isOnlineRef.current)) { notifyOffline(); }
-      else { reportError(err); setFeedbackError(err.message || 'Failed to send feedback. Please try again.'); }
+      else { reportError(err); setFeedbackError(friendlyError(err, "Couldn't send your feedback. Please try again.")); }
     } finally {
       setFeedbackSending(false);
     }
@@ -850,7 +839,7 @@ export default function AccountPage() {
       }
     } catch (err) {
       reportError(err);
-      setExportError(err.message || 'Failed to export. Please try again.');
+      setExportError(friendlyError(err, "Couldn't export your data. Please try again."));
     } finally {
       setExporting(false);
     }
@@ -944,13 +933,13 @@ export default function AccountPage() {
         // access check) — trial/subscription lapsed, not a real import
         // problem — so it gets a message someone can actually act on
         // instead of "row-level security policy" being shown verbatim.
-        const isAccessExpired = /row-level security/i.test(res.error || '');
+        const isAccessExpired = res.error === ACCESS_EXPIRED_MESSAGE;
         if (!isAccessExpired) reportError(new Error(res.error || 'Import failed'));
         // Part of a file may already be in by the time something fails — say so,
         // or a second try would bring it in twice.
         const already = describeImported(txRes.imported, savingsRes.goals, savingsRes.entries);
         const reason = isAccessExpired
-          ? 'Your Okana Plus trial or subscription has expired — resubscribe to import data.'
+          ? 'Your Okana Plus trial or subscription has expired. Subscribe to import data.'
           : (res.error || 'Import failed. Please try again.');
         setImportError({ title: 'Import failed', message: already ? `${reason} Already imported: ${already}.` : reason });
         setImportStage('error');
@@ -987,7 +976,7 @@ export default function AccountPage() {
       // Reaching here almost always means parseWorkbook rejected
       // the file itself (not a real xlsx) rather than some other failure —
       // treat it the same as a format mismatch.
-      setImportError({ title: "Template doesn't match", message: err.message || 'Make sure your file matches the required Excel format.', offerTemplate: true });
+      setImportError({ title: "Template doesn't match", message: friendlyError(err, 'Make sure your file matches the required Excel format.'), offerTemplate: true });
       setImportStage('error');
     }
   }

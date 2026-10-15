@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import { usePostHog } from 'posthog-react-native';
-import { reportError } from '../utils/errors';
+import { friendlyError, reportError } from '../utils/errors';
 import { openLink } from '../utils/links';
 
 const API_KEY = Platform.select({
@@ -45,7 +45,7 @@ export function usePurchases(userId) {
       return { success: true, offering: offerings.current };
     } catch (err) {
       reportError(err);
-      return { success: false, error: err.message || 'Could not load subscription options.' };
+      return { success: false, error: friendlyError(err, "Couldn't load subscription options. Please try again.") };
     }
   }, []);
 
@@ -59,7 +59,7 @@ export function usePurchases(userId) {
     } catch (err) {
       if (err.userCancelled) return { success: false, cancelled: true };
       reportError(err);
-      return { success: false, error: err.message || 'Purchase failed. Please try again.' };
+      return { success: false, error: friendlyError(err, "The purchase didn't go through. Please try again.") };
     }
   }, []);
 
@@ -71,7 +71,7 @@ export function usePurchases(userId) {
       return { success: true, customerInfo };
     } catch (err) {
       reportError(err);
-      return { success: false, error: err.message || 'Could not restore purchases.' };
+      return { success: false, error: friendlyError(err, "Couldn't restore purchases. Please try again.") };
     }
   }, []);
 

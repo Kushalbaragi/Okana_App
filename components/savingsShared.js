@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
-import { View } from 'react-native';
+import { View, Text } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { formatCurrency, formatCurrencyFull } from '../utils/format';
 import { CARD_RADIUS, SMOOTH } from './Glass';
 import { SETTLE_EASING } from '../utils/motion';
+import { textColor } from '../utils/colors';
+import { FONT, TABULAR } from '../utils/type';
 
 // Small pieces shared by the savings list and its goal cards.
 
@@ -23,7 +25,7 @@ export const money = (n) => (Number.isInteger(n) ? formatCurrency(n) : formatCur
 // fields — this dictionary only changes the words wrapped around them.
 export const KIND_COPY = {
   savings: {
-    sectionTotal: 'Total Savings',
+    heroCaption: 'saved so far',
     newLabel: 'Add saving goal',
     emptyTitle: 'What are you saving for?',
     emptyBody: 'Emergency fund, trip, a phone…\nTap + to add a goal',
@@ -46,7 +48,7 @@ export const KIND_COPY = {
     depositWord: 'deposit',
   },
   debt: {
-    sectionTotal: 'Total Debt',
+    heroCaption: 'left to pay',
     newLabel: 'New loan',
     emptyTitle: 'What are you paying off?',
     emptyBody: 'Car, bike, personal, a friend…\nTap + to add a loan',
@@ -77,8 +79,10 @@ export const dim = (light, a = 0.4) => (light ? `rgba(0,0,0,${a})` : `rgba(255,2
 // measuring is needed. `color` overrides the usual green, for a caller that
 // wants this same bar in a different state's colour (Budget's own status
 // bar draws its own instead, rather than using this one).
-export function ProgressBar({ percent, height = 6, light, color = FILL_COLOR, trackColor, duration = 420 }) {
-  const progress = useSharedValue(0);
+export function ProgressBar({ percent, height = 6, light, color = FILL_COLOR, trackColor, duration = 420, still = false }) {
+  // `still`: starts already at its value instead of filling up from empty, for a bar
+  // that appears with the rest of a list changing under it, not a page just opening.
+  const progress = useSharedValue(still ? percent / 100 : 0);
   useEffect(() => {
     progress.value = withTiming(percent / 100, { duration, easing: SETTLE_EASING });
   }, [percent, progress, duration]);
@@ -99,6 +103,33 @@ export function Card({ children, light }) {
   return (
     <View style={{ backgroundColor: cardFill(light), borderRadius: CARD_RADIUS, ...SMOOTH, overflow: 'hidden' }}>
       {children}
+    </View>
+  );
+}
+
+// The page's strongest text colour, for names and headline figures.
+export const ink = (light) => (light ? '#111111' : '#ffffff');
+
+// The small capitals above a block ("MONTHLY EMI", "PAYMENTS", "LOANS · 3"). `inset`
+// is the side padding: 20 lines up with a Card's content, 16 with a row inside one;
+// `bottom` the gap under it, 0 where the label sits in a row that has its own.
+export function SectionLabel({ light, inset = 20, bottom = 8, children }) {
+  return (
+    <Text
+      className="text-[11px] font-medium uppercase tracking-wider"
+      style={{ paddingHorizontal: inset, marginBottom: bottom, color: textColor(light).disabled }}
+    >
+      {children}
+    </Text>
+  );
+}
+
+// A small caption over a figure, centred on each other ("Total loan" / ₹60,000).
+export function Stat({ light, label, value }) {
+  return (
+    <View style={{ alignItems: 'center' }}>
+      <Text className="text-[13px]" style={{ color: textColor(light).tertiary }}>{label}</Text>
+      <Text style={{ fontSize: FONT.body, fontWeight: '500', color: textColor(light).primary, marginTop: 2, ...TABULAR }}>{value}</Text>
     </View>
   );
 }

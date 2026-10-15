@@ -262,7 +262,7 @@ function BarChart({ values, labels, activeIndex, accentIndex = null, currentInde
                 textAnchor="middle"
                 fontSize="9"
                 fill={isActive || isCurrent ? labelActiveColor : labelDimColor}
-                fontWeight={isActive || isCurrent ? '600' : '400'}
+                fontWeight={isActive ? '600' : '400'}
               >
                 {labels[i]}
               </SvgText>

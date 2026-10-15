@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { usePostHog } from 'posthog-react-native'
 import { supabase } from '../lib/supabase'
-import { useNetwork } from '../context/NetworkContext'
-import { isConnectivityError, reportError } from '../utils/errors'
+import { useNetwork, useOnReconnect } from '../context/NetworkContext'
+import { friendlyError, isConnectivityError, reportError } from '../utils/errors'
 import { storageKeys } from '../utils/storageKeys'
 import { currentMonthYear, getMonthTotal } from '../utils/format'
 import { prevMonthYear } from '../utils/monthlyRecap'
@@ -87,7 +87,7 @@ async function flushPendingBudget(userId, currentMonthStart) {
 }
 
 export function useBudget(user, transactions) {
-  const { isOnline, isOnlineRef, notifyOffline } = useNetwork()
+  const { isOnlineRef, notifyOffline, notifySavedOffline } = useNetwork()
   const posthog = usePostHog()
   const { month, year } = currentMonthYear()
   const monthStart = monthStartStr(month, year)
@@ -179,19 +179,11 @@ export function useBudget(user, transactions) {
 
   useEffect(() => { refresh() }, [refresh])
 
-  // Coming back online specifically kicks off a refresh (which flushes
-  // any pending budget set first) — mirrors useTransactions' equivalent,
-  // so a budget set while offline doesn't just sit there until the
-  // Dashboard happens to refocus.
-  const wasOnlineRef = useRef(isOnline)
-  useEffect(() => {
-    const wasOffline = !wasOnlineRef.current
-    wasOnlineRef.current = isOnline
-    if (user && wasOffline && isOnline) refresh()
-  }, [user, isOnline, refresh])
+  // Back online: a refresh sends whatever was saved offline first.
+  useOnReconnect(refresh, !!user)
 
   const setBudget = useCallback(async (amountNumber) => {
-    if (!user) return { success: false, error: 'Not signed in' }
+    if (!user) return { success: false, error: 'Please sign in again.' }
     // Fired on the attempt, not gated on the online/offline branches below
     // succeeding — same reasoning as useTransactions' own events: this is
     // the moment the user actually performed the action.
@@ -201,6 +193,7 @@ export function useBudget(user, transactions) {
       setBudgetRow(prev => ({ ...(prev || {}), user_id: user.id, month_start: monthStart, budget_amount: amountNumber, _pending: true }))
       await savePendingBudget(user.id, { month_start: monthStart, budget_amount: amountNumber })
       notifyOffline()
+      notifySavedOffline()
       return { success: true, queued: true }
     }
 
@@ -213,7 +206,7 @@ export function useBudget(user, transactions) {
         )
         .select()
         .single()
-      if (error) { reportError(error); return { success: false, error: error.message } }
+      if (error) { reportError(error); return { success: false, error: friendlyError(error) } }
       // This set is now the source of truth for the month — drop any
       // stale pending value so a later refresh doesn't reapply an older
       // queued number over it.
@@ -225,10 +218,11 @@ export function useBudget(user, transactions) {
         setBudgetRow(prev => ({ ...(prev || {}), user_id: user.id, month_start: monthStart, budget_amount: amountNumber, _pending: true }))
         await savePendingBudget(user.id, { month_start: monthStart, budget_amount: amountNumber })
         notifyOffline()
+        notifySavedOffline()
         return { success: true, queued: true }
       }
       reportError(err)
-      return { success: false, error: err.message || 'Something went wrong. Please try again.' }
+      return { success: false, error: friendlyError(err) }
     }
   }, [user, monthStart, notifyOffline])
 

@@ -11,14 +11,21 @@ import { textColor } from '../utils/colors';
 //
 // tone 'danger' (default) is for irreversible actions (erase/delete); 'neutral'
 // is for a reversible one (logout) that still deserves a confirm tap but
-// shouldn't visually read as equally dangerous.
-export default function ConfirmDialog({ open, title, message, confirmLabel, tone = 'danger', onConfirm, onCancel, onClosed, light = false, dim }) {
-  const confirmBg = tone === 'danger' ? 'rgba(248,113,113,0.14)' : (light ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)');
-  const confirmColor = tone === 'danger' ? 'rgba(248,113,113,0.9)' : (light ? '#111111' : '#ffffff');
+// shouldn't visually read as equally dangerous, or a plain notice ("Got it");
+// 'positive' is for a way forward (subscribe). `icon` (an emoji) turns it into a
+// centred notice, with the icon above the title.
+const TONES = {
+  danger: { bg: 'rgba(248,113,113,0.14)', color: 'rgba(248,113,113,0.9)' },
+  positive: { bg: 'rgba(74,222,128,0.25)', color: '#4ade80' },
+};
+export default function ConfirmDialog({ open, title, message, confirmLabel, tone = 'danger', icon, onConfirm, onCancel, onClosed, light = false, dim }) {
+  const ink = light ? '#111111' : '#ffffff';
+  const { bg: confirmBg, color: confirmColor } = TONES[tone] || { bg: light ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)', color: ink };
+  const align = icon ? 'center' : 'left';
   return (
     <AnimatedModal open={open} onClose={onCancel} onClosed={onClosed} variant="center" dim={dim}>
       <View
-        className="w-full p-6"
+        className={icon ? 'w-full p-6 items-center' : 'w-full p-6'}
         style={{
           maxWidth: 360,
           borderRadius: POPUP_RADIUS,
@@ -28,8 +35,9 @@ export default function ConfirmDialog({ open, title, message, confirmLabel, tone
           borderColor: light ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)',
         }}
       >
-        <Text className="font-semibold text-base mb-2" style={{ color: light ? '#111111' : '#ffffff' }}>{title}</Text>
-        <Text className="text-base mb-6" style={{ lineHeight: 22, color: textColor(light).tertiary }}>{message}</Text>
+        {!!icon && <Text style={{ fontSize: 30 }} className="mb-3">{icon}</Text>}
+        <Text className="font-semibold text-base mb-2" style={{ color: ink, textAlign: align }}>{title}</Text>
+        <Text className="text-base mb-6" style={{ lineHeight: 22, color: textColor(light).tertiary, textAlign: align }}>{message}</Text>
         <Pressable onPress={onConfirm} className="w-full py-3 rounded-full items-center" style={{ backgroundColor: confirmBg }}>
           <Text className="text-base font-semibold" style={{ color: confirmColor }}>{confirmLabel}</Text>
         </Pressable>

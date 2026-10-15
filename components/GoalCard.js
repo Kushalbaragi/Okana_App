@@ -1,10 +1,9 @@
 import { memo, useCallback } from 'react';
 import { View, Text } from 'react-native';
-import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
-import Animated, { FadeOut, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { GlassPressable } from './Glass';
 import { CheckIcon, ChevronRight } from './icons';
-import { SwipeDeleteAction, useSwipeDelete } from './SwipeDeleteAction';
+import { SwipeRow } from './SwipeDeleteAction';
 import { Card, ProgressBar, POSITIVE, dim, money } from './savingsShared';
 import { textColor } from '../utils/colors';
 import { TABULAR, FONT } from '../utils/type';
@@ -26,9 +25,7 @@ const REMOVE_MS = 240;
 //
 // A finished goal (`done`) is the same card with a tick by the name, dimmer
 // name and no figure or bar: it is done, so the list stays quieter for it.
-function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light = false, done = false }) {
-  const { setSwipeableRef, handleDelete } = useSwipeDelete(goal.id, onDelete, registerSwipeable);
-
+function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light = false, done = false, still = false }) {
   // A tap that closed an open card is spent on that, so it doesn't also open
   // the goal behind the closing swipe.
   const handlePress = useCallback(() => {
@@ -73,7 +70,7 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
               </View>
             </View>
             <View style={{ marginTop: 12 }}>
-              <ProgressBar percent={goal.percent} height={7} light={light} trackColor={dim(light, 0.1)} />
+              <ProgressBar percent={goal.percent} height={7} light={light} trackColor={dim(light, 0.1)} still={still} />
             </View>
           </>
         )}
@@ -82,18 +79,19 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
   );
 
   return (
-    <Animated.View style={{ marginBottom: 10 }} layout={LinearTransition.duration(REMOVE_MS)} exiting={FadeOut.duration(REMOVE_MS)}>
+    <Animated.View
+      style={{ marginBottom: 10 }}
+      layout={LinearTransition.duration(REMOVE_MS)}
+      // `still` marks a list that changes under an open page (the debt chart's month
+      // moving): a card that was already there stays untouched, and only one that
+      // comes in fades in, as one that goes out fades out.
+      entering={still ? FadeIn.duration(REMOVE_MS) : undefined}
+      exiting={FadeOut.duration(REMOVE_MS)}
+    >
       {onDelete ? (
-        <ReanimatedSwipeable
-          ref={setSwipeableRef}
-          friction={1.8}
-          rightThreshold={32}
-          overshootRight={false}
-          renderRightActions={(_progress, drag) => <SwipeDeleteAction drag={drag} onDelete={handleDelete} label="Delete goal" />}
-          onSwipeableWillOpen={() => onSwipeOpen?.(goal.id)}
-        >
+        <SwipeRow id={goal.id} onDelete={onDelete} registerSwipeable={registerSwipeable} onSwipeOpen={onSwipeOpen} label="Delete goal">
           {card}
-        </ReanimatedSwipeable>
+        </SwipeRow>
       ) : card}
     </Animated.View>
   );

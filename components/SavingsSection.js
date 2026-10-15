@@ -2,7 +2,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, Easing, FadeIn } from 'react-native-reanimated';
-import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { GlassPressable, CARD_RADIUS, SMOOTH } from './Glass';
 import MonthSlider from './MonthSlider';
 import PaymentGrid from './PaymentGrid';
@@ -15,12 +14,13 @@ import { InlineConfirm } from './InlineConfirm';
 import { ConfirmPill } from './ConfirmPill';
 import { GoalSheet, MoneySheet } from './SavingsSheets';
 import GoalCard from './GoalCard';
-import { SwipeDeleteAction, useSwipeDelete, useSwipeGroup } from './SwipeDeleteAction';
-import { Card, ProgressBar, POSITIVE, cardFill, dim, money, KIND_COPY } from './savingsShared';
+import { SwipeRow, useSwipeGroup } from './SwipeDeleteAction';
+import { Card, ProgressBar, SectionLabel, Stat, POSITIVE, cardFill, dim, ink, money, KIND_COPY } from './savingsShared';
+import DatePill from './DatePill';
 import { textColor, FAB_COLOR } from '../utils/colors';
 import { TABULAR, FONT } from '../utils/type';
 import { CheckIcon, ChevronRight, EditIcon, PlusIcon } from './icons';
-import { currentMonthYear, dateBoxParts, formatDateFull, today } from '../utils/format';
+import { currentMonthYear, formatDateFull, today } from '../utils/format';
 import { hapticAdded } from '../utils/haptics';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { GUTTER } from '../utils/spacing';
@@ -101,7 +101,10 @@ function useEmiExpenseConfirm(savings, showToast) {
     if (!addTransaction) return;
     (async () => {
       const result = await savings.logEntryAsExpense({ amount: p.amount, date: p.date, description: p.name });
-      if (!result?.success) return;
+      if (!result?.success) {
+        if (result?.error) showToast?.(result.error);
+        return;
+      }
       // Links the new expense back onto the payment entry that prompted it,
       // so deleting the entry later takes this expense with it (see
       // useSavings.deleteEntry) instead of leaving it orphaned on Home.
@@ -325,11 +328,15 @@ export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings'
   const flushPendingDelete = useCallback(async () => {
     const goalId = goalToDelete.current;
     goalToDelete.current = null;
-    if (goalId) savings.deleteGoal(goalId);
+    if (goalId) {
+      const result = await savings.deleteGoal(goalId);
+      if (!result?.success && result?.error) showToast?.(result.error);
+    }
     const entryId = entryToDelete.current;
     entryToDelete.current = null;
     if (entryId) {
       const result = await savings.deleteEntry(entryId);
+      if (!result?.success && result?.error) showToast?.(result.error);
       // The entry's own payment might have been mirrored into Home's
       // expense list (see useEmiExpenseConfirm above) — deleteEntry takes
       // that expense with it, and this is the only place that actually
@@ -451,6 +458,43 @@ function monthlyNets(entries) {
   };
 }
 
+// The debt page's own bars: what every EMI loan (cleared ones too) adds up to in each month,
+// as a negative net so MonthSlider draws it red. It follows each loan's schedule
+// (first EMI month for `tenureMonths` months, then nothing), not what was logged
+// as paid, so EMIs paid before the loan was added show as the months they were
+// and the months ahead show how the total falls as loans end. Runs from the
+// earliest first EMI to the last EMI of any loan and opens on the current month,
+// or the first month if every loan is still to start. null when there is no EMI loan.
+function emiMonthlyTotals(goals) {
+  const spans = goals.map(emiSpan).filter(Boolean);
+  if (spans.length === 0) return null;
+  const { month, year } = currentMonthYear();
+  const nowIndex = year * 12 + month;
+  const start = Math.min(...spans.map(x => x.start));
+  const end = Math.max(...spans.map(x => x.end));
+  const months = [];
+  for (let idx = start; idx <= end; idx++) {
+    let total = 0;
+    for (const x of spans) if (idx >= x.start && idx <= x.end) total += x.amount;
+    months.push({ name: `${MONTH_NAMES[idx % 12].slice(0, 3)} ${Math.floor(idx / 12)}`, net: -total });
+  }
+  return { months, startIndex: start, currentIndex: nowIndex - start, initialIndex: Math.max(0, Math.min(months.length - 1, nowIndex - start)) };
+}
+
+// The months an EMI loan has an EMI in: its first EMI month for `tenureMonths`
+// months, cut short at the month it was marked cleared if that came first. null
+// for anything without a schedule (flexible debt).
+function emiSpan(g) {
+  if (g.debtType !== 'emi' || !g.firstEmiDate || !(g.tenureMonths > 0) || !(g.emiAmount > 0)) return null;
+  const start = monthIndexOf(g.firstEmiDate);
+  let end = start + g.tenureMonths - 1;
+  if (g.completedAt) {
+    const d = new Date(g.completedAt);
+    end = Math.min(end, d.getFullYear() * 12 + d.getMonth());
+  }
+  return { start, end: Math.max(start, end), amount: g.emiAmount };
+}
+
 // EMI debt's own circle tracker: a year x month grid of which EMIs are paid.
 // A loan is a schedule, so this fills in schedule order — the first
 // `emisPaid` months of it — rather than against the date any individual
@@ -537,21 +581,10 @@ function EmptyState({ light, kind = 'savings' }) {
   const copy = KIND_COPY[kind];
   return (
     <View className="items-center" style={{ paddingTop: 96, paddingHorizontal: 16 }}>
-      <Text className="text-xl text-center" style={{ fontWeight: '400', color: light ? '#111111' : '#ffffff' }}>{copy.emptyTitle}</Text>
+      <Text className="text-xl text-center" style={{ fontWeight: '400', color: ink(light) }}>{copy.emptyTitle}</Text>
       <Text className="text-[16px] text-center" style={{ color: textColor(light).tertiary, marginTop: 8, lineHeight: 22 }}>
         {copy.emptyBody}
       </Text>
-    </View>
-  );
-}
-
-// Same little date chip as a transaction row.
-function DateChip({ dateStr, light }) {
-  const { day, month } = dateBoxParts(dateStr);
-  return (
-    <View className="items-center justify-center w-8 h-8 rounded shrink-0" style={{ backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)' }}>
-      <Text className="text-[11px] font-semibold leading-none" style={{ color: dim(light, 0.7) }}>{day}</Text>
-      <Text className="text-[8px] font-medium leading-none mt-0.5 tracking-tight" style={{ color: textColor(light).disabled }}>{month}</Text>
     </View>
   );
 }
@@ -563,7 +596,6 @@ function DateChip({ dateStr, light }) {
 const HistoryRow = memo(function HistoryRow({ entry, onPress, onDelete, registerSwipeable, onSwipeOpen, onRowPress, light, kind = 'savings' }) {
   const copy = KIND_COPY[kind];
   const isAdd = entry.type === 'add';
-  const { setSwipeableRef, handleDelete } = useSwipeDelete(entry.id, onDelete, registerSwipeable);
   // A tap that closed an open row is spent on that, so it doesn't also open the
   // entry behind the closing swipe.
   const handlePress = useCallback(() => {
@@ -572,20 +604,13 @@ const HistoryRow = memo(function HistoryRow({ entry, onPress, onDelete, register
   }, [entry.id, onPress, onRowPress]);
 
   return (
-    <ReanimatedSwipeable
-      ref={setSwipeableRef}
-      friction={1.8}
-      rightThreshold={32}
-      overshootRight={false}
-      renderRightActions={(_progress, drag) => <SwipeDeleteAction drag={drag} onDelete={handleDelete} label="Delete entry" />}
-      onSwipeableWillOpen={() => onSwipeOpen?.(entry.id)}
-    >
+    <SwipeRow id={entry.id} onDelete={onDelete} registerSwipeable={registerSwipeable} onSwipeOpen={onSwipeOpen} label="Delete entry">
       <View style={{ backgroundColor: cardFill(light) }}>
         <GlassPressable variant="field" pressScale={false} onPress={handlePress} style={HISTORY_PAD} accessibilityRole="button">
           <View className="flex-row items-center justify-between" style={{ gap: 12 }}>
             <View className="flex-row items-center flex-1" style={{ gap: 10 }}>
-              <DateChip dateStr={entry.date} light={light} />
-              <Text className="text-base" numberOfLines={1} style={{ flexShrink: 1, color: light ? '#111111' : '#ffffff' }}>
+              <DatePill dateStr={entry.date} light={light} />
+              <Text className="text-base" numberOfLines={1} style={{ flexShrink: 1, color: ink(light) }}>
                 {entry.note || (isAdd ? copy.addedLabel : copy.withdrewLabel)}
               </Text>
             </View>
@@ -595,7 +620,7 @@ const HistoryRow = memo(function HistoryRow({ entry, onPress, onDelete, register
           </View>
         </GlassPressable>
       </View>
-    </ReanimatedSwipeable>
+    </SwipeRow>
   );
 });
 
@@ -638,7 +663,7 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
   // The slide-to-pay sequence for an EMI loan (see useEmiPayFlow): the paid
   // moment, and the figures the status line and tracker show while it plays.
   const emiConfirm = useEmiExpenseConfirm(savings, showToast);
-  const { moment, endMoment, payEmi, payHold, barG, dotG, shownEntries: emiShownEntries, isNewEntry: emiIsNewEntry } = useEmiPayFlow({ goal, savings, emiConfirm });
+  const { moment, endMoment, payEmi, payHold, barG, dotG, shownEntries: emiShownEntries, isNewEntry: emiIsNewEntry } = useEmiPayFlow({ goal, savings, emiConfirm, onError: showToast });
   // The history: a loan's own flow decides what it shows; a savings goal's new
   // row waits for its turn (see `reveal`).
   const shownEntries = kind === 'savings' && baseIds && !rowLive ? goal.entries.filter((e) => baseIds.has(e.id)) : emiShownEntries;
@@ -713,16 +738,26 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
   // plain month index (see useSavings.js's own `emisPaid`), not a calendar,
   // so "paid for the current month" is read off `nextEmiDate` rather than
   // tracked on its own: once the next due EMI's own month is AFTER the
-  // current one, the schedule has already caught up through this month.
+  // current one, the schedule has already caught up through this month. That
+  // only means something once an EMI has actually been paid: a loan whose first
+  // EMI is next month and has nothing paid yet also has a next date after this
+  // month, but nothing has been paid for it, so it is not "paid".
   // `goal.nextEmiDate` is null once there's nothing left to pay at all
   // (loan cleared), which is its own state below, not this one.
   const curMonthIndex = useMemo(() => {
     const { month, year } = currentMonthYear();
     return year * 12 + month;
   }, []);
-  const emiPaidThisCycle = !!goal.nextEmiDate && monthIndexOf(goal.nextEmiDate) > curMonthIndex;
+  const emiPaidThisCycle = goal.emisPaid > 0 && !!goal.nextEmiDate && monthIndexOf(goal.nextEmiDate) > curMonthIndex;
+  // A loan whose first EMI is still in a later month has nothing to pay yet: the
+  // slider stays locked, showing when it opens up, until that month arrives.
+  const emiNotStarted = !!goal.firstEmiDate && !(goal.emisPaid > 0) && monthIndexOf(goal.firstEmiDate) > curMonthIndex;
 
   const openCloseEarly = useCallback(() => ui.openCloseEarly(goal.id), [ui, goal.id]);
+  const setCompleted = useCallback(async (done) => {
+    const result = await savings.setGoalCompleted(goal.id, done);
+    if (!result?.success && result?.error) showToast?.(result.error);
+  }, [savings, goal.id, showToast]);
 
   // Celebrates the moment the goal reaches its target while this page is open.
   // A goal that was already reached when its page opened does not (nor one whose
@@ -804,7 +839,7 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
           {/* EMI debt: the amount below is the focus, so the name steps back. */}
           <Text numberOfLines={1} style={isEmiDebt
             ? { fontSize: FONT.body, fontWeight: '500', color: textColor(light).secondary }
-            : { fontSize: FONT.title, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}
+            : { fontSize: FONT.title, fontWeight: '600', color: ink(light) }}
           >{goal.name}</Text>
         </Pressable>
         {/* The same sheet the title opens, but findable without knowing the
@@ -825,12 +860,25 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
       )}
 
       {isEmiDebt ? (
-        // An EMI loan is just the one figure on the page background — progress
-        // lives in the tracker below, the loan's other numbers in the tracker's
-        // footer and the edit sheet, and the monthly EMI on the slider.
-        <View style={{ marginTop: 24, marginBottom: 12, alignItems: 'center' }}>
-          <Text style={{ fontSize: FONT.display, fontWeight: '400', letterSpacing: -1.5, color: light ? '#111111' : '#ffffff', ...TABULAR }}>{money(barG.remaining)}</Text>
-          <Text style={{ fontSize: FONT.caption, color: textColor(light).tertiary, marginTop: 6 }}>left to pay</Text>
+        // An EMI loan: what's left, with the loan's own two figures (total and
+        // monthly) in the same card right under it, so they are read first.
+        // Progress lives in the tracker below, the monthly EMI also on the slider.
+        <View style={{ marginTop: 12, marginBottom: 4 }}>
+          <Card light={light}>
+            <View style={{ paddingTop: 20, paddingBottom: 16, paddingHorizontal: 20 }}>
+              <View style={{ alignItems: 'center' }}>
+                <Text style={{ fontSize: 36, fontWeight: '400', letterSpacing: -1.2, color: ink(light), ...TABULAR }}>{money(barG.remaining)}</Text>
+                <Text style={{ fontSize: FONT.caption, color: textColor(light).tertiary, marginTop: 6 }}>left to pay</Text>
+              </View>
+              {(goal.target > 0 || goal.emiAmount != null || dotG.emisRemaining != null) && (
+                <View className="flex-row justify-between" style={{ marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: dim(light, 0.08) }}>
+                  {goal.target > 0 && <Stat light={light} label="Total loan" value={money(goal.target)} />}
+                  {goal.emiAmount != null && <Stat light={light} label="EMI / month" value={money(goal.emiAmount)} />}
+                  {dotG.emisRemaining != null && <Stat light={light} label="EMIs left" value={dotG.emisRemaining} />}
+                </View>
+              )}
+            </View>
+          </Card>
         </View>
       ) : (
         // Savings and flexible debt: the same card shape as GoalCard's list row
@@ -842,14 +890,14 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
             <View style={{ padding: 20 }}>
               <View className="flex-row items-baseline justify-between" style={{ gap: 12, marginBottom: 12 }}>
                 <View className="flex-row items-baseline flex-1" style={{ gap: 6 }}>
-                  <Text style={{ fontSize: FONT.amount, fontWeight: '600', color: light ? '#111111' : '#ffffff' }}>
+                  <Text style={{ fontSize: FONT.amount, fontWeight: '600', color: ink(light) }}>
                     {money(kind === 'debt' ? barG.remaining : goal.saved)}
                   </Text>
-                  <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: FONT.caption, color: light ? '#111111' : '#ffffff' }}>
+                  <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: FONT.caption, color: ink(light) }}>
                     of {money(goal.target)}
                   </Text>
                 </View>
-                <Text className="text-[13px]" numberOfLines={1} style={{ color: light ? '#111111' : '#ffffff' }}>{barG.percent}% {kind === 'debt' ? 'paid' : 'saved'}</Text>
+                <Text className="text-[13px]" numberOfLines={1} style={{ color: ink(light) }}>{barG.percent}% {kind === 'debt' ? 'paid' : 'saved'}</Text>
               </View>
               <ProgressBar percent={barG.percent} duration={900} height={8} light={light} trackColor="rgba(74,222,128,0.12)" />
             </View>
@@ -863,7 +911,7 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
             <CheckIcon size={16} color={POSITIVE} />
             <Text className="text-base" style={{ color: POSITIVE }}>{copy.completedLabel}</Text>
           </View>
-          <Pressable onPress={() => savings.setGoalCompleted(goal.id, false)} hitSlop={8} accessibilityRole="button">
+          <Pressable onPress={() => setCompleted(false)} hitSlop={8} accessibilityRole="button">
             <Text className="text-base" style={{ color: textColor(light).disabled }}>Reopen</Text>
           </Pressable>
         </View>
@@ -873,8 +921,8 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
             <CheckIcon size={16} color={POSITIVE} />
             <Text className="text-base" style={{ color: POSITIVE }}>{copy.reachedLabel}</Text>
           </View>
-          <Pressable onPress={() => savings.setGoalCompleted(goal.id, true)} hitSlop={8} accessibilityRole="button">
-            <Text className="text-base font-medium" style={{ color: light ? '#111111' : '#ffffff' }}>{copy.markDoneLabel}</Text>
+          <Pressable onPress={() => setCompleted(true)} hitSlop={8} accessibilityRole="button">
+            <Text className="text-base font-medium" style={{ color: ink(light) }}>{copy.markDoneLabel}</Text>
           </Pressable>
         </Animated.View>
       ) : null}
@@ -904,37 +952,13 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
           card itself changed, only where it lives. */}
       {showChart && (
         <View style={{ marginTop: 12 }}>
-          <Text className="text-[11px] font-medium uppercase tracking-wider px-5 mb-2" style={{ color: textColor(light).disabled }}>
-            {isFlexibleDebt ? 'Monthly payments' : copy.monthlyTitle}
-          </Text>
+          <SectionLabel light={light}>{isFlexibleDebt ? 'Monthly payments' : copy.monthlyTitle}</SectionLabel>
           <Card light={light}>
             {isEmiDebt ? (
-              // EMIs remaining, the circle tracker (one row per year), then
-              // the loan's total and monthly figures.
+              // The circle tracker (one row per year). The loan's total, monthly
+              // and remaining-EMI figures are in the card at the top.
               <View style={{ paddingVertical: 16, paddingHorizontal: 20 }}>
-                {dotG.emisRemaining != null && (
-                  <Text style={{ marginBottom: 14 }}>
-                    <Text style={{ fontSize: FONT.amount, fontWeight: '600', letterSpacing: -0.5, color: light ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.90)' }}>
-                      {dotG.emisRemaining}
-                    </Text>
-                    <Text style={{ fontSize: FONT.caption, fontWeight: '400', color: textColor(light).tertiary }}>
-                      {' '}EMI remaining
-                    </Text>
-                  </Text>
-                )}
                 <PaymentGrid years={grid.years} light={light} />
-                <View className="flex-row items-center justify-between" style={{ marginTop: 6, paddingTop: 14, borderTopWidth: 1, borderTopColor: dim(light, 0.08) }}>
-                  {goal.target > 0 && (
-                    <Text className="text-[13px]" style={{ color: textColor(light).tertiary }}>
-                      Total loan <Text style={{ color: textColor(light).secondary }}>{money(goal.target)}</Text>
-                    </Text>
-                  )}
-                  {goal.emiAmount != null && (
-                    <Text className="text-[13px]" style={{ color: textColor(light).tertiary }}>
-                      <Text style={{ color: textColor(light).secondary }}>{money(goal.emiAmount)}</Text> / month
-                    </Text>
-                  )}
-                </View>
               </View>
             ) : (
               // Flexible debt reuses this exact chart — no schedule of its
@@ -949,7 +973,7 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
                   </Text>
                   <Text className="text-[13px]" style={{ color: dim(light, 0.5), marginTop: 2 }}>average per month</Text>
                 </View>
-                <MonthSlider key={goal.id} months={chart.months} initialIndex={chart.initialIndex} light={light} />
+                <MonthSlider key={goal.id} months={chart.months} initialIndex={chart.initialIndex} currentIndex={chart.initialIndex} light={light} />
               </View>
             )}
           </Card>
@@ -957,9 +981,7 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
       )}
 
       <View className="flex-row items-center justify-between mb-2" style={{ marginTop: showChart ? 28 : 12 }}>
-        <Text className="text-[11px] font-medium uppercase tracking-wider px-4" style={{ color: textColor(light).disabled }}>
-          {copy.historyTitle}
-        </Text>
+        <SectionLabel light={light} inset={16} bottom={0}>{copy.historyTitle}</SectionLabel>
         {/* Rare and weighty, so it lives out of the way up here rather than
             beside the slider — reachable, never the easy tap. Hidden once the
             loan is done. */}
@@ -1007,6 +1029,7 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
         <SlideToPay
           label={`Slide to pay ${money(goal.emiAmount || 0)}`}
           paidLabel={goal.nextEmiDate ? `EMI paid · next ${formatDateFull(goal.nextEmiDate)}` : 'EMI paid'}
+          lockedLabel={emiNotStarted ? `First EMI on ${formatDateFull(goal.firstEmiDate)}` : undefined}
           paid={(emiPaidThisCycle && !payHold) || !(goal.emiAmount > 0)}
           onComplete={payEmi}
           light={light}
@@ -1053,6 +1076,9 @@ function GoalDetail({ goal: liveGoal, savings, ui, light, kind = 'savings', show
 // ---------------------------------------------------------------------------
 // Section
 // ---------------------------------------------------------------------------
+// Just past the tab crossfade, so the page is fully faded out before it resets.
+const RESET_AFTER_LEAVING_MS = 260;
+
 function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOpenGoal, onCloseGoal, kind = 'savings', showToast }) {
   const copy = KIND_COPY[kind];
   // What is shown is held while a sheet is open, and let go once it has
@@ -1101,6 +1127,67 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
 
   const isEmpty = goals.length === 0 && completedGoals.length === 0;
 
+  // The chart under the headline. Debt: what the EMIs add up to each month. Savings:
+  // what was put in minus taken out, across every goal (finished ones too, so the
+  // history isn't cut short when a goal is done), the same month-by-month net a
+  // single goal's page draws. Nothing until there is something to plot.
+  const listChart = useMemo(() => {
+    if (kind === 'debt') return emiMonthlyTotals(allGoals);
+    const entries = allGoals.flatMap(g => g.entries || []);
+    return entries.length > 0 ? monthlyNets(entries) : null;
+  }, [kind, goals, allGoals]);
+
+  // The month the debt chart has been slid to, as a month index; null while it is
+  // on the current one, which shows the list exactly as it always was. Any other
+  // month lists the EMI loans that had an EMI then, cleared ones included. Flexible
+  // debts have no months of their own, so they only show in the current month.
+  const [pickedMonth, setPickedMonth] = useState(null);
+  const hasBrowsed = useRef(false);
+  if (pickedMonth != null) hasBrowsed.current = true;
+  const onChartSettle = useCallback((i) => {
+    if (!listChart) return;
+    const { month, year } = currentMonthYear();
+    const abs = listChart.startIndex + i;
+    setPickedMonth(abs === year * 12 + month ? null : abs);
+  }, [listChart]);
+  // Leaving the page (another tab, or closing the wallet) puts the chart back on the
+  // current month and, on debt, the list back to normal, so it always opens fresh.
+  // Done just after the page has faded out, so nothing visibly jumps; bumping the
+  // key reopens the slider on the current month. If the page is come back to before
+  // that moment, the reset is applied right then instead of being lost, so quickly
+  // flicking between tabs can't leave a chart on an old month.
+  const [chartKey, setChartKey] = useState(0);
+  const resetPending = useRef(false);
+  const resetTimer = useRef(null);
+  const resetChart = useCallback(() => {
+    clearTimeout(resetTimer.current);
+    resetPending.current = false;
+    setPickedMonth(null);
+    setChartKey(k => k + 1);
+  }, []);
+  const wasActive = useRef(active);
+  useEffect(() => {
+    const was = wasActive.current;
+    wasActive.current = active;
+    if (active) {
+      if (resetPending.current) resetChart();
+      return;
+    }
+    if (!was) return;
+    resetPending.current = true;
+    clearTimeout(resetTimer.current);
+    resetTimer.current = setTimeout(resetChart, RESET_AFTER_LEAVING_MS);
+  }, [active, resetChart]);
+  useEffect(() => () => clearTimeout(resetTimer.current), []);
+  const browsing = kind === 'debt' && pickedMonth != null;
+  const shownGoals = useMemo(() => {
+    if (!browsing) return goals;
+    return allGoals
+      .filter(g => { const sp = emiSpan(g); return sp && pickedMonth >= sp.start && pickedMonth <= sp.end; })
+      // Running loans first, closest to done first (as the normal list is); cleared ones after.
+      .sort((a, b) => Number(!!a.completedAt) - Number(!!b.completedAt) || b.percent - a.percent || a.createdAt.localeCompare(b.createdAt));
+  }, [browsing, goals, allGoals, pickedMonth]);
+
   const swipes = useSwipeGroup();
   const { openDeleteGoal } = ui;
   const cardProps = { onPress: onOpenGoal, onDelete: openDeleteGoal, registerSwipeable: swipes.registerSwipeable, onSwipeOpen: swipes.onSwipeOpen, onCardPress: swipes.onRowPress, light };
@@ -1120,30 +1207,51 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
             <EmptyState light={light} kind={kind} />
           ) : (
             <>
-              <View className="items-center" style={{ paddingTop: 16, paddingBottom: 22 }}>
-                <Text className="text-[13px]" style={{ color: textColor(light).tertiary, marginBottom: 6 }}>{copy.sectionTotal}</Text>
-                {/* Same size/weight as Home's own headline figure
-                    (SummaryCard's HEADLINE_TEXT_STYLE) — this is the same
-                    kind of number, just on a different screen. */}
+              {/* The same size and weight as Home's own headline figure
+                  (SummaryCard's HEADLINE_TEXT_STYLE), centred with its
+                  caption underneath. Shrinks to fit a very large amount. */}
+              <View style={{ alignItems: 'center', paddingHorizontal: 8, paddingTop: 20, paddingBottom: 32 }}>
                 <Text
-                  style={{ fontSize: FONT.display, lineHeight: 52, fontWeight: '400', letterSpacing: -1.75, color: light ? '#111111' : '#ffffff', ...TABULAR }}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  style={{ fontSize: FONT.display, lineHeight: 52, fontWeight: '400', letterSpacing: -1.75, textAlign: 'center', color: textColor(light).primary, ...TABULAR }}
                 >
                   {money(totalSaved)}
                 </Text>
+                <Text style={{ fontSize: FONT.body, color: textColor(light).tertiary, marginTop: 4 }}>{copy.heroCaption}</Text>
               </View>
 
-              {goals.map(g => <GoalCard key={g.id} goal={g} {...cardProps} />)}
+              {/* What all the EMIs add up to, month by month, between the headline and
+                  the loans it is made of. */}
+              {listChart && (
+                <View style={{ marginBottom: 16 }}>
+                  <SectionLabel light={light}>{kind === 'debt' ? 'Monthly EMI' : copy.monthlyTitle}</SectionLabel>
+                  <Card light={light}>
+                    <View style={{ paddingVertical: 16 }}>
+                      <MonthSlider key={chartKey} months={listChart.months} initialIndex={listChart.initialIndex} light={light} label={kind === 'debt' ? 'EMIs paid by month' : 'Savings by month'} onSettle={kind === 'debt' ? onChartSettle : undefined} currentIndex={kind === 'debt' ? listChart.currentIndex : listChart.initialIndex} />
+                    </View>
+                  </Card>
+                </View>
+              )}
 
-              {completedGoals.length > 0 && (
+              {/* Outside the fading block, so only the number changes with the month. */}
+              {shownGoals.length > 0 && (
+                <SectionLabel light={light}>{kind === 'debt' ? 'Loans' : 'Goals'} · {shownGoals.length}</SectionLabel>
+              )}
+              <View>
+                {shownGoals.map(g => <GoalCard key={g.id} goal={g} {...cardProps} done={browsing && !!g.completedAt} still={hasBrowsed.current} />)}
+              </View>
+
+              {!browsing && completedGoals.length > 0 && (
                 <>
                   <Pressable
                     onPress={() => setShowCompleted(v => !v)}
-                    className="flex-row items-center justify-between px-1"
-                    style={{ paddingVertical: 14 }}
+                    className="flex-row items-center justify-between"
+                    style={{ paddingVertical: 14, paddingRight: 20 }}
                     accessibilityRole="button"
                     accessibilityLabel={`${copy.completedLabel} ${kind === 'debt' ? 'loans' : 'goals'}`}
                   >
-                    <Text className="text-[13px]" style={{ color: textColor(light).tertiary }}>{copy.completedLabel} · {completedGoals.length}</Text>
+                    <SectionLabel light={light} bottom={0}>{copy.completedLabel} · {completedGoals.length}</SectionLabel>
                     <View style={{ transform: [{ rotate: showCompleted ? '90deg' : '0deg' }] }}>
                       <ChevronRight color={textColor(light).disabled} />
                     </View>

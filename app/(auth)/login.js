@@ -4,7 +4,7 @@ import { View, Text, Keyboard, Pressable } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
 import { useNetwork } from '../../context/NetworkContext';
-import { isConnectivityError, reportError } from '../../utils/errors';
+import { friendlyError, isConnectivityError, reportError } from '../../utils/errors';
 import { AuthBackground, AuthTitle, AuthField, MailIcon, PillButton, useKeyboardLift, useTitleTop } from '../../components/AuthKit';
 import { GUTTER } from '../../utils/spacing';
 import { FONT } from '../../utils/type';
@@ -44,7 +44,7 @@ export default function LoginScreen() {
       router.push({ pathname: '/(auth)/otp', params: { email: trimmed } });
     } catch (err) {
       if (isConnectivityError(err, isOnline)) { notifyOffline(); }
-      else { reportError(err); setError(err.message || 'Failed to send code. Please try again.'); }
+      else { reportError(err); setError(friendlyError(err, "Couldn't send the code. Please try again.")); }
     } finally {
       setLoading(false);
     }

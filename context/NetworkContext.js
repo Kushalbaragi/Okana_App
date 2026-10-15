@@ -1,7 +1,10 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import NetInfo from '@react-native-community/netinfo';
 
 const NetworkContext = createContext(null);
+// The banner state lives in its own context: it changes every time a banner comes
+// or goes, and only OfflineBanner reads it, so nothing else should re-render then.
+const BannerContext = createContext(null);
 
 function computeOnline(state) {
   return !!(state.isConnected && state.isInternetReachable !== false);
@@ -45,19 +48,31 @@ export function NetworkProvider({ children }) {
     showBanner('offline');
   }, [showBanner]);
 
+  // Something was saved while offline and will be sent later: says so once per
+  // stretch offline (not on every change made in it), and the "back online"
+  // banner then follows when the connection returns, as the changes go out.
+  const savedOfflineNoticeShownRef = useRef(false);
+  const notifySavedOffline = useCallback(() => {
+    awaitingOnlineNoticeRef.current = true;
+    if (savedOfflineNoticeShownRef.current) return;
+    savedOfflineNoticeShownRef.current = true;
+    showBanner('saved');
+  }, [showBanner]);
+
   useEffect(() => {
     const apply = state => {
       const online = computeOnline(state);
       const wasOffline = !isOnlineRef.current;
       isOnlineRef.current = online;
       setIsOnline(online);
+      if (online) savedOfflineNoticeShownRef.current = false;
       if (online && wasOffline && awaitingOnlineNoticeRef.current) {
         awaitingOnlineNoticeRef.current = false;
         showBanner('online');
       }
     };
     const unsubscribe = NetInfo.addEventListener(apply);
-    NetInfo.fetch().then(apply);
+    NetInfo.fetch().then(apply).catch(() => {});
     return unsubscribe;
   }, [showBanner]);
 
@@ -65,13 +80,34 @@ export function NetworkProvider({ children }) {
     if (bannerTimeoutRef.current) clearTimeout(bannerTimeoutRef.current);
   }, []);
 
+  const value = useMemo(() => ({ isOnline, isOnlineRef, notifyOffline, notifySavedOffline }), [isOnline, notifyOffline, notifySavedOffline]);
   return (
-    <NetworkContext.Provider value={{ isOnline, isOnlineRef, banner, notifyOffline }}>
-      {children}
+    <NetworkContext.Provider value={value}>
+      <BannerContext.Provider value={banner}>
+        {children}
+      </BannerContext.Provider>
     </NetworkContext.Provider>
   );
 }
 
 export function useNetwork() {
   return useContext(NetworkContext);
+}
+
+// 'offline' | 'online' | null — for OfflineBanner.
+export function useNetworkBanner() {
+  return useContext(BannerContext);
+}
+
+// Runs `onReconnect` when the connection comes back — only on an actual
+// offline-to-online change, not on mount while already online (each data hook
+// already loads on mount). Used to send what was saved offline straight away.
+export function useOnReconnect(onReconnect, enabled = true) {
+  const { isOnline } = useContext(NetworkContext);
+  const wasOnline = useRef(isOnline);
+  useEffect(() => {
+    const cameBack = !wasOnline.current && isOnline;
+    wasOnline.current = isOnline;
+    if (enabled && cameBack) onReconnect();
+  }, [isOnline, enabled, onReconnect]);
 }

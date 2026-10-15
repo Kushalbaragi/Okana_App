@@ -1,33 +1,13 @@
 import { memo, useCallback, useEffect, useRef } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
-import { formatCurrencyPlain, dateBoxParts } from '../utils/format';
-import { SwipeDeleteAction, useSwipeDelete } from './SwipeDeleteAction';
+import { formatCurrencyPlain } from '../utils/format';
+import { SwipeRow } from './SwipeDeleteAction';
+import DatePill from './DatePill';
 import { CARD_COLOR } from './Glass';
 import { textColor, INCOME_TEXT } from '../utils/colors';
 import { BODY, TABULAR } from '../utils/type';
 import { LEDGER_PILL_INSET } from '../utils/spacing';
-
-// The day over the month's three letters, in a small pill on the left — the same
-// chip the savings history uses.
-function DatePill({ dateStr, light }) {
-  const { day, month } = dateBoxParts(dateStr);
-  return (
-    <View style={{ width: 30, height: 30, borderRadius: 7, marginRight: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: light ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.07)' }}>
-      {/* Both lines are shrink-wrapped to their own text and centred by this
-          column, so each sits on the pill's middle line whatever its width. */}
-      <View style={{ alignItems: 'center' }}>
-        <Text style={[TABULAR, { includeFontPadding: false, fontSize: 11, lineHeight: 12, fontWeight: '500', color: textColor(light).tertiary }]}>{String(day).padStart(2, '0')}</Text>
-        {/* letterSpacing also trails the last letter, which pulls the word left of
-            centre; the matching left padding puts it back. */}
-        <View style={{ paddingLeft: 0.5, marginTop: 1 }}>
-          <Text style={{ includeFontPadding: false, fontSize: 7, lineHeight: 8, fontWeight: '500', letterSpacing: 0.5, color: textColor(light).tertiary }}>{month}</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
 
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard — see the matching comment in Header.js.
@@ -39,10 +19,6 @@ function DatePill({ dateStr, light }) {
 // commit has settled (see `settled` in TransactionList), moving the setup
 // off the critical path instead of removing the feature.
 function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, onSwipeOpen, onCardPress, light = false, swipeable = true, cardColor = CARD_COLOR }) {
-  // Tapping the trash slides the row shut and asks `onDelete` (which opens a
-  // confirmation) at once, rather than waiting for the slide to finish.
-  const { setSwipeableRef, handleDelete } = useSwipeDelete(tx.id, onDelete, registerSwipeable);
-
   // Tapping a row opens it for editing. An already-open swipe takes
   // priority and swallows the tap (onCardPress returns true when it closed
   // one), so dismissing a swiped-open row can't also fling the edit sheet
@@ -92,7 +68,7 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
         {tx._pending && (
           <View style={{ width: 5, height: 5, borderRadius: 2.5, marginRight: 8, backgroundColor: light ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }} />
         )}
-        <DatePill dateStr={tx.date} light={light} />
+        <DatePill dateStr={tx.date} light={light} style={{ marginRight: 10 }} />
         <Text numberOfLines={1} style={[BODY, { flex: 1, color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>
           {tx.description || (isIncome ? 'Income' : 'Expense')}
         </Text>
@@ -111,18 +87,9 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
   if (!swipeable) return row;
 
   return (
-    <ReanimatedSwipeable
-      ref={setSwipeableRef}
-      friction={1.8}
-      rightThreshold={32}
-      overshootRight={false}
-      renderRightActions={(_progress, drag) => (
-        <SwipeDeleteAction drag={drag} onDelete={handleDelete} label="Delete transaction" />
-      )}
-      onSwipeableWillOpen={() => onSwipeOpen?.(tx.id)}
-    >
+    <SwipeRow id={tx.id} onDelete={onDelete} registerSwipeable={registerSwipeable} onSwipeOpen={onSwipeOpen} label="Delete transaction">
       {row}
-    </ReanimatedSwipeable>
+    </SwipeRow>
   );
 }
 

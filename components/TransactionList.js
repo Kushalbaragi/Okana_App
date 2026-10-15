@@ -1,6 +1,6 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { View, Text, FlatList, Pressable, InteractionManager } from 'react-native';
-import Animated, { Easing, FadeOut, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { parseISO } from 'date-fns';
 import TransactionItem from './TransactionItem';
 import { ChevronRight } from './icons';
@@ -9,7 +9,7 @@ import { textColor, INCOME_TEXT } from '../utils/colors';
 import { BODY, TABULAR } from '../utils/type';
 import { GUTTER, LEDGER_PILL_INSET } from '../utils/spacing';
 import { MONTH_NAMES } from '../utils/monthlyRecap';
-import { RANGE_FADE_IN_MS, SETTLE_EASING, SPRING_SMOOTH, layoutTransition } from '../utils/motion';
+import { RANGE_FADE_MS, SETTLE_EASING, SPRING_SMOOTH, layoutTransition } from '../utils/motion';
 
 // SPRING_SMOOTH — the app's calmer preset, for heavier content reflowing
 // (a taller list row settling into place reads better a bit more gently
@@ -30,16 +30,23 @@ function rowEntering() {
   };
 }
 
-// A new range's list arrives with a fade and the faintest rise, on the app's own
-// settle curve, so it eases to rest instead of just appearing.
+// A range change crossfades the two lists (see RANGE_FADE_MS): the old one fades
+// out as the new one fades in, both at once, with no movement.
+const RANGE_TIMING = { duration: RANGE_FADE_MS, easing: Easing.inOut(Easing.quad) };
+
+function rangeExiting() {
+  'worklet';
+  return {
+    initialValues: { opacity: 1 },
+    animations: { opacity: withTiming(0, RANGE_TIMING) },
+  };
+}
+
 function rangeEntering() {
   'worklet';
   return {
-    initialValues: { opacity: 0, transform: [{ translateY: 8 }] },
-    animations: {
-      opacity: withTiming(1, { duration: RANGE_FADE_IN_MS, easing: Easing.out(Easing.cubic) }),
-      transform: [{ translateY: withTiming(0, { duration: RANGE_FADE_IN_MS, easing: SETTLE_EASING }) }],
-    },
+    initialValues: { opacity: 0 },
+    animations: { opacity: withTiming(1, RANGE_TIMING) },
   };
 }
 
@@ -567,20 +574,17 @@ function TransactionList({
     <Pressable onPress={closeOpenRow} style={{ flex: 1 }}>
       <View style={{ flex: 1 }}>
         {/* Keyed by the range, so changing it replaces the whole list as one piece:
-            the old one fades out as the new one fades in over it, on the same
-            timings the chart above uses. A fresh list also mounts its
+            the old one fades out as the new one fades in over it. A fresh list also mounts its
             first screenful in a single commit (see initialNumToRender), so the rows
             arrive together instead of filling in one after another, and it starts
             at the top, where a new range should start. */}
         <Animated.View
           key={timeRange}
-          // Opaque and stacked above the list it replaces: two see-through layers
-          // crossfading never add up to full coverage, which is the dip that read as a
-          // blink. Here the new list fades in over the old one, which stays whole
-          // underneath and is only removed once the new one has fully arrived.
+          // Stacked above the list it replaces, and painted the same colour as the
+          // screen behind it.
           style={{ flex: 1, backgroundColor: cardColor, zIndex: layerRef.current }}
           entering={rangeEntering}
-          exiting={FadeOut.delay(RANGE_FADE_IN_MS).duration(1)}
+          exiting={rangeExiting}
         >
           <FlatList
             data={flatData}

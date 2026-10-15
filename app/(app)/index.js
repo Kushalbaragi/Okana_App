@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Pressable, useWindowDimensions } from 'react-native';
+import { View, Pressable, useWindowDimensions } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
@@ -19,6 +19,7 @@ import { reportError } from '../../utils/errors';
 import Header from '../../components/Header';
 import SummaryCard from '../../components/SummaryCard';
 import TransactionList from '../../components/TransactionList';
+import SectionBoundary from '../../components/SectionBoundary';
 import AddModal from '../../components/AddModal';
 import WalletPage from '../../components/WalletPage';
 import MonthlyRecapModal from '../../components/MonthlyRecapModal';
@@ -27,11 +28,9 @@ import { askForReviewIfDue } from '../../utils/reviewPrompt';
 import { UpdateSheet } from '../../components/UpdateSheet';
 import { useAppUpdate } from '../../hooks/useAppUpdate';
 import { hideSplash } from '../../utils/splash';
-import { AnimatedModal } from '../../components/AnimatedModal';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useTourStep } from '../../hooks/useTourStep';
 import { PlusIcon } from '../../components/icons';
-import { POPUP_RADIUS, SMOOTH } from '../../components/Glass';
 import { currentMonthYear, today, formatCurrency } from '../../utils/format';
 import { getMonthlyRecapSlides, hasAnyRecapData, prevMonthYear, MONTH_NAMES } from '../../utils/monthlyRecap';
 import { SETTLE_EASING } from '../../utils/motion';
@@ -558,10 +557,19 @@ export default function Dashboard() {
     setDeleteOpen(true);
   }, []);
   const closeDelete = useCallback(() => setDeleteOpen(false), []);
+  // A failure that isn't just being offline (offline, it's queued) is told here.
+  const [notice, setNotice] = useState(null);
+  const closeNotice = useCallback(() => setNotice(null), []);
+  // Kept while the dialog closes, so its text doesn't vanish mid-fade.
+  const lastNotice = useRef(null);
+  if (notice) lastNotice.current = notice;
   const flushDelete = useCallback(() => {
     const id = pendingDeleteId.current;
     pendingDeleteId.current = null;
-    if (id) deleteTransaction(id);
+    if (!id) return;
+    deleteTransaction(id).then((result) => {
+      if (result && !result.success) setNotice({ title: "Couldn't delete that", message: result.error });
+    });
   }, [deleteTransaction]);
   const confirmDelete = useCallback(() => {
     if (!deleteTx) return;
@@ -701,31 +709,35 @@ export default function Dashboard() {
         light={LIGHT_HOME}
       />
 
-      <SummaryCard
-        transactions={displayTransactions}
-        timeRange={timeRange}
-        onTimeRangeChange={handleTimeRangeChange}
-        mode={mode}
-        year={year}
-        budget={budgetLine}
-        onBudgetPress={openBudgetSetup}
-        light={LIGHT_HOME}
-      />
+      <SectionBoundary what="the chart" light={LIGHT_HOME} compact>
+        <SummaryCard
+          transactions={displayTransactions}
+          timeRange={timeRange}
+          onTimeRangeChange={handleTimeRangeChange}
+          mode={mode}
+          year={year}
+          budget={budgetLine}
+          onBudgetPress={openBudgetSetup}
+          light={LIGHT_HOME}
+        />
+      </SectionBoundary>
 
       {/* No period props any more — the list is one running ledger,
           independent of whatever the chart above is showing. `mode` is the
           one thing it still borrows from the chart: which figure each
           month's header shows (see TransactionList's own comment). */}
-      <TransactionList
-        ref={transactionListRef}
-        transactions={displayTransactions}
-        justAddedId={justAddedId}
-        onEdit={openEdit}
-        onDelete={requestDelete}
-        light={LIGHT_HOME}
-        mode={mode}
-        timeRange={timeRange}
-      />
+      <SectionBoundary what="your transactions" light={LIGHT_HOME}>
+        <TransactionList
+          ref={transactionListRef}
+          transactions={displayTransactions}
+          justAddedId={justAddedId}
+          onEdit={openEdit}
+          onDelete={requestDelete}
+          light={LIGHT_HOME}
+          mode={mode}
+          timeRange={timeRange}
+        />
+      </SectionBoundary>
 
       <Animated.View
         // bottom-12 (48px) is measured from the raw screen edge — this screen
@@ -758,6 +770,7 @@ export default function Dashboard() {
         onEdit={editTransaction}
         editData={editData}
         light={LIGHT_HOME}
+        calendar
       />
 
       <MonthlyRecapModal
@@ -789,37 +802,38 @@ export default function Dashboard() {
         onClosed={flushDelete}
       />
 
-      <AnimatedModal open={proRequired} onClose={closeProRequired} variant="center">
-        <View
-          className="w-full p-6 items-center"
-          style={{ maxWidth: 360, borderRadius: POPUP_RADIUS, ...SMOOTH, backgroundColor: 'rgba(20,20,20,0.98)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
-        >
-          <Text style={{ fontSize: 30 }} className="mb-3">🔒</Text>
-          <Text className="text-white font-semibold text-base mb-2 text-center">Subscription Required</Text>
-          <Text className="text-white/50 text-base text-center mb-6" style={{ lineHeight: 22 }}>
-            Everything you've added is still here. Subscribe to Okana Plus to keep adding new things.
-          </Text>
-          <Pressable onPress={subscribeFromProRequired} className="w-full py-[11px] rounded-full items-center" style={{ backgroundColor: 'rgba(74,222,128,0.25)' }}>
-            <Text className="text-base font-semibold" style={{ color: '#4ade80' }}>Subscribe Now</Text>
-          </Pressable>
-        </View>
-      </AnimatedModal>
+      <ConfirmDialog
+        open={proRequired}
+        icon="🔒"
+        title="Subscription Required"
+        message="Everything you've added is still here. Subscribe to Okana Plus to keep adding new things."
+        confirmLabel="Subscribe Now"
+        tone="positive"
+        onConfirm={subscribeFromProRequired}
+        onCancel={closeProRequired}
+      />
 
-      <AnimatedModal open={budgetCrossedOpen} onClose={closeBudgetCrossed} variant="center">
-        <View
-          className="w-full p-6 items-center"
-          style={{ maxWidth: 360, borderRadius: POPUP_RADIUS, ...SMOOTH, backgroundColor: 'rgba(20,20,20,0.98)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
-        >
-          <Text style={{ fontSize: 30 }} className="mb-3">⚠️</Text>
-          <Text className="text-white font-semibold text-base mb-2 text-center">You've gone over budget</Text>
-          <Text className="text-white/50 text-base text-center mb-6" style={{ lineHeight: 22 }}>
-            You're now {formatCurrency(budgetCrossedOverAmount)} over your {formatCurrency(budget.amount)} budget for {MONTH_NAMES[currMonth]}.
-          </Text>
-          <Pressable onPress={closeBudgetCrossed} className="w-full py-[11px] rounded-full items-center" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
-            <Text className="text-white text-base font-semibold">Got it</Text>
-          </Pressable>
-        </View>
-      </AnimatedModal>
+      <ConfirmDialog
+        open={!!notice}
+        icon="⚠️"
+        title={lastNotice.current?.title || ''}
+        message={lastNotice.current?.message || ''}
+        confirmLabel="Got it"
+        tone="neutral"
+        onConfirm={closeNotice}
+        onCancel={closeNotice}
+      />
+
+      <ConfirmDialog
+        open={budgetCrossedOpen}
+        icon="⚠️"
+        title="You've gone over budget"
+        message={`You're now ${formatCurrency(budgetCrossedOverAmount)} over your ${formatCurrency(budget.amount)} budget for ${MONTH_NAMES[currMonth]}.`}
+        confirmLabel="Got it"
+        tone="neutral"
+        onConfirm={closeBudgetCrossed}
+        onCancel={closeBudgetCrossed}
+      />
 
       {/* Gated on the same "nothing else is showing" set the tour hints use
           above — two native <Modal>s mounted at once is broken on Android
@@ -837,6 +851,8 @@ export default function Dashboard() {
       open={calendarOpen}
       onClose={closeCalendar}
       savings={savings}
+      transactions={transactions}
+      budgetAmount={budget.amount}
       light={LIGHT_HOME}
       userId={user?.id}
       slideX={calendarSlideX}

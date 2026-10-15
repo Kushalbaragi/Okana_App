@@ -4,11 +4,12 @@ import * as Crypto from 'expo-crypto'
 import { usePostHog } from 'posthog-react-native'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { useNetwork } from '../context/NetworkContext'
-import { isConnectivityError, reportError } from '../utils/errors'
+import { useNetwork, useOnReconnect } from '../context/NetworkContext'
+import { friendlyError, isConnectivityError, reportError } from '../utils/errors'
 import { storageKeys } from '../utils/storageKeys'
 import { hapticAdded, hapticDeleted } from '../utils/haptics'
 import { today } from '../utils/format'
+import { dropFirstOp, loadSavingsQueue, pendingOps, pushOp, sendExclusively } from '../utils/savingsQueue'
 
 function goalFromRow(row) {
   return {
@@ -96,6 +97,42 @@ async function loadCache(userId) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Offline writes. Every write here is described as an op — plain data, so it can
+// be kept in storage and sent later — rather than as a request closure:
+//   { table, action: 'insert' | 'update' | 'delete', id, values, local }
+// `values` are the columns sent (user_id is added when it is sent), and `local`
+// is what the op does to the in-memory store: { collection: 'goals' | 'entries',
+// item } for an insert, { collection, patch } for an update, { collection } for a
+// delete; null for a write with no local side (a mirrored expense).
+//
+// Made offline (or cut off mid-request), an op is applied locally and kept in a
+// queue, in order, and sent once the connection is back. A refresh replays
+// whatever is still queued on top of the server's copy, so a change made offline
+// is never wiped by one.
+// ---------------------------------------------------------------------------
+function sendOp(op, userId) {
+  const table = supabase.from(op.table)
+  if (op.action === 'insert') return table.insert({ ...op.values, user_id: userId })
+  if (op.action === 'update') return table.update(op.values).eq('id', op.id).eq('user_id', userId)
+  return table.delete().eq('id', op.id).eq('user_id', userId)
+}
+
+function applyOp(store, op) {
+  const local = op.local
+  if (!local) return store
+  const list = store[local.collection]
+  if (op.action === 'insert') return list.some(x => x.id === op.id) ? store : { ...store, [local.collection]: [...list, local.item] }
+  if (op.action === 'update') return { ...store, [local.collection]: list.map(x => (x.id === op.id ? { ...x, ...local.patch } : x)) }
+  // A goal takes its entries with it, as the server's cascade does.
+  if (local.collection === 'goals') return { goals: store.goals.filter(g => g.id !== op.id), entries: store.entries.filter(e => e.goalId !== op.id) }
+  return { ...store, entries: store.entries.filter(e => e.id !== op.id) }
+}
+
+// An insert that already went through (the app died between sending it and
+// hearing back) comes back as a duplicate key; that op is done, not failed.
+const isDuplicate = (error) => error?.code === '23505'
+
 const daysSince = (iso) => Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 86400000))
 
 // Newest first, the same ordering the transaction list uses.
@@ -109,18 +146,15 @@ function byDateDesc(a, b) {
 // withdrawals), never stored on the goal itself — so correcting or deleting a
 // mistaken entry can't leave a stale total behind.
 //
-// Online-only, unlike transactions: writes need a connection and aren't queued.
-// One made offline changes nothing and comes back as { success: false, offline:
-// true } with no message, after asking the app for its offline banner (which
-// also announces when the connection returns) — so the caller shows no error of
-// its own on top of it. Reads still fall back to the cached copy, so the list is
-// viewable offline.
+// Works offline, like transactions: a change made without a connection is shown
+// straight away and kept in a queue (see the ops above), then sent in order once
+// the connection is back. Only the spreadsheet import needs to be online.
 // `onEntryLogged` (optional): told once `logEntryAsExpense` below actually lands
 // a row, so the caller's own transaction list (which has no way to know about a
 // write here on its own) can refresh.
 export function useSavings(onEntryLogged) {
   const { user } = useAuth()
-  const { isOnlineRef, notifyOffline } = useNetwork()
+  const { isOnlineRef, notifyOffline, notifySavedOffline } = useNetwork()
   const posthog = usePostHog()
   const [store, setStore] = useState(EMPTY)
   const [loading, setLoading] = useState(true)
@@ -145,6 +179,10 @@ export function useSavings(onEntryLogged) {
   const writesInFlightRef = useRef(0)
   const refreshInFlightRef = useRef(null)
 
+  // Changes still to be sent (see the ops at the top) live in utils/savingsQueue.js,
+  // shared by every screen using this hook.
+  const queueOp = useCallback((op) => pushOp(user.id, op), [user])
+
   const refresh = useCallback(async () => {
     if (!user) { setStore(EMPTY); return }
     if (refreshInFlightRef.current) return refreshInFlightRef.current
@@ -152,6 +190,7 @@ export function useSavings(onEntryLogged) {
     const run = (async () => {
       try {
         if (!isOnlineRef.current) return
+        await flushRef.current?.()
         const [goalsRes, entriesRes, debtsRes, paymentsRes] = await Promise.all([
           supabase.from('savings_goals').select('*').eq('user_id', user.id).neq('kind', 'debt').order('created_at', { ascending: true }),
           supabase.from('savings_entries').select('*').eq('user_id', user.id),
@@ -171,10 +210,12 @@ export function useSavings(onEntryLogged) {
         const goals = [...goalsRes.data.map(goalFromRow), ...debtsRes.data.map(debtFromRow)]
           .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
         const goalIds = new Set(goals.map(g => g.id))
-        setStore({
+        const server = {
           goals,
           entries: [...entriesRes.data.map(entryFromRow), ...paymentsRes.data.map(paymentFromRow)].filter(e => goalIds.has(e.goalId)),
-        })
+        }
+        // Whatever is still waiting to be sent goes back on top, so it isn't lost.
+        setStore(pendingOps().reduce(applyOp, server))
       } catch (err) {
         // Keep showing cached data; a dropped connection is expected, anything else is reported.
         if (!isConnectivityError(err, isOnlineRef.current)) reportError(err)
@@ -195,46 +236,83 @@ export function useSavings(onEntryLogged) {
       return
     }
     let cancelled = false
-    loadCache(user.id).then(cached => {
-      if (cancelled || !cached) return
-      hydratedRef.current = true
-      setStore(cached)
+    Promise.all([loadCache(user.id), loadSavingsQueue(user.id)]).then(([cached]) => {
+      if (cancelled) return
+      if (cached) {
+        hydratedRef.current = true
+        setStore(pendingOps().reduce(applyOp, cached))
+      }
+      refresh()
     })
-    refresh()
     return () => { cancelled = true }
   }, [user, refresh])
 
-  // Runs one optimistic write. `apply` updates local state immediately,
-  // `request` is the Supabase call, `rollback` undoes `apply` if it fails.
-  // Every write in this hook goes through here so the offline check, the
-  // in-flight bookkeeping and the error handling can't drift between them.
-  const write = useCallback(async ({ apply, request, rollback, onSuccess }) => {
-    if (!user) return { success: false, error: 'Not signed in' }
-    if (!isOnlineRef.current) { notifyOffline(); return { success: false, offline: true } }
-
+  // Runs one write (an op, see the top of the file): shown at once, then sent.
+  // Offline, behind other changes still waiting, or cut off mid-request, it is
+  // queued instead and counts as done — it will be sent when the connection is
+  // back. A real rejection rolls it back (`rollback`) and says why.
+  const write = useCallback(async ({ op, rollback = () => {}, onSuccess }) => {
+    if (!user) return { success: false, error: 'Please sign in again.' }
+    setStore(s => applyOp(s, op))
+    if (!isOnlineRef.current || pendingOps().length > 0) {
+      await queueOp(op)
+      if (isOnlineRef.current) flushRef.current?.()
+      else notifySavedOffline()
+      return { success: true, queued: true }
+    }
     writesInFlightRef.current += 1
-    apply()
     try {
-      const { data, error } = await request()
-      if (error) {
+      const { error } = await sendOp(op, user.id)
+      if (error && !isDuplicate(error)) {
         rollback()
         reportError(error)
-        return { success: false, error: error.message || FALLBACK_MESSAGE }
+        return { success: false, error: friendlyError(error) }
       }
-      if (onSuccess) onSuccess(data)
+      onSuccess?.()
       return { success: true }
     } catch (err) {
-      rollback()
       if (isConnectivityError(err, isOnlineRef.current)) {
-        notifyOffline()
-        return { success: false, offline: true }
+        await queueOp(op)
+        notifySavedOffline()
+        return { success: true, queued: true }
       }
+      rollback()
       reportError(err)
-      return { success: false, error: err.message || FALLBACK_MESSAGE }
+      return { success: false, error: friendlyError(err) }
     } finally {
       writesInFlightRef.current -= 1
     }
-  }, [user, isOnlineRef, notifyOffline])
+  }, [user, isOnlineRef, queueOp, notifySavedOffline])
+
+  // Sends what was queued, oldest first, stopping at the first sign the connection
+  // is gone again. One the server rejects is dropped (it would only fail again) and
+  // reported; the refresh that follows shows what really went in.
+  const flushRef = useRef(null)
+  flushRef.current = () => {
+    if (!user || pendingOps().length === 0) return Promise.resolve()
+    return sendExclusively(async () => {
+      let touchedTransactions = false
+      while (pendingOps().length > 0 && isOnlineRef.current) {
+        const op = pendingOps()[0]
+        try {
+          const { error } = await sendOp(op, user.id)
+          if (error && !isDuplicate(error)) {
+            if (isConnectivityError(error, isOnlineRef.current)) break
+            reportError(error)
+          }
+        } catch (err) {
+          if (isConnectivityError(err, isOnlineRef.current)) break
+          reportError(err)
+        }
+        if (op.table === 'transactions') touchedTransactions = true
+        await dropFirstOp(user.id)
+      }
+      if (touchedTransactions) onEntryLogged?.()
+    })
+  }
+
+  // Back online: a refresh sends what was made offline, then reloads.
+  useOnReconnect(refresh, !!user)
 
   // 'savings_goal_reached' — the moment what a goal holds first meets its
   // target, which is when the goal page celebrates. Told apart from
@@ -272,18 +350,20 @@ export function useSavings(onEntryLogged) {
       createdAt:    new Date().toISOString(),
     }
     const result = await write({
-      apply: () => setStore(s => ({ ...s, goals: [...s.goals, goal] })),
-      request: () => supabase.from(goalsTable(kind))
-        .insert(kind === 'debt'
+      op: {
+        table: goalsTable(kind),
+        action: 'insert',
+        id,
+        values: kind === 'debt'
           ? {
-            id, user_id: user.id, name: goal.name, target_amount: goal.target, location: goal.location,
+            id, name: goal.name, target_amount: goal.target, location: goal.location,
             debt_type: debtType || 'flexible', tenure_months: tenureMonths, emis_paid: emisPaidBefore,
-            first_emi_date: firstEmiDate, emi_amount: emiAmount,
+            first_emi_date: firstEmiDate, emi_amount: emiAmount, created_at: goal.createdAt,
           }
-          : { id, user_id: user.id, name: goal.name, target_amount: goal.target, location: goal.location, kind })
-        .select().single(),
+          : { id, name: goal.name, target_amount: goal.target, location: goal.location, kind, created_at: goal.createdAt },
+        local: { collection: 'goals', item: goal },
+      },
       rollback: () => setStore(s => ({ ...s, goals: s.goals.filter(g => g.id !== id) })),
-      onSuccess: row => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? (kind === 'debt' ? debtFromRow(row) : goalFromRow(row)) : g) })),
     })
     if (result.success) {
       hapticAdded()
@@ -294,7 +374,7 @@ export function useSavings(onEntryLogged) {
       return { ...result, id }
     }
     return result
-  }, [write, user, posthog])
+  }, [write, posthog])
 
   const editGoal = useCallback(async (id, { name, target, location, tenureMonths = null, emisPaidBefore = 0, firstEmiDate = null, emiAmount = null }) => {
     const prev = storeRef.current.goals.find(g => g.id === id)
@@ -305,19 +385,22 @@ export function useSavings(onEntryLogged) {
     const next = { ...prev, name: name.trim(), target: parseFloat(target), location: (location || '').trim(), tenureMonths, emisPaidBefore, firstEmiDate, emiAmount }
     const saved = netFor(storeRef.current.entries, id)
     const result = await write({
-      apply: () => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? next : g) })),
-      request: () => supabase.from(goalsTable(prev.kind))
-        .update({
+      op: {
+        table: goalsTable(prev.kind),
+        action: 'update',
+        id,
+        values: {
           name: next.name, target_amount: next.target, location: next.location,
           tenure_months: tenureMonths, emis_paid: emisPaidBefore, first_emi_date: firstEmiDate, emi_amount: emiAmount,
-        })
-        .eq('id', id).eq('user_id', user.id),
+        },
+        local: { collection: 'goals', patch: next },
+      },
       rollback: () => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? prev : g) })),
     })
     // Lowering the target to what's already saved reaches it too.
     if (result.success) trackReached(prev, saved, saved, next.target)
     return result
-  }, [write, user, trackReached])
+  }, [write, trackReached])
 
   // Entries go with it — the FK cascades server-side, so this only has to
   // mirror that locally.
@@ -326,11 +409,7 @@ export function useSavings(onEntryLogged) {
     const prevEntries = storeRef.current.entries.filter(e => e.goalId === id)
     if (!prevGoal) return { success: false, error: FALLBACK_MESSAGE }
     const result = await write({
-      apply: () => setStore(s => ({
-        goals: s.goals.filter(g => g.id !== id),
-        entries: s.entries.filter(e => e.goalId !== id),
-      })),
-      request: () => supabase.from(goalsTable(prevGoal.kind)).delete().eq('id', id).eq('user_id', user.id),
+      op: { table: goalsTable(prevGoal.kind), action: 'delete', id, local: { collection: 'goals' } },
       rollback: () => setStore(s => ({
         goals: [...s.goals, prevGoal].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
         entries: [...s.entries, ...prevEntries],
@@ -338,17 +417,14 @@ export function useSavings(onEntryLogged) {
     })
     if (result.success) hapticDeleted()
     return result
-  }, [write, user])
+  }, [write])
 
   const setGoalCompleted = useCallback(async (id, done) => {
     const prev = storeRef.current.goals.find(g => g.id === id)
     if (!prev) return { success: false, error: FALLBACK_MESSAGE }
     const completedAt = done ? new Date().toISOString() : null
     const result = await write({
-      apply: () => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? { ...g, completedAt } : g) })),
-      request: () => supabase.from(goalsTable(prev.kind))
-        .update({ completed_at: completedAt })
-        .eq('id', id).eq('user_id', user.id),
+      op: { table: goalsTable(prev.kind), action: 'update', id, values: { completed_at: completedAt }, local: { collection: 'goals', patch: { completedAt } } },
       rollback: () => setStore(s => ({ ...s, goals: s.goals.map(g => g.id === id ? prev : g) })),
     })
     if (result.success && done) {
@@ -356,7 +432,7 @@ export function useSavings(onEntryLogged) {
       posthog?.capture(prev.kind === 'debt' ? 'debt_marked_cleared' : 'savings_goal_completed', { days_since_created: daysSince(prev.createdAt) })
     }
     return result
-  }, [write, user, posthog])
+  }, [write, posthog])
 
   // What a goal holds, optionally as if one entry weren't there. Deliberately
   // not clamped at zero: the callers use it to refuse a change that would push
@@ -381,10 +457,13 @@ export function useSavings(onEntryLogged) {
     const id = Crypto.randomUUID()
     const entry = { id, goalId, type, amount: value, date: date || today(), note: (note || '').trim(), createdAt: new Date().toISOString(), transactionId: null }
     const result = await write({
-      apply: () => setStore(s => ({ ...s, entries: [...s.entries, entry] })),
-      request: () => supabase.from(entriesTable(goal?.kind)).insert({
-        id, [entryGoalKey(goal?.kind)]: goalId, user_id: user.id, type, amount: value, date: entry.date, note: entry.note,
-      }),
+      op: {
+        table: entriesTable(goal?.kind),
+        action: 'insert',
+        id,
+        values: { id, [entryGoalKey(goal?.kind)]: goalId, type, amount: value, date: entry.date, note: entry.note, created_at: entry.createdAt },
+        local: { collection: 'entries', item: entry },
+      },
       rollback: () => setStore(s => ({ ...s, entries: s.entries.filter(e => e.id !== id) })),
     })
     if (result.success) {
@@ -397,7 +476,7 @@ export function useSavings(onEntryLogged) {
       return { ...result, id }
     }
     return result
-  }, [write, user, posthog, trackReached])
+  }, [write, posthog, trackReached])
 
   // Mirrors a debt payment into the main transaction list as a real expense —
   // asked about after the payment is logged here (see SavingsSheetsHost's
@@ -410,15 +489,17 @@ export function useSavings(onEntryLogged) {
   const logEntryAsExpense = useCallback(async ({ amount, date, description }) => {
     const id = Crypto.randomUUID()
     const result = await write({
-      apply: () => {},
-      rollback: () => {},
-      request: () => supabase.from('transactions').insert({
-        id, user_id: user.id, type: 'expense', amount: parseFloat(amount), date: date || today(), description: description || 'Payment',
-      }),
+      op: {
+        table: 'transactions',
+        action: 'insert',
+        id,
+        values: { id, type: 'expense', amount: parseFloat(amount), date: date || today(), description: description || 'Payment' },
+        local: null,
+      },
       onSuccess: () => onEntryLogged?.(),
     })
     return result.success ? { ...result, id } : result
-  }, [write, user, onEntryLogged])
+  }, [write, onEntryLogged])
 
   // Only writes the link — the entry itself already exists (logEntryAsExpense
   // is offered only after the payment's own entry is saved), so this is a
@@ -427,11 +508,10 @@ export function useSavings(onEntryLogged) {
     const prev = storeRef.current.entries.find(e => e.id === entryId)
     if (!prev) return { success: false, error: FALLBACK_MESSAGE }
     return write({
-      apply: () => setStore(s => ({ ...s, entries: s.entries.map(e => e.id === entryId ? { ...e, transactionId } : e) })),
-      request: () => supabase.from(entriesTableFor(prev.goalId)).update({ transaction_id: transactionId }).eq('id', entryId).eq('user_id', user.id),
+      op: { table: entriesTableFor(prev.goalId), action: 'update', id: entryId, values: { transaction_id: transactionId }, local: { collection: 'entries', patch: { transactionId } } },
       rollback: () => setStore(s => ({ ...s, entries: s.entries.map(e => e.id === entryId ? prev : e) })),
     })
-  }, [write, user])
+  }, [write])
 
   const updateEntry = useCallback(async (id, { type, amount, note, date }) => {
     const prev = storeRef.current.entries.find(e => e.id === id)
@@ -447,15 +527,12 @@ export function useSavings(onEntryLogged) {
     const goal = storeRef.current.goals.find(g => g.id === prev.goalId)
     const before = netFor(storeRef.current.entries, prev.goalId)
     const result = await write({
-      apply: () => setStore(s => ({ ...s, entries: s.entries.map(e => e.id === id ? next : e) })),
-      request: () => supabase.from(entriesTable(goal?.kind))
-        .update({ type, amount: value, note: next.note, date: next.date })
-        .eq('id', id).eq('user_id', user.id),
+      op: { table: entriesTable(goal?.kind), action: 'update', id, values: { type, amount: value, note: next.note, date: next.date }, local: { collection: 'entries', patch: next } },
       rollback: () => setStore(s => ({ ...s, entries: s.entries.map(e => e.id === id ? prev : e) })),
     })
     if (result.success && goal) trackReached(goal, before, after)
     return result
-  }, [write, user, trackReached])
+  }, [write, trackReached])
 
   const deleteEntry = useCallback(async (id) => {
     const prev = storeRef.current.entries.find(e => e.id === id)
@@ -465,8 +542,7 @@ export function useSavings(onEntryLogged) {
       return { success: false, error: 'Remove the withdrawals that depend on this first.' }
     }
     const result = await write({
-      apply: () => setStore(s => ({ ...s, entries: s.entries.filter(e => e.id !== id) })),
-      request: () => supabase.from(entriesTableFor(prev.goalId)).delete().eq('id', id).eq('user_id', user.id),
+      op: { table: entriesTableFor(prev.goalId), action: 'delete', id, local: { collection: 'entries' } },
       rollback: () => setStore(s => ({ ...s, entries: [...s.entries, prev] })),
     })
     if (!result.success) return result
@@ -475,13 +551,13 @@ export function useSavings(onEntryLogged) {
     // that prompt) goes with it — left behind, it would show on Home with
     // nothing in the loan's own history left to explain it.
     if (prev.transactionId) {
-      const { error: txError } = await supabase.from('transactions').delete().eq('id', prev.transactionId).eq('user_id', user.id)
-      if (txError) { reportError(txError); return result }
-      onEntryLogged?.()
+      const txResult = await write({ op: { table: 'transactions', action: 'delete', id: prev.transactionId, local: null } })
+      if (!txResult.success) return result
+      if (!txResult.queued) onEntryLogged?.()
       return { ...result, removedTransaction: true }
     }
     return result
-  }, [write, user, onEntryLogged])
+  }, [write, onEntryLogged])
 
   // Brings in goals and entries from a spreadsheet: `goals` are { name, target,
   // completed } and `entries` are { goalName, type, amount, date, note }. An entry
@@ -492,7 +568,7 @@ export function useSavings(onEntryLogged) {
   // failure, reporting what went in, and either way ends with a refresh so the
   // list shows what is really there.
   const importSavings = useCallback(async (goals, entries, onProgress) => {
-    if (!user) return { success: false, error: 'Not signed in', goals: 0, entries: 0 }
+    if (!user) return { success: false, error: 'Please sign in again.', goals: 0, entries: 0 }
     if (!goals.length && !entries.length) return { success: true, goals: 0, entries: 0 }
     if (!isOnlineRef.current) { notifyOffline(); return { success: false, offline: true, goals: 0, entries: 0 } }
 
@@ -545,7 +621,7 @@ export function useSavings(onEntryLogged) {
         return { success: false, offline: true, ...done }
       }
       reportError(failure)
-      return { success: false, error: failure.message || FALLBACK_MESSAGE, ...done }
+      return { success: false, error: friendlyError(failure), ...done }
     }
     hapticAdded()
     return { success: true, ...done }
