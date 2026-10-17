@@ -1,9 +1,10 @@
 import { memo, useMemo } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import ShimmerQuote from './ShimmerQuote';
 import { useAuth } from '../context/AuthContext';
 import { useInsight } from '../hooks/useInsight';
-import { MONTH_NAMES } from '../utils/monthlyRecap';
+import { ChevronRight } from './icons';
+import { MONTH_NAMES, hasAnyRecapData, prevMonthYear } from '../utils/monthlyRecap';
 import { textColor } from '../utils/colors';
 import { FONT } from '../utils/type';
 
@@ -26,7 +27,11 @@ function todayLabel() {
 // new account sees. Warm, and says what would change it.
 const NOTHING_YET = 'Keep adding your spending. Your insights will show up here.';
 
-function SummarySection({ userId, transactions, budgetAmount, savings, light = false }) {
+// The accent of the monthly summary entry: a colour of its own, so it reads as something
+// to open rather than as money (red and green are kept for that).
+const SUMMARY_DOT = '#a78bfa';
+
+function SummarySection({ userId, transactions, budgetAmount, savings, light = false, onOpenSummary }) {
   const t = textColor(light);
   // Only a name the user actually set: the account falls back to the start of their email
   // otherwise, which isn't something to call them by.
@@ -40,10 +45,30 @@ function SummarySection({ userId, transactions, budgetAmount, savings, light = f
 
   const title = insight ? insight.text : NOTHING_YET;
 
+  // Last month's summary, offered at the top of the page once there is a last month to sum up.
+  const summaryMonth = useMemo(() => {
+    const now = new Date();
+    const prev = prevMonthYear(now.getMonth(), now.getFullYear());
+    return hasAnyRecapData(transactions, prev.month, prev.year) ? `${MONTH_NAMES[prev.month]} ${prev.year}` : null;
+  }, [transactions]);
+
   return (
     // One group, centred between the tab switch and the bottom of the screen. Static:
     // the page never scrolls.
     <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 28, paddingTop: 24, paddingBottom: 72 }}>
+      {!!summaryMonth && !!onOpenSummary && (
+        <Pressable
+          onPress={onOpenSummary}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`Open your ${summaryMonth} summary`}
+          style={{ position: 'absolute', top: 16, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.07)' }}
+        >
+          <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: SUMMARY_DOT }} />
+          <Text style={{ fontSize: FONT.caption, color: t.secondary }}>{summaryMonth} summary</Text>
+          <ChevronRight color={t.disabled} />
+        </Pressable>
+      )}
       {ready && (
         <View>
           <Text style={{ fontSize: FONT.caption, letterSpacing: 0.5, color: t.tertiary, marginBottom: 18 }}>{todayLabel()}</Text>

@@ -41,7 +41,7 @@ const WALLET_SLIDE_SPRING = { duration: 500, dampingRatio: 1, overshootClamping:
 // read it to move in step with the page — Home uses it for its parallax. It is the
 // page's own value rather than a second animation started elsewhere, so the two
 // can never fall out of step.
-function WalletPage({ open, onClose, onClosed, savings, transactions, budgetAmount, light = false, userId, slideX, locked = false, onLocked }) {
+function WalletPage({ open, onClose, onClosed, savings, transactions, budgetAmount, light = false, userId, slideX, locked = false, onLocked, onOpenSummary }) {
   const { width: windowWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
@@ -304,7 +304,7 @@ function WalletPage({ open, onClose, onClosed, savings, transactions, budgetAmou
               <Animated.View style={[StyleSheet.absoluteFill, summaryLayerStyle]} pointerEvents={section === 'summary' ? 'auto' : 'none'}>
                 {summaryVisited && (
                   <ErrorBoundary resetKeys={[userId]}>
-                    <SummarySection userId={userId} transactions={transactions} budgetAmount={budgetAmount} savings={savings} light={light} />
+                    <SummarySection userId={userId} transactions={transactions} budgetAmount={budgetAmount} savings={savings} light={light} onOpenSummary={onOpenSummary} />
                   </ErrorBoundary>
                 )}
               </Animated.View>

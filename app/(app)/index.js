@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, useWindowDimensions } from 'react-native';
+import { View, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
+import { Image } from 'expo-image';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
@@ -100,6 +101,10 @@ async function hasViewedRecapServerSide(userId, monthId) {
   }
 }
 
+// The summary's own backdrop, shown from the moment a summary notification is tapped, so
+// the first thing on screen is the summary's page and not Home loading.
+const SUMMARY_BACKGROUND = require('../../assets/subscription-bg.webp');
+
 export default function Dashboard() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -113,6 +118,9 @@ export default function Dashboard() {
   // payment itself is logged — see SavingsSheetsHost's own confirm prompt)
   // shows up on Home right away.
   const savings = useSavings(refreshTransactions);
+  // Read when the monthly summary is built, without that effect re-running on every refresh.
+  const savingsRef = useRef(savings);
+  savingsRef.current = savings;
   useWidgetSync({ transactions, budget, goals: savings.goals });
   const { subscription, refresh: refreshSubscription } = useSubscription(user);
   const trialInfo = useMemo(() => getSubscriptionDisplayStatus(subscription, today()), [subscription]);
@@ -301,7 +309,7 @@ export default function Dashboard() {
     // exists, and — like the transactions race this mirrors — this effect
     // only gets one real shot per day, so a premature pass here means the
     // recap shows with wrong/missing budget data for the rest of the day.
-    if (!user || txLoading || budget.loading || !addModalClosed) return;
+    if (!user || txLoading || budget.loading || savings.loading || !addModalClosed) return;
     let cancelled = false;
 
     (async () => {
@@ -337,13 +345,16 @@ export default function Dashboard() {
           if (alreadyShown) await AsyncStorage.setItem(recapShownKey, recapMonthId);
         }
 
-        if (!alreadyShown && hasAnyRecapData(transactions, prev.month, prev.year)) {
-          await AsyncStorage.setItem(recapShownKey, recapMonthId);
-          if (cancelled) return;
-          setRecapSlides(getMonthlyRecapSlides(transactions, prev.month, prev.year, {
+        const slides = !alreadyShown && hasAnyRecapData(transactions, prev.month, prev.year)
+          ? getMonthlyRecapSlides(transactions, prev.month, prev.year, {
             amount: budget.lastMonthAmount,
             spent: budget.lastMonthSpent,
-          }, budget.hasBudget));
+          }, budget.hasBudget, { goals: savingsRef.current.allGoals, debts: savingsRef.current.allDebts })
+          : [];
+        if (slides.length) {
+          await AsyncStorage.setItem(recapShownKey, recapMonthId);
+          if (cancelled) return;
+          setRecapSlides(slides);
           // A short buffer before presenting this modal — this effect can fire
           // in the same tick as AddModal closing (adding a transaction changes
           // `transactions`, which is this effect's own dependency), and two
@@ -367,7 +378,7 @@ export default function Dashboard() {
     })();
 
     return () => { cancelled = true; };
-  }, [user, transactions, txLoading, budget.loading, addModalClosed, budget.lastMonthAmount, budget.lastMonthSpent, budget.hasBudget]);
+  }, [user, transactions, txLoading, budget.loading, savings.loading, addModalClosed, budget.lastMonthAmount, budget.lastMonthSpent, budget.hasBudget]);
 
   // Tapping the "{Month} Monthly Summary" push notification lands here with
   // ?openRecap=1 (see hooks/useNotificationRouting.js) — force-opens the
@@ -381,7 +392,7 @@ export default function Dashboard() {
     // recap before budget data has loaded, silently dropping the budget
     // slide. Deliberately doesn't clear the param until this guard passes,
     // so it just re-fires once budget catches up rather than losing intent.
-    if (params.openRecap !== '1' || !user || txLoading || budget.loading) return;
+    if (params.openRecap !== '1' || !user || txLoading || budget.loading || savings.loading) return;
     router.setParams({ openRecap: undefined });
 
     const { month, year: cy } = currentMonthYear();
@@ -389,13 +400,17 @@ export default function Dashboard() {
     if (!hasAnyRecapData(transactions, prev.month, prev.year)) return;
 
     const recapMonthId = `${prev.year}-${String(prev.month).padStart(2, '0')}`;
-    setRecapSlides(getMonthlyRecapSlides(transactions, prev.month, prev.year, {
+    const slides = getMonthlyRecapSlides(transactions, prev.month, prev.year, {
       amount: budget.lastMonthAmount,
       spent: budget.lastMonthSpent,
-    }, budget.hasBudget));
+    }, budget.hasBudget, { goals: savingsRef.current.allGoals, debts: savingsRef.current.allDebts });
+    // Nothing worth showing for that month: leave things as they are.
+    if (!slides.length) return;
+    setRecapSlides(slides);
+    setRecapInstant(!calendarOpenRef.current);
     setRecapOpen(true);
     markRecapViewedServerSide(user.id, recapMonthId);
-  }, [params.openRecap, user, txLoading, budget.loading, transactions, budget.lastMonthAmount, budget.lastMonthSpent, budget.hasBudget, router]);
+  }, [params.openRecap, user, txLoading, budget.loading, savings.loading, transactions, budget.lastMonthAmount, budget.lastMonthSpent, budget.hasBudget, router]);
 
   // Budget setup popup: due on the first app-open of a month with no budget
   // set yet. Kept as its OWN effect rather than folded into the once-a-day
@@ -682,6 +697,24 @@ export default function Dashboard() {
 
   const openCalendar = useCallback(() => setCalendarOpen(true), []);
   const closeCalendar = useCallback(() => setCalendarOpen(false), []);
+  // From the Insights page: last month's summary slides in over the wallet page, through
+  // the same ?openRecap=1 path the summary notification uses. Closing it lands back there.
+  const openSummary = useCallback(() => {
+    router.setParams({ openRecap: '1' });
+  }, [router]);
+  // True while a summary has been asked for (a notification tap, or Insights) and is
+  // still being built. From the notification, Home is covered by the summary's backdrop
+  // the whole time, and the summary then appears already in place.
+  const calendarOpenRef = useRef(false);
+  calendarOpenRef.current = calendarOpen;
+  const [recapInstant, setRecapInstant] = useState(false);
+  // If the summary cannot be built within a few seconds (no connection, say), let go of the
+  // request so the backdrop does not stay over Home.
+  useEffect(() => {
+    if (params.openRecap !== '1') return undefined;
+    const t = setTimeout(() => router.setParams({ openRecap: undefined }), 8000);
+    return () => clearTimeout(t);
+  }, [params.openRecap, router]);
   const closeAddModal = useCallback(() => setModalOpen(false), []);
   const handleAddModalClosed = useCallback(() => setAddModalClosed(true), []);
 
@@ -776,13 +809,6 @@ export default function Dashboard() {
         calendar
       />
 
-      <MonthlyRecapModal
-        open={recapOpen}
-        slides={recapSlides}
-        onClose={closeRecap}
-        onOpenBudgetSetup={openBudgetSetupFromRecap}
-      />
-
       <BudgetSetupModal
         open={budgetSetupOpen}
         onClose={closeBudgetSetup}
@@ -861,6 +887,24 @@ export default function Dashboard() {
       slideX={calendarSlideX}
       locked={walletLocked}
       onLocked={openProRequired}
+      onOpenSummary={openSummary}
+    />
+
+    {/* A summary notification was tapped and the summary is still being built: show its
+        backdrop at once, rather than Home loading behind it. */}
+    {params.openRecap === '1' && !calendarOpen && !recapOpen && (
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000000', zIndex: 240, elevation: 240 }]}>
+        <Image source={SUMMARY_BACKGROUND} contentFit="cover" pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: 0.35 }]} />
+      </View>
+    )}
+
+    {/* After the wallet page, so it can slide in over it when opened from Insights. */}
+    <MonthlyRecapModal
+      instant={recapInstant}
+      open={recapOpen}
+      slides={recapSlides}
+      onClose={closeRecap}
+      onOpenBudgetSetup={openBudgetSetupFromRecap}
     />
     </View>
   );

@@ -206,8 +206,8 @@ function SummaryCard({
     return i >= 0 ? i : null;
   }, [timeRange, year, currYear, chartData]);
 
-  // Mirrors the Calendar page's own "before earliest known activity" cutoff
-  // (see spendShadeFor/getEarliestDate in utils/format.js) — a new account
+  // A "before earliest known activity" cutoff (see getEarliestDate in
+  // utils/format.js) — a new account
   // that starts partway through the month otherwise has no way to tell "no
   // transactions yet because I didn't exist" apart from "no transactions
   // because nothing was spent," and every day before signup showed a false

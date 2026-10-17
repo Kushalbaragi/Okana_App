@@ -14,17 +14,18 @@ const BASE = 0.45;         // how bright a letter is when the light isn't on it
 const LINE_HEIGHT = 22;
 const SPACE = 5;           // the gap between words
 
-function Letter({ i, ch, n, sweep, color }) {
+function Letter({ i, ch, n, sweep, color, size, lineHeight, textStyle }) {
   const style = useAnimatedStyle(() => {
     const centre = sweep.value * (n + 2 * SPREAD) - SPREAD;
     const near = Math.max(0, 1 - Math.abs(i - centre) / SPREAD);
     return { opacity: BASE + (1 - BASE) * near };
   });
-  return <Animated.Text style={[{ fontSize: FONT.body, lineHeight: LINE_HEIGHT, color }, style]}>{ch}</Animated.Text>;
+  return <Animated.Text style={[{ fontSize: size, lineHeight, color }, textStyle, style]}>{ch}</Animated.Text>;
 }
 
-// `delay` is when, in ms from mount, the light starts.
-function ShimmerQuote({ text, delay = 0, color }) {
+// `delay` is when, in ms from mount, the light starts. `size`, `lineHeight`, `center` and
+// `textStyle` let it stand in for a small label as well as a quote.
+function ShimmerQuote({ text, delay = 0, color, size = FONT.body, lineHeight = LINE_HEIGHT, center = false, textStyle }) {
   const words = useMemo(() => text.split(' ').filter(Boolean), [text]);
   const n = useMemo(() => words.reduce((sum, w) => sum + Array.from(w).length, 0), [words]);
   const sweep = useSharedValue(0);
@@ -38,12 +39,12 @@ function ShimmerQuote({ text, delay = 0, color }) {
   let index = 0;
   return (
     <View accessible accessibilityLabel={text} importantForAccessibility="yes">
-      <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+      <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: center ? 'center' : 'flex-start' }}>
         {words.map((word, w) => (
-          <View key={w} style={{ flexDirection: 'row', marginRight: SPACE }}>
+          <View key={w} style={{ flexDirection: 'row', marginRight: center && w === words.length - 1 ? 0 : Math.round(SPACE * size / FONT.body) }}>
             {Array.from(word).map((ch, k) => {
               const i = index++;
-              return <Letter key={k} i={i} ch={ch} n={n} sweep={sweep} color={color} />;
+              return <Letter key={k} i={i} ch={ch} n={n} sweep={sweep} color={color} size={size} lineHeight={lineHeight} textStyle={textStyle} />;
             })}
           </View>
         ))}

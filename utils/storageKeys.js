@@ -12,6 +12,7 @@ export const storageKeys = {
   savingsQueue: (userId) => `okana_savings_queue_${userId}`,
   budgetSetupShown: (userId) => `okana_budget_setup_shown_${userId}`,
   insightHistory: (userId) => `okana_insight_history_${userId}`,
+  summaryHistory: (userId) => `okana_summary_history_${userId}`,
 };
 
 // Every key the app owns starts with this; the ones that aren't per user (the

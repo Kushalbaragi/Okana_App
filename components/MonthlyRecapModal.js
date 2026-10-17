@@ -1,15 +1,27 @@
-import { memo, useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, useWindowDimensions } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, cancelAnimation } from 'react-native-reanimated';
-import BarChart from './BarChart';
-import LineChart from './LineChart';
-import BudgetStatusBar from './BudgetStatusBar';
+import { createContext, memo, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { View, Text, Pressable, BackHandler, StyleSheet, useWindowDimensions } from 'react-native';
+import { Image } from 'expo-image';
+import { Feather } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, withSpring, runOnJS, Easing, cancelAnimation } from 'react-native-reanimated';
 import { GlassPressable } from './Glass';
-import { MONTH_NAMES } from '../utils/monthlyRecap';
-import { formatCurrency } from '../utils/format';
-import { EXPENSE_HEX } from '../utils/colors';
-import { FONT } from '../utils/type';
+import ShimmerQuote from './ShimmerQuote';
+import { CheckIcon } from './icons';
+import { cardFill } from './savingsShared';
+import { useAuth } from '../context/AuthContext';
+import { money } from '../utils/summaryFacts';
+import { EMPTY_SUMMARY_HISTORY, pickSummaryMessage } from '../utils/summaryMessages';
+import { storageKeys } from '../utils/storageKeys';
+import { reportError } from '../utils/errors';
+import { darkText, EXPENSE_HEX, INCOME_HEX } from '../utils/colors';
+import { TABULAR, FONT } from '../utils/type';
 
+// The same background as the welcome pages.
+const BACKGROUND = require('../assets/subscription-bg.webp');
+const BACKGROUND_OPACITY = 0.35;
+const AMBER = '#fbbf24';
+
+// How long each slide stays: long enough for its lines to come in one by one and be read.
 const SLIDE_MS = 9000;
 // Below this, a press+release counts as a tap (navigate) rather than a
 // hold (pause-and-resume-in-place) — matches the feel of Instagram/
@@ -53,574 +65,215 @@ function ProgressSegment({ state, paused }) {
   );
 }
 
-// Opening card — sets up what's coming, no numbers yet. Same scale as the
-// rest of the app's kicker/headline pairs (e.g. BudgetSetupModal's "Last
-// month" label + confirmation text) rather than the reference image's
-// larger, bolder, more letter-spaced treatment.
-function TitleSlide({ month, year }) {
-  return (
-    <View className="flex-1 items-center justify-center px-8">
-      <View style={{ marginTop: -20 }}>
-        <Text className="text-white/35 text-[13px] font-semibold uppercase tracking-wide text-center mb-2">
-          Take a moment to review
-        </Text>
-        <Text className="text-xl font-semibold text-center" style={{ color: '#4ade80', lineHeight: 26, textTransform: 'uppercase' }}>
-          {MONTH_NAMES[month]} {year} spendings
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-// Counts down `delayMs` and flips to true once — pausable, so a hold
-// mid-countdown freezes it in place and resuming picks up the remaining
-// time, same math as the story's own slide-advance timer above.
-function usePausableReveal(paused, delayMs) {
-  const [revealed, setRevealed] = useState(false);
-  const remainingRef = useRef(delayMs);
-  const startedAtRef = useRef(0);
-  const timerRef = useRef(null);
-
+// Each line of a slide comes in on its own, a beat after the one before it: a short slide
+// up and fade, `step` places down the line.
+const REVEAL_STEP_MS = 550;
+const REVEAL_MS = 950;
+// Lines only come in the first time a slide is reached. Coming back to it shows it as it
+// was left, already in place.
+const RevealContext = createContext(true);
+function Reveal({ step = 0, duration = REVEAL_MS, style, children }) {
+  const animate = useContext(RevealContext);
+  const progress = useSharedValue(animate ? 0 : 1);
   useEffect(() => {
-    if (revealed) return;
-    if (paused) {
-      clearTimeout(timerRef.current);
-      remainingRef.current = Math.max(0, remainingRef.current - (Date.now() - startedAtRef.current));
-      return;
-    }
-    startedAtRef.current = Date.now();
-    timerRef.current = setTimeout(() => setRevealed(true), remainingRef.current);
-    return () => clearTimeout(timerRef.current);
-  }, [paused, revealed]);
-
-  return revealed;
-}
-
-function FadeIn({ children, style }) {
-  const progress = useSharedValue(0);
-  useEffect(() => {
-    progress.value = withTiming(1, { duration: 350, easing: Easing.out(Easing.cubic) });
-  }, []);
+    if (!animate) return;
+    progress.value = withDelay(step * REVEAL_STEP_MS, withTiming(1, { duration, easing: Easing.out(Easing.cubic) }));
+  }, [animate, progress, step, duration]);
   const animStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
-    transform: [{ translateY: (1 - progress.value) * 8 }],
+    transform: [{ translateY: (1 - progress.value) * 14 }],
   }));
   return <Animated.View style={[style, animStyle]}>{children}</Animated.View>;
 }
 
-// Capitalizes each word for display — transaction descriptions are stored
-// sentence-case ("Car emi"), which reads oddly for acronyms once it's the
-// centerpiece of a callout instead of a small list row.
-function titleCaseWords(str) {
-  return str.replace(/\S+/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
-}
+// The summary slides in from the right as a page of its own, and back out the same way.
+const PAGE_SPRING = { duration: 500, dampingRatio: 1, overshootClamping: true };
 
-// Reuses the home screen's own daily BarChart. Staged reveal: the callout
-// lands above the bar first, then its description line, then the no-spend
-// count — each a beat after the last, not all at once.
-function DailyChartSlide({ month, year, values, labels, highestIndex, highestAmount, highestDay, highestDescription, paused }) {
-  const hasHighest = highestIndex >= 0;
-  const calloutReady = usePausableReveal(paused, 1000);
-  const showCallout  = calloutReady && hasHighest;
-  const textReady    = usePausableReveal(paused, 1500);
-  const showHighestText = textReady && hasHighest;
+const LABEL = { fontSize: FONT.label, letterSpacing: 0.9, textTransform: 'uppercase', color: darkText.disabled, textAlign: 'center' };
 
-  // Horizontal position (0-1) of the highest bar within the chart's own
-  // width, used to place the callout above it — the callout itself lives
-  // outside the SVG entirely (a plain overlay), not inside BarChart's own
-  // coordinate space, since the tallest bar can reach the very top of the
-  // chart and a peak-relative label there has nowhere left to sit.
-  const calloutFraction = labels.length > 1 ? highestIndex / (labels.length - 1) : 0.5;
+// Every slide is laid out the same way, so the eye never has to look for anything: the
+// title sits at the same height on every slide, a little above the middle of the screen,
+// and what the slide says starts right under it. Only the lines under the title animate.
+// `quiet` makes the title a small grey kicker, for a slide whose content is the point, and
+// `lower` sets that slide a little further down.
+const TITLE_TOP = 0.2;
 
+function Frame({ title, gap = 36, quiet = false, lower = 30, children }) {
+  const { height } = useWindowDimensions();
   return (
-    <View className="flex-1 px-6">
-      {/* Positioned independently of the centered block below — moving the
-          title shouldn't shift the chart's own vertical centering. */}
-      <View className="items-center absolute" style={{ top: 100, left: 24, right: 24 }}>
-        <Text className="text-white/35 text-[13px] font-semibold uppercase tracking-wide text-center mb-2">
-          {MONTH_NAMES[month]} {year}
-        </Text>
-        <Text className="text-white text-xl font-semibold text-center uppercase">
-          Daily spending chart
-        </Text>
-      </View>
-
-      <View className="flex-1 items-center justify-center">
-        <View style={{ width: '90%', paddingTop: 40 }}>
-          {showCallout && (
-            <FadeIn style={{ position: 'absolute', top: 0, left: `${calloutFraction * 100}%`, marginLeft: -45, width: 90 }}>
-              <Text className="text-white/50 text-[9px] font-semibold uppercase tracking-wide text-center mb-0.5">
-                Highest spent
-              </Text>
-              <Text className="text-white/85 text-[13px] font-semibold text-center">
-                {formatCurrency(highestAmount)}
-              </Text>
-            </FadeIn>
-          )}
-          <BarChart
-            values={values}
-            labels={labels}
-            activeIndex={-1}
-            isIncome={false}
-            animKey={`recap-daily-${month}-${year}`}
-            labelStep={4}
-            useSqrtScale
-            noSpendDots
-          />
-        </View>
-
-        {/* Reserves space for the reveal line up front so the group
-            doesn't jump vertically as it fades in. */}
-        <View className="mt-8" style={{ minHeight: 44, width: '100%' }}>
-          {showHighestText && (
-            <FadeIn>
-              <Text className="text-white/60 text-[13px] text-center" style={{ lineHeight: 20 }}>
-                You spent the most on {MONTH_NAMES[month]} {highestDay} — {formatCurrency(highestAmount)} on{' '}
-                <Text style={{ fontStyle: 'italic' }}>"{titleCaseWords(highestDescription)}"</Text>
-              </Text>
-            </FadeIn>
-          )}
-        </View>
-      </View>
+    <View style={{ flex: 1, paddingHorizontal: 32, paddingTop: Math.round(height * TITLE_TOP) + lower }}>
+      {/* Only the closing slide's title carries the slow light passing over it. */}
+      {!!title && (quiet
+        ? <ShimmerQuote text={title.toUpperCase()} color={darkText.primary} size={FONT.label} lineHeight={14} center textStyle={{ letterSpacing: LABEL.letterSpacing }} />
+        : <Text style={{ fontSize: FONT.title, lineHeight: 26, color: darkText.primary, textAlign: 'center' }}>{title}</Text>)}
+      <View style={{ marginTop: !title ? 0 : quiet ? 16 : gap }}>{children}</View>
     </View>
   );
 }
 
-const MONTH_LABELS_SHORT = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
-
-// Year-over-year comparison for one side (expense or income) — a plain
-// thin-bordered box, two centered lines, no fill. Same red/green tokens
-// the rest of the app already uses. The arrow marks only the current-year
-// line — it's the one being compared against, not the baseline.
-function YoyBox({ color, lastYearLine, thisYearLine, diff }) {
-  const arrow = diff > 0 ? '↑' : diff < 0 ? '↓' : null;
+function Bar({ percent, color }) {
   return (
-    <View
-      className="rounded-lg px-4 py-2.5 items-center"
-      style={{ borderWidth: 1, borderColor: `${color}80` }}
-    >
-      <Text className="text-[13px] font-semibold text-center" style={{ color }}>{lastYearLine}</Text>
-      <Text className="text-[13px] font-semibold text-center mt-1" style={{ color }}>
-        {thisYearLine}{arrow ? ` ${arrow}` : ''}
-      </Text>
+    <View style={{ height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.12)', overflow: 'hidden', marginTop: 10 }}>
+      <View style={{ height: '100%', width: `${Math.max(2, Math.min(100, percent))}%`, borderRadius: 3, backgroundColor: color }} />
     </View>
   );
 }
 
-function growthSentence(kind, diff, pct) {
-  const dir = diff > 0 ? 'grew' : diff < 0 ? 'dropped' : null;
-  if (pct == null) return `No ${kind} data from last year to compare yet.`;
-  if (!dir) return `Your ${kind} stayed flat year over year.`;
-  return `Your ${kind} ${dir} ${Math.abs(pct)}% year over year.`;
-}
-
-function YoySection({ color, kind, diff, pct, month, year, lastYearAmount, thisYearAmount }) {
+// 0. The opening slide: just which month this is, in green, before the numbers start.
+function IntroSlide({ monthLabel, year }) {
   return (
-    <View className="items-center" style={{ width: '100%' }}>
-      <Text className="text-white/60 text-[13px] text-center mb-2">{growthSentence(kind, diff, pct)}</Text>
-      <YoyBox
-        color={color}
-        lastYearLine={`${MONTH_NAMES[month]} ${year - 1} — ${formatCurrency(lastYearAmount)}`}
-        thisYearLine={`${MONTH_NAMES[month]} ${year} — ${formatCurrency(thisYearAmount)}`}
-        diff={diff}
-      />
+    // Centred on the whole screen: the bars and close button above take about 100pt, so
+    // the same is left free at the bottom.
+    <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', paddingHorizontal: 32, paddingBottom: 100 }]}>
+      <Reveal>
+        <Text style={{ fontSize: FONT.title, lineHeight: 28, color: INCOME_HEX, textAlign: 'center' }}>
+          {monthLabel} {year} summary
+        </Text>
+      </Reveal>
     </View>
   );
 }
 
-function DiffSummaryLine({ diff, base, compareLabel }) {
-  if (base <= 0) {
-    return <Text className="text-white/50 text-[13px] text-center mb-6">No {compareLabel} data to compare yet.</Text>;
-  }
-  if (diff === 0) {
-    return <Text className="text-white/50 text-[13px] text-center mb-6">Same as {compareLabel}.</Text>;
-  }
-  const more = diff > 0;
+// 1. How much was spent, against last month and the budget.
+function SpentSlide({ spent, prevSpent, prevLabel, budgetAmount, overBy, underBy }) {
+  const diff = spent - prevSpent;
+  const hasBudget = budgetAmount != null;
   return (
-    <Text className="text-white/60 text-[13px] text-center mb-6">
-      You spent{' '}
-      <Text style={{ color: more ? '#f87171' : '#4ade80', fontWeight: '700' }}>
-        {formatCurrency(Math.abs(diff))}
-      </Text>
-      {' '}{more ? 'more' : 'less'} than {compareLabel}.
-    </Text>
-  );
-}
-
-// Same title position/scale as the daily chart slide, just different text —
-// then a compact period + amount header, the reused monthly BarChart, and
-// the two YoY comparisons revealing a beat apart.
-function MonthlyChartSlide({
-  month, year, expenseValues, currentExpense, currentIncome,
-  lastYearExpense, lastYearIncome, expenseDiff, incomeDiff, expensePct, incomePct,
-  prevMonth, prevYear, prevMonthExpense, prevMonthDiff, paused,
-}) {
-  const showExpenseBox = usePausableReveal(paused, 1000);
-  const showIncomeBox  = usePausableReveal(paused, 2200);
-
-  return (
-    <View className="flex-1 px-6">
-      {/* Positioned independently of the centered block below — moving the
-          title shouldn't shift the chart's own vertical centering. */}
-      <View className="items-center absolute" style={{ top: 100, left: 24, right: 24 }}>
-        <Text className="text-white/35 text-[13px] font-semibold uppercase tracking-wide text-center mb-2">
-          {year}
-        </Text>
-        <Text className="text-white text-xl font-semibold text-center uppercase">
-          Monthly chart
-        </Text>
-      </View>
-
-      <View className="flex-1 items-center justify-center" style={{ paddingTop: 60 }}>
-        <View className="items-center mb-1">
-          <Text className="text-white font-bold text-center" style={{ fontSize: FONT.amount }}>
-            {formatCurrency(currentExpense)}
-          </Text>
-        </View>
-        <DiffSummaryLine
-          diff={prevMonthDiff}
-          base={prevMonthExpense}
-          compareLabel={`${MONTH_NAMES[prevMonth]} ${prevYear}`}
-        />
-
-        <View style={{ width: '90%' }}>
-          <BarChart
-            values={expenseValues}
-            labels={MONTH_LABELS_SHORT}
-            activeIndex={month}
-            isIncome={false}
-            animKey={`recap-monthly-${year}`}
-            labelStep={1}
-          />
-        </View>
-
-        {/* Reserves space for both sections up front so the chart above
-            (and the whole centered group) doesn't shift as they fade in. */}
-        <View className="mt-6" style={{ gap: 18, width: '100%', minHeight: 220 }}>
-          {showExpenseBox && (
-            <FadeIn>
-              <YoySection
-                color="#f87171"
-                kind="expenses"
-                diff={expenseDiff}
-                pct={expensePct}
-                month={month}
-                year={year}
-                lastYearAmount={lastYearExpense}
-                thisYearAmount={currentExpense}
-              />
-            </FadeIn>
-          )}
-          {showIncomeBox && (
-            <FadeIn>
-              <YoySection
-                color="#4ade80"
-                kind="income"
-                diff={incomeDiff}
-                pct={incomePct}
-                month={month}
-                year={year}
-                lastYearAmount={lastYearIncome}
-                thisYearAmount={currentIncome}
-              />
-            </FadeIn>
-          )}
-        </View>
-      </View>
-    </View>
-  );
-}
-
-// Whether this month came out ahead or behind, in plain language — same
-// red/green tokens as the rest of the recap.
-function overviewCopy(savings) {
-  if (savings > 0) {
-    return {
-      headline: `You saved ${formatCurrency(savings)} this month`,
-      message: "Nice — you're spending less than you earn. Keep it up.",
-      color: '#4ade80',
-    };
-  }
-  if (savings < 0) {
-    return {
-      headline: null,
-      message: 'Your expenses crossed your income — keep your expenses below your income to avoid debt.',
-      color: '#f87171',
-    };
-  }
-  return {
-    headline: 'You broke even this month',
-    message: 'Income matched expenses exactly.',
-    color: 'rgba(255,255,255,0.6)',
-  };
-}
-
-// Same title position/scale as the other chart slides — reuses the home
-// screen's own Overview LineChart for the year's income/expense trend,
-// then a single savings insight for the current month below it.
-function OverviewSlide({ month, year, incomeValues, expenseValues, monthSavings, paused }) {
-  const showMessage = usePausableReveal(paused, 800);
-  const { headline, message, color } = overviewCopy(monthSavings);
-
-  // Same truncation the home screen's own Overview tab uses — only the
-  // months up through the one being reviewed, not months that haven't
-  // happened yet within the same calendar year.
-  const upToMonth = month + 1;
-
-  return (
-    <View className="flex-1 px-6">
-      <View className="items-center absolute" style={{ top: 100, left: 24, right: 24 }}>
-        <Text className="text-white/35 text-[13px] font-semibold uppercase tracking-wide text-center mb-2">
-          {year}
-        </Text>
-        <Text className="text-white text-xl font-semibold text-center uppercase">
-          Expense vs income
-        </Text>
-      </View>
-
-      <View className="flex-1 items-center justify-center">
-        <View style={{ width: '90%' }}>
-          <LineChart
-            incomeData={incomeValues.slice(0, upToMonth)}
-            expenseData={expenseValues.slice(0, upToMonth)}
-            labels={MONTH_LABELS_SHORT.slice(0, upToMonth)}
-            animKey={`recap-overview-${year}`}
-          />
-        </View>
-
-        {/* Reserves space for the message up front so the chart above
-            doesn't shift as it fades in. */}
-        <View className="mt-8" style={{ minHeight: 80, width: '100%' }}>
-          {showMessage && (
-            <FadeIn>
-              {headline && (
-                <Text className="font-semibold text-center mb-2" style={{ color, fontSize: FONT.title }}>
-                  {headline}
-                </Text>
-              )}
-              <Text className="text-white/60 text-[13px] text-center" style={{ lineHeight: 20 }}>
-                {message}
-              </Text>
-            </FadeIn>
-          )}
-        </View>
-      </View>
-    </View>
-  );
-}
-
-function budgetCopy(percent, diff) {
-  if (percent > 100) {
-    return {
-      headline: `You went ${formatCurrency(diff)} over budget`,
-      message: 'Try to stick closer to your budget next month to stay on track.',
-      // Same bright red BudgetStatusBar's own over-budget percent uses
-      // right above this, not a separate dimmer red for the headline below it.
-      color: EXPENSE_HEX,
-    };
-  }
-  if (percent < 100) {
-    return {
-      headline: `You stayed ${formatCurrency(diff)} under budget`,
-      message: 'Great budgeting — keep sticking to it next month too.',
-      color: '#4ade80',
-    };
-  }
-  return {
-    headline: 'You spent exactly your budget',
-    message: 'Right on target — keep sticking to this budget.',
-    color: 'rgba(255,255,255,0.6)',
-  };
-}
-
-// Same title position/scale as the other slides — a compact budget card
-// (spent / budget, a fill bar, percent used) then the scenario message
-// below it, revealing a beat after the card itself.
-function BudgetSlide({ month, year, budgetAmount, budgetSpent, percent, paused }) {
-  const showMessage = usePausableReveal(paused, 1000);
-  const { headline, message, color } = budgetCopy(percent, Math.abs(budgetSpent - budgetAmount));
-
-  return (
-    <View className="flex-1 px-6">
-      <View className="items-center absolute" style={{ top: 100, left: 24, right: 24 }}>
-        <Text className="text-white/35 text-[13px] font-semibold uppercase tracking-wide text-center mb-2">
-          {MONTH_NAMES[month]} {year}
-        </Text>
-        <Text className="text-white text-xl font-semibold text-center uppercase">
-          Budget
-        </Text>
-      </View>
-
-      <View className="flex-1 items-center justify-center">
-        <View style={{ width: '90%' }}>
-          <BudgetStatusBar hasBudget amount={budgetAmount} spent={budgetSpent} percent={percent} />
-        </View>
-
-        {/* Reserves space for the message up front so the bar above
-            doesn't shift as it fades in. */}
-        <View className="mt-8" style={{ minHeight: 80, width: '100%' }}>
-          {showMessage && (
-            <FadeIn>
-              <Text className="font-semibold text-center mb-2" style={{ color, fontSize: FONT.title }}>
-                {headline}
-              </Text>
-              <Text className="text-white/60 text-[13px] text-center" style={{ lineHeight: 20 }}>
-                {message}
-              </Text>
-            </FadeIn>
-          )}
-        </View>
-      </View>
-    </View>
-  );
-}
-
-const CAL_DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-
-// Static (non-interactive) read-only month grid — same per-day spend-shade
-// coloring and legend as WalletPage's calendar, minus navigation
-// and day-tap selection, since this is a fixed snapshot of one past month.
-function CalendarGrid({ firstDay, days }) {
-  const cells = [];
-  for (let i = 0; i < firstDay; i++) cells.push(null);
-  days.forEach(d => cells.push(d));
-  while (cells.length % 7 !== 0) cells.push(null);
-  const weeks = [];
-  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
-
-  return (
-    <View className="rounded-2xl p-4" style={{ width: '100%' }}>
-      <View className="flex-row mb-1.5">
-        {CAL_DAYS.map((d, i) => (
-          <View key={i} style={{ flex: 1 }}>
-            <Text className="text-center text-white/35 text-[11px] font-medium">{d}</Text>
-          </View>
-        ))}
-      </View>
-
-      {weeks.map((week, wi) => (
-        <View key={wi} className="flex-row" style={{ gap: 5, marginBottom: 5 }}>
-          {week.map((d, i) => (
-            <View
-              key={i}
-              className="aspect-square items-center justify-center rounded-md"
-              style={{ flex: 1, backgroundColor: d ? d.bg : 'transparent' }}
-            >
-              {d && <Text style={{ color: d.color, fontSize: FONT.caption, fontWeight: '500' }}>{d.day}</Text>}
-            </View>
-          ))}
-        </View>
-      ))}
-
-      <View className="flex-row items-center justify-center mt-3" style={{ gap: 12 }}>
-        <View className="flex-row items-center" style={{ gap: 4 }}>
-          <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(34,197,94,0.5)' }} />
-          <Text className="text-white/35" style={{ fontSize: FONT.label }}>No spend</Text>
-        </View>
-        <View className="flex-row items-center" style={{ gap: 4 }}>
-          <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: 'rgba(255,75,75,0.5)' }} />
-          <Text className="text-white/35" style={{ fontSize: FONT.label }}>Spent</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-function noSpendPhrase(count) {
-  return `${count} No-spend day${count === 1 ? '' : 's'}`;
-}
-
-// Same title position/scale as the other slides — the reused-style calendar
-// grid first, then two staged lines: the plain spend/no-spend tally, then
-// how that compares to last month.
-function CalendarSlide({ firstDay, days, daysInMonth, spentDays, noSpendDays, prevMonth, prevYear, prevNoSpendDays, paused }) {
-  const showTally = usePausableReveal(paused, 600);
-  const showCompare = usePausableReveal(paused, 1800);
-  const prevLabel = `${MONTH_NAMES[prevMonth]} ${prevYear}`;
-
-  return (
-    <View className="flex-1 px-6">
-      <View className="items-center absolute" style={{ top: 100, left: 24, right: 24 }}>
-        <Text className="text-white/35 text-[13px] font-semibold uppercase tracking-wide text-center mb-2">
-          Last month — {noSpendPhrase(noSpendDays)}
-        </Text>
-        <Text className="text-white text-xl font-semibold text-center uppercase">
-          Calendar
-        </Text>
-      </View>
-
-      <View className="flex-1 items-center justify-center">
-        <View style={{ width: '90%' }}>
-          <CalendarGrid firstDay={firstDay} days={days} />
-        </View>
-
-        {/* Reserves space for both lines up front so the grid above
-            doesn't shift as they fade in. */}
-        <View className="mt-6" style={{ minHeight: 70, width: '100%' }}>
-          {showTally && (
-            <FadeIn>
-              <Text className="text-white/60 text-[13px] text-center" style={{ lineHeight: 20 }}>
-                You spent on {spentDays} of {daysInMonth} days —{' '}
-                <Text style={{ color: '#4ade80', fontWeight: '700' }}>{noSpendPhrase(noSpendDays)}</Text>.
-              </Text>
-            </FadeIn>
-          )}
-          {showCompare && (
-            <FadeIn style={{ marginTop: 8 }}>
-              <Text className="text-[13px] text-center" style={{ lineHeight: 20, color: 'rgba(255,255,255,0.5)' }}>
-                {prevLabel} —{' '}
-                <Text style={{ color: '#4ade80', fontWeight: '700' }}>{noSpendPhrase(prevNoSpendDays)}</Text>
-              </Text>
-            </FadeIn>
-          )}
-        </View>
-      </View>
-    </View>
-  );
-}
-
-// Closing card — same simple centered treatment as the opening TitleSlide
-// (no pinned-top header, since there's no chart/grid to anchor), ending on
-// encouragement rather than another number, plus a CTA straight into
-// setting up next month's budget.
-function ClosingSlide({ onOpenBudgetSetup, hasBudgetThisMonth }) {
-  return (
-    <View className="flex-1 items-center justify-center px-8">
-      <View style={{ marginTop: -20, alignItems: 'center' }}>
-        <Text className="text-white/35 text-[13px] font-semibold text-center mb-2">
-          Before you go Remember
-        </Text>
-        <Text className="text-xl font-semibold text-center mb-3" style={{ color: '#4ade80', lineHeight: 26 }}>
-          Savings is the real Earnings
-        </Text>
-        <Text className="text-white/60 text-[13px] text-center" style={{ lineHeight: 20, maxWidth: 280, marginBottom: hasBudgetThisMonth ? 0 : 32 }}>
-          Each Rupee you save now — will save you in the Future
-        </Text>
-
-        {!hasBudgetThisMonth && (
-          <GlassPressable variant="active" radius={9999} onPress={onOpenBudgetSetup} className="px-6 py-[14px]">
-            <Text className="text-black text-base font-semibold">Set This Month's Budget</Text>
-          </GlassPressable>
+    // "You spent" and the amount read as one phrase, so they sit close together.
+    <Frame title="You spent" gap={6}>
+      <View style={{ alignItems: 'center' }}>
+        <Reveal step={1}>
+          <Text style={{ fontSize: FONT.display, lineHeight: 52, fontWeight: '400', letterSpacing: -1.75, color: darkText.primary, ...TABULAR }}>{money(spent)}</Text>
+        </Reveal>
+        {prevSpent > 0 && diff !== 0 && (
+          <Reveal step={2}>
+            <Text style={{ fontSize: FONT.caption, marginTop: 8, color: diff < 0 ? INCOME_HEX : EXPENSE_HEX }}>
+              {diff < 0 ? `${money(-diff)} less than ${prevLabel}` : `${money(diff)} more than ${prevLabel}`}
+            </Text>
+          </Reveal>
         )}
       </View>
-    </View>
+      {hasBudget && (
+        <Reveal step={3} style={{ marginTop: 40 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={{ fontSize: FONT.caption, color: darkText.secondary }}>Budget {money(budgetAmount)}</Text>
+            {overBy > 0 && <Text style={{ fontSize: FONT.caption, color: EXPENSE_HEX }}>{money(overBy)} over</Text>}
+            {underBy > 0 && <Text style={{ fontSize: FONT.caption, color: INCOME_HEX }}>{money(underBy)} left</Text>}
+          </View>
+          <Bar percent={budgetAmount > 0 ? (spent / budgetAmount) * 100 : 100} color={overBy > 0 ? EXPENSE_HEX : INCOME_HEX} />
+        </Reveal>
+      )}
+    </Frame>
   );
 }
 
-function Slide({ slide, paused, onOpenBudgetSetup }) {
+// 2 and 3. Up to three facts, each with a tick or an alert icon. A line can carry a `tip`
+// (what to do about it), shown in grey under it.
+function LinesSlide({ title, lines, tone }) {
+  return (
+    <Frame title={title}>
+      {/* The list is centred on the slide as one block, its lines still reading from
+          the left. Narrower than the slide, so long lines wrap and the block still
+          reads as centred rather than filling the width. */}
+      <View style={{ alignSelf: 'center', maxWidth: '86%' }}>
+        {lines.map((item, i) => {
+          const line = typeof item === 'string' ? { text: item } : item;
+          return (
+          <Reveal key={line.text} step={i + 1} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: line.tip ? 22 : 18 }}>
+            <View style={{ width: 16, height: 20, alignItems: 'center', justifyContent: 'center' }}>
+              {tone === 'good'
+                ? <CheckIcon size={14} color={INCOME_HEX} />
+                : <Feather name="alert-circle" size={15} color={AMBER} />}
+            </View>
+            <View style={{ flexShrink: 1 }}>
+              <Text style={{ fontSize: FONT.body, lineHeight: 22, color: darkText.primary }}>{line.text}</Text>
+              {!!line.tip && <Text style={{ fontSize: FONT.caption, lineHeight: 19, color: darkText.secondary, marginTop: 3 }}>{line.tip}</Text>}
+            </View>
+          </Reveal>
+          );
+        })}
+      </View>
+    </Frame>
+  );
+}
+
+// 4. EMIs, the closest goal and the debt-free date, as small cards.
+function BiggerSlide({ cards }) {
+  return (
+    <Frame title="Your bigger picture">
+      {cards.map((c, i) => (
+        <Reveal key={c.label} step={i + 1} style={{ backgroundColor: cardFill(false), borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 10 }}>
+          <Text style={{ fontSize: FONT.caption, color: darkText.tertiary }}>{c.label}</Text>
+          <Text style={{ fontSize: FONT.body, fontWeight: '500', color: darkText.primary, marginTop: 2 }}>{c.value}</Text>
+          {c.percent != null && <Bar percent={c.percent} color={c.tone === 'amber' ? AMBER : INCOME_HEX} />}
+          {!!c.note && <Text style={{ fontSize: FONT.caption, color: darkText.tertiary, marginTop: 2 }}>{c.note}</Text>}
+        </Reveal>
+      ))}
+    </Frame>
+  );
+}
+
+// 5. One closing message. It is picked when the summary opens (see useSummaryMessage), so
+// it is already there when this slide appears instead of popping in a moment later.
+function MessageSlide({ message, needsBudget, onOpenBudgetSetup }) {
+  // The title is there at once; the message follows as soon as it has been picked.
+  if (!message) return <Frame title="One last thing" quiet lower={110}><View /></Frame>;
+  return (
+    <Frame title="One last thing" quiet lower={110}>
+      {/* The message is what this slide is for, so it comes in at once and quickly. */}
+      <Reveal duration={400}>
+        <Text style={{ fontSize: FONT.body, lineHeight: 24, color: darkText.primary, textAlign: 'center' }}>{message.text}</Text>
+      </Reveal>
+      {(needsBudget || message.action === 'budget') && (
+        <Reveal step={1} duration={400} style={{ alignItems: 'center', marginTop: 28 }}>
+          <GlassPressable variant="active" radius={9999} onPress={onOpenBudgetSetup} className="px-6 py-[14px]">
+            <Text style={{ fontSize: FONT.body, fontWeight: '600', color: '#000000' }}>Set budget</Text>
+          </GlassPressable>
+        </Reveal>
+      )}
+    </Frame>
+  );
+}
+
+// Picks the closing message for this summary: the same month always gets the same one, and
+// a new month avoids what was shown lately (see summaryMessages.js).
+function useSummaryMessage(open, slides) {
+  const { user } = useAuth();
+  const [message, setMessage] = useState(null);
+  const slide = slides.find(s => s.type === 'message');
+  useEffect(() => {
+    if (!open || !slide) { setMessage(null); return undefined; }
+    let cancelled = false;
+    (async () => {
+      const key = storageKeys.summaryHistory(user?.id);
+      let history = EMPTY_SUMMARY_HISTORY;
+      try {
+        const raw = await AsyncStorage.getItem(key);
+        if (raw) history = { ...EMPTY_SUMMARY_HISTORY, ...JSON.parse(raw) };
+      } catch { /* a history that can't be read only means a message may repeat sooner */ }
+      const picked = pickSummaryMessage(slide.candidates, history, slide.monthId);
+      if (cancelled) return;
+      setMessage(picked.message);
+      if (picked.history !== history) AsyncStorage.setItem(key, JSON.stringify(picked.history)).catch(reportError);
+    })();
+    return () => { cancelled = true; };
+  }, [open, slide, user?.id]);
+  return message;
+}
+
+function Slide({ slide, message, onOpenBudgetSetup }) {
   switch (slide.type) {
-    case 'title': return <TitleSlide month={slide.month} year={slide.year} />;
-    case 'daily-chart': return <DailyChartSlide {...slide} paused={paused} />;
-    case 'monthly-chart': return <MonthlyChartSlide {...slide} paused={paused} />;
-    case 'overview': return <OverviewSlide {...slide} paused={paused} />;
-    case 'budget': return <BudgetSlide {...slide} paused={paused} />;
-    case 'calendar': return <CalendarSlide {...slide} paused={paused} />;
-    case 'closing': return <ClosingSlide {...slide} onOpenBudgetSetup={onOpenBudgetSetup} />;
+    case 'intro': return <IntroSlide {...slide} />;
+    case 'spent': return <SpentSlide {...slide} />;
+    case 'wins': return <LinesSlide {...slide} title="What went well" tone="good" />;
+    case 'improve': return <LinesSlide {...slide} title="What to improve" tone="watch" />;
+    case 'bigger': return <BiggerSlide {...slide} />;
+    case 'message': return <MessageSlide message={message} needsBudget={slide.needsBudget} onOpenBudgetSetup={onOpenBudgetSetup} />;
     default: return null;
   }
 }
 
-function MonthlyRecapModal({ open, slides, onClose, onOpenBudgetSetup }) {
+function MonthlyRecapModal({ open, slides, instant = false, onClose, onOpenBudgetSetup }) {
   const { width } = useWindowDimensions();
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -633,9 +286,44 @@ function MonthlyRecapModal({ open, slides, onClose, onOpenBudgetSetup }) {
   const startedAtRef = useRef(0);
   const timedIndexRef = useRef(-1);
   const pressRef = useRef({ time: 0, x: 0 });
+  const message = useSummaryMessage(open, slides);
+  // A slide plays its lines in the first time it is reached; after that (going back, or
+  // forward again over it) it shows them already in place, until the summary is reopened.
+  const seenUpToRef = useRef(-1);
+  const firstVisit = index > seenUpToRef.current;
+  useEffect(() => { seenUpToRef.current = Math.max(seenUpToRef.current, index); }, [index]);
+
+  const pageX = useSharedValue(width);
+  const closingRef = useRef(false);
+  useEffect(() => {
+    if (!open) return;
+    closingRef.current = false;
+    // Opened from a notification, it is simply there (the backdrop was already showing);
+    // otherwise it slides in from the right.
+    pageX.value = instant ? 0 : width;
+    if (!instant) pageX.value = withSpring(0, PAGE_SPRING);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  const finishClose = useCallback(() => onClose(), [onClose]);
+  // Slides back out to the right, then tells the parent it is closed.
+  const requestClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    pageX.value = withSpring(width, PAGE_SPRING, finished => {
+      if (finished) runOnJS(finishClose)();
+    });
+  }, [pageX, width, finishClose]);
+  const pageStyle = useAnimatedStyle(() => ({ transform: [{ translateX: pageX.value }] }));
+
+  // The hardware back button closes the summary, rather than leaving the app from under it.
+  useEffect(() => {
+    if (!open) return undefined;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => { requestClose(); return true; });
+    return () => sub.remove();
+  }, [open, requestClose]);
 
   useEffect(() => {
-    if (open) { setIndex(0); setPaused(false); }
+    if (open) { seenUpToRef.current = -1; setIndex(0); setPaused(false); }
   }, [open]);
 
   useEffect(() => {
@@ -647,18 +335,18 @@ function MonthlyRecapModal({ open, slides, onClose, onOpenBudgetSetup }) {
     if (paused) { clearTimeout(timerRef.current); return; }
     startedAtRef.current = Date.now();
     timerRef.current = setTimeout(() => {
-      if (index >= slides.length - 1) onClose();
+      if (index >= slides.length - 1) requestClose();
       else setIndex(index + 1);
     }, remainingRef.current);
     return () => clearTimeout(timerRef.current);
-  }, [open, index, slides.length, onClose, paused]);
+  }, [open, index, slides.length, requestClose, paused]);
 
   if (!open || !slides.length) return null;
 
   const slide = slides[index];
 
   function goTo(i) {
-    if (i < 0 || i >= slides.length) { onClose(); return; }
+    if (i < 0 || i >= slides.length) { requestClose(); return; }
     setIndex(i);
   }
 
@@ -679,7 +367,9 @@ function MonthlyRecapModal({ open, slides, onClose, onOpenBudgetSetup }) {
   }
 
   return (
-    <View className="absolute inset-0" style={{ backgroundColor: '#000000', zIndex: 70 }}>
+    // Above everything on Home, the wallet page included (it opens from there too).
+    <Animated.View className="absolute inset-0" style={[{ backgroundColor: '#000000', zIndex: 250, elevation: 250 }, pageStyle]}>
+      <Image source={BACKGROUND} contentFit="cover" pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: BACKGROUND_OPACITY }]} />
       <View className="flex-row px-3 pt-14" style={{ gap: 6 }}>
         {slides.map((s, i) => (
           <ProgressSegment key={i} state={i < index ? 'done' : i === index ? 'active' : 'pending'} paused={paused} />
@@ -690,16 +380,22 @@ function MonthlyRecapModal({ open, slides, onClose, onOpenBudgetSetup }) {
           than sharing its row — sits outside the full-screen tap area
           below (a sibling, not an overlay), so it's always reachable
           regardless of hold/tap state. */}
-      <View className="flex-row justify-end px-3" style={{ paddingTop: 10 }}>
-        <Pressable onPress={onClose} hitSlop={10}>
+      <View className="flex-row items-center justify-between px-3" style={{ paddingTop: 10 }}>
+        {/* Where the account name sits on a story: the month this summary is about. */}
+        <Text style={{ fontSize: FONT.caption, fontWeight: '500', color: darkText.secondary, paddingLeft: 2 }}>{slides[0]?.monthLabel} {slides[0]?.year} summary</Text>
+        <Pressable onPress={requestClose} hitSlop={10}>
           <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 24 }}>✕</Text>
         </Pressable>
       </View>
 
       <Pressable className="flex-1" onPressIn={handlePressIn} onPressOut={handlePressOut}>
-        <Slide slide={slide} paused={paused} onOpenBudgetSetup={onOpenBudgetSetup} />
+        {/* Keyed by position, so a slide that reuses the last one's layout (What went
+            well, then What to improve) still plays its lines in from the start. */}
+        <RevealContext.Provider value={firstVisit}>
+          <Slide key={index} slide={slide} message={message} onOpenBudgetSetup={onOpenBudgetSetup} />
+        </RevealContext.Provider>
       </Pressable>
-    </View>
+    </Animated.View>
   );
 }
 
