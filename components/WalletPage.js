@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, InteractionManager, View, Text, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS, Easing } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring, runOnJS, Easing } from 'react-native-reanimated';
 import { BackIcon } from './icons';
 import SegmentedSwitch from './SegmentedSwitch';
 import SavingsSection, { SavingsSheetsHost, useSavingsUI } from './SavingsSection';
@@ -15,9 +15,9 @@ import { FONT } from '../utils/type';
 // user's own numbers (first, and where the page opens), savings goals, and debt
 // (loans tracked the same way as a savings goal, just paid down instead of built
 // up — see savingsShared.js's KIND_COPY and useSavings.js's own comment on how one
-// goal shape covers both). The budget lives on Home now, under the amount.
+// goal shape covers both).
 const SECTIONS = [
-  { id: 'summary', label: 'Summary' },
+  { id: 'summary', label: 'Insights' },
   { id: 'savings', label: 'Savings' },
   { id: 'debt', label: 'Debt' },
 ];
@@ -29,7 +29,10 @@ const SECTION_FADE_MS = 220;
 // right), which is why this was once exported — that turned out to read as
 // juddery rather than synchronized, so Home now stays put and only this
 // page moves.
-const WALLET_SLIDE_DURATION = 480;
+// A critically damped spring rather than SETTLE_EASING, which covers most of the screen
+// in its first ~100ms, so a frame dropped as the page re-renders on open showed as a
+// stutter. This starts gently and settles like the native push the Settings page uses.
+const WALLET_SLIDE_SPRING = { duration: 500, dampingRatio: 1, overshootClamping: true };
 // `light` is a one-off experimental prop for trying a light theme on just
 // the Dashboard (and the flows it opens) — see the matching comment in
 // Header.js.
@@ -177,8 +180,10 @@ function WalletPage({ open, onClose, onClosed, savings, transactions, budgetAmou
   useEffect(() => {
     if (open) {
       // Always opens on the summary, where the page's one piece of motion plays.
-      changeSection('summary');
-      pageTranslateX.value = withTiming(0, { duration: WALLET_SLIDE_DURATION, easing: SETTLE_EASING });
+      // Only when it isn't already there: a no-op change still costs a render
+      // right as the slide starts.
+      if (section !== 'summary' || detailGoalId != null || detailDebtId != null) changeSection('summary');
+      pageTranslateX.value = withSpring(0, WALLET_SLIDE_SPRING);
     } else {
       // Back to the list, sheet away — the page reopens fresh, not on
       // whichever goal or sheet it was closed from.
@@ -188,9 +193,9 @@ function WalletPage({ open, onClose, onClosed, savings, transactions, budgetAmou
       savingsUI.closeConfirm();
       debtUI.closeSheet();
       debtUI.closeConfirm();
-      pageTranslateX.value = withTiming(
+      pageTranslateX.value = withSpring(
         windowWidth,
-        { duration: WALLET_SLIDE_DURATION, easing: SETTLE_EASING },
+        WALLET_SLIDE_SPRING,
         finished => {
           if (finished && onClosed) runOnJS(onClosed)();
         },

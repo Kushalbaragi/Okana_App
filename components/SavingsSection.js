@@ -495,6 +495,25 @@ function emiSpan(g) {
   return { start, end: Math.max(start, end), amount: g.emiAmount };
 }
 
+// The month an EMI loan was cleared, when that is before its last scheduled EMI;
+// null otherwise. A lump sum paid then would dwarf the other months' bars, so the
+// chart stays on the schedule and the amount is shown on the loan's card instead.
+function earlyCloseMonth(g) {
+  if (!g.completedAt || g.debtType !== 'emi' || !g.firstEmiDate || !(g.tenureMonths > 0)) return null;
+  const d = new Date(g.completedAt);
+  const closed = d.getFullYear() * 12 + d.getMonth();
+  return closed < monthIndexOf(g.firstEmiDate) + g.tenureMonths - 1 ? closed : null;
+}
+
+// "Closed early", with what was paid that month when the loan has payments logged then.
+function earlyCloseNote(g, month) {
+  if (earlyCloseMonth(g) !== month) return undefined;
+  const paid = (g.entries || [])
+    .filter(e => monthIndexOf(e.date) === month)
+    .reduce((sum, e) => sum + (e.type === 'add' ? e.amount : -e.amount), 0);
+  return paid > 0 ? `Closed early · ${money(paid)}` : 'Closed early';
+}
+
 // EMI debt's own circle tracker: a year x month grid of which EMIs are paid.
 // A loan is a schedule, so this fills in schedule order — the first
 // `emisPaid` months of it — rather than against the date any individual
@@ -1195,52 +1214,61 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
   return (
     <View style={{ flex: 1 }}>
       <Animated.View style={[StyleSheet.absoluteFill, listStyle]} pointerEvents={detailOpen ? 'none' : 'auto'}>
+        {/* Headline and chart stay put; only the loans/goals below them scroll,
+            and only when they don't fit. */}
+        {!isEmpty && (
+          <View style={{ paddingHorizontal: GUTTER, paddingTop: 8 }}>
+            {/* The same size and weight as Home's own headline figure
+                (SummaryCard's HEADLINE_TEXT_STYLE), centred with its
+                caption underneath. Shrinks to fit a very large amount. */}
+            <View style={{ alignItems: 'center', paddingHorizontal: 8, paddingTop: 20, paddingBottom: 32 }}>
+              <Text
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                style={{ fontSize: FONT.display, lineHeight: 52, fontWeight: '400', letterSpacing: -1.75, textAlign: 'center', color: textColor(light).primary, ...TABULAR }}
+              >
+                {money(totalSaved)}
+              </Text>
+              <Text style={{ fontSize: FONT.body, color: textColor(light).tertiary, marginTop: 4 }}>{copy.heroCaption}</Text>
+            </View>
+
+            {/* What all the EMIs add up to, month by month, between the headline and
+                the loans it is made of. */}
+            {listChart && (
+              <View style={{ marginBottom: 16 }}>
+                <SectionLabel light={light}>{kind === 'debt' ? 'Monthly EMI' : copy.monthlyTitle}</SectionLabel>
+                <Card light={light}>
+                  <View style={{ paddingTop: 22, paddingBottom: 16 }}>
+                    <MonthSlider key={chartKey} months={listChart.months} initialIndex={listChart.initialIndex} light={light} label={kind === 'debt' ? 'EMIs paid by month' : 'Savings by month'} onSettle={kind === 'debt' ? onChartSettle : undefined} currentIndex={kind === 'debt' ? listChart.currentIndex : listChart.initialIndex} />
+                  </View>
+                </Card>
+              </View>
+            )}
+          </View>
+        )}
         <ScrollView
+          style={{ flex: 1 }}
           showsVerticalScrollIndicator={false}
+          alwaysBounceVertical={false}
           onScrollBeginDrag={swipes.closeOpen}
           // GUTTER (20), not 16 — matches the goal detail page's own
           // paddingHorizontal below, and the app's screen edge everywhere
           // else. Was the one screen still at 16.
-          contentContainerStyle={{ paddingHorizontal: GUTTER, paddingTop: 8, paddingBottom: 148 }}
+          contentContainerStyle={{ paddingHorizontal: GUTTER, paddingTop: isEmpty ? 8 : 0, paddingBottom: 148 }}
         >
           {isEmpty ? (
             <EmptyState light={light} kind={kind} />
           ) : (
             <>
-              {/* The same size and weight as Home's own headline figure
-                  (SummaryCard's HEADLINE_TEXT_STYLE), centred with its
-                  caption underneath. Shrinks to fit a very large amount. */}
-              <View style={{ alignItems: 'center', paddingHorizontal: 8, paddingTop: 20, paddingBottom: 32 }}>
-                <Text
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  style={{ fontSize: FONT.display, lineHeight: 52, fontWeight: '400', letterSpacing: -1.75, textAlign: 'center', color: textColor(light).primary, ...TABULAR }}
-                >
-                  {money(totalSaved)}
-                </Text>
-                <Text style={{ fontSize: FONT.body, color: textColor(light).tertiary, marginTop: 4 }}>{copy.heroCaption}</Text>
-              </View>
-
-              {/* What all the EMIs add up to, month by month, between the headline and
-                  the loans it is made of. */}
-              {listChart && (
-                <View style={{ marginBottom: 16 }}>
-                  <SectionLabel light={light}>{kind === 'debt' ? 'Monthly EMI' : copy.monthlyTitle}</SectionLabel>
-                  <Card light={light}>
-                    <View style={{ paddingVertical: 16 }}>
-                      <MonthSlider key={chartKey} months={listChart.months} initialIndex={listChart.initialIndex} light={light} label={kind === 'debt' ? 'EMIs paid by month' : 'Savings by month'} onSettle={kind === 'debt' ? onChartSettle : undefined} currentIndex={kind === 'debt' ? listChart.currentIndex : listChart.initialIndex} />
-                    </View>
-                  </Card>
-                </View>
-              )}
-
               {/* Outside the fading block, so only the number changes with the month. */}
               {shownGoals.length > 0 && (
                 <SectionLabel light={light}>{kind === 'debt' ? 'Loans' : 'Goals'} · {shownGoals.length}</SectionLabel>
               )}
-              <View>
-                {shownGoals.map(g => <GoalCard key={g.id} goal={g} {...cardProps} done={browsing && !!g.completedAt} still={hasBrowsed.current} />)}
-              </View>
+              {shownGoals.length > 0 && (
+                <Card light={light}>
+                  {shownGoals.map((g, i) => <GoalCard key={g.id} goal={g} {...cardProps} done={browsing && !!g.completedAt} note={browsing ? earlyCloseNote(g, pickedMonth) : undefined} divider={i < shownGoals.length - 1} still={hasBrowsed.current} />)}
+                </Card>
+              )}
 
               {!browsing && completedGoals.length > 0 && (
                 <>
@@ -1258,7 +1286,9 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
                   </Pressable>
                   {showCompleted && (
                     <Animated.View entering={FadeIn.duration(SWAP_MS)}>
-                      {completedGoals.map(g => <GoalCard key={g.id} goal={g} {...cardProps} done />)}
+                      <Card light={light}>
+                        {completedGoals.map((g, i) => <GoalCard key={g.id} goal={g} {...cardProps} done divider={i < completedGoals.length - 1} />)}
+                      </Card>
                     </Animated.View>
                   )}
                 </>

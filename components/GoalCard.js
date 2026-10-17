@@ -1,10 +1,10 @@
 import { memo, useCallback } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { GlassPressable } from './Glass';
 import { CheckIcon, ChevronRight } from './icons';
 import { SwipeRow } from './SwipeDeleteAction';
-import { Card, ProgressBar, POSITIVE, dim, money } from './savingsShared';
+import { ProgressBar, POSITIVE, cardFill, dim, money } from './savingsShared';
 import { textColor } from '../utils/colors';
 import { TABULAR, FONT } from '../utils/type';
 
@@ -12,10 +12,11 @@ import { TABULAR, FONT } from '../utils/type';
 // place, so the removal is something you see happen.
 const REMOVE_MS = 240;
 
-// A goal or loan on the list, as a card of its own, laid out like the budget card
-// on the same page: the name on the left in the normal text colour, a quiet figure
-// opposite it (what has been saved, or what is still owed), and a thin bar under
-// them. Deliberately nothing else — the rest is on its own page.
+// A goal or loan on the list, one row of the page's single grouped card (the list wraps
+// them in one Card; `divider` draws the line under this row): the name on the left in the
+// normal text colour, a quiet figure opposite it (what has been saved, or what is still
+// owed), and a thin bar under them. Deliberately nothing else — the rest is on its own
+// page.
 //
 // Swiping it left reveals a delete button, which asks `onDelete` right away (the
 // caller confirms — a goal takes its history with it). `registerSwipeable`,
@@ -25,7 +26,7 @@ const REMOVE_MS = 240;
 //
 // A finished goal (`done`) is the same card with a tick by the name, dimmer
 // name and no figure or bar: it is done, so the list stays quieter for it.
-function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light = false, done = false, still = false }) {
+function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onCardPress, light = false, done = false, note, divider = false, still = false }) {
   // A tap that closed an open card is spent on that, so it doesn't also open
   // the goal behind the closing swipe.
   const handlePress = useCallback(() => {
@@ -40,8 +41,10 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
     ? `${goal.name}, ${isDebt ? 'cleared' : 'completed'}`
     : `${goal.name}, ${money(figure)} ${isDebt ? 'left' : 'saved'}`;
 
+  // Paints the card's own fill, so a swiped-open row doesn't show its delete button
+  // through itself.
   const card = (
-    <Card light={light}>
+    <View style={{ backgroundColor: cardFill(light) }}>
       <GlassPressable
         variant="field"
         pressScale={false}
@@ -58,6 +61,7 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
           <View className="flex-row items-center" style={{ gap: 8 }}>
             <CheckIcon size={14} color={POSITIVE} />
             <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: FONT.body, fontWeight: '400', color: dim(light, 0.5) }}>{goal.name}</Text>
+            {!!note && <Text style={{ marginLeft: 'auto', fontSize: FONT.caption, color: textColor(light).tertiary }}>{note}</Text>}
           </View>
         ) : (
           <>
@@ -75,12 +79,12 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
           </>
         )}
       </GlassPressable>
-    </Card>
+      {divider && <View style={{ height: StyleSheet.hairlineWidth, marginHorizontal: 20, backgroundColor: light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }} />}
+    </View>
   );
 
   return (
     <Animated.View
-      style={{ marginBottom: 10 }}
       layout={LinearTransition.duration(REMOVE_MS)}
       // `still` marks a list that changes under an open page (the debt chart's month
       // moving): a card that was already there stays untouched, and only one that

@@ -1197,7 +1197,7 @@ export default function AccountPage() {
 
       <InfoModal open={modal === 'reminder'} title="Daily Reminder" onClose={() => setModal(null)}>
         <Text className="text-base mb-4" style={{ lineHeight: 22, color: textColor(LIGHT_SETTINGS).tertiary }}>
-          A quiet nudge each evening to log what you spent.
+          Get a reminder to add your daily expenses.
         </Text>
         <Card>
           <Row label="Off" onPress={() => chooseReminder(null)} right={reminderHour == null ? <CheckIcon size={16} color={textColor(LIGHT_SETTINGS).tertiary} /> : <View />} />

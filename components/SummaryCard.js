@@ -10,9 +10,8 @@ import {
   getEarliestDate,
   firstBarWithData,
   currentMonthYear,
-  formatCurrency,
 } from '../utils/format';
-import { textColor, EXPENSE_HEX } from '../utils/colors';
+import { textColor } from '../utils/colors';
 import { CAPTION, TABULAR, FONT } from '../utils/type';
 
 import { MONTH_NAMES } from '../utils/monthlyRecap';
@@ -138,30 +137,11 @@ function PeriodCaption({ periodLabel, light }) {
   );
 }
 
-// One line under the headline amount: what is left of this month's budget ("₹4,000
-// budget left"), or, once spent passes it, what it is over by in red. With no
-// budget set it offers to set one. Tapping it opens the budget sheet. It always
-// takes its line (a non-breaking space when there is nothing to say) so the chart
-// below doesn't slide up and down as it comes and goes.
-function BudgetLine({ budget, onPress, light }) {
-  if (!budget || budget.loading) return <Text style={{ fontSize: FONT.caption, marginTop: 6 }}>{'\u00A0'}</Text>;
-  const over = budget.hasBudget && budget.spent > budget.amount;
-  const text = !budget.hasBudget
-    ? 'Set a budget ›'
-    : over
-      ? `${formatCurrency(budget.spent - budget.amount)} over budget`
-      : `${formatCurrency(budget.amount - budget.spent)} budget left`;
-  return (
-    <Pressable onPress={onPress} hitSlop={10} accessibilityRole="button" accessibilityLabel={text}>
-      <Text style={{ fontSize: FONT.caption, fontWeight: '400', marginTop: 6, color: over ? EXPENSE_HEX : textColor(light).tertiary, letterSpacing: -0.3, ...TABULAR }}>{text}</Text>
-    </Pressable>
-  );
-}
-
-// Shown only while a Year/All bar is picked: how that bar's amount moved against the
-// bar before it ("↑ 12% vs March"). Nothing when there is no earlier bar or it was
-// zero, since a percentage of zero means nothing. It always takes its line, like
-// the budget line, so the chart doesn't shift when it appears.
+// One line under the headline amount: how the amount moved against the one before it
+// ("↑ 12% vs March"). On Year/All that is the picked bar against the bar before it; on
+// Month it is this month so far against last month up to the same day. Nothing when
+// there is nothing earlier to compare with or it was zero, since a percentage of zero
+// means nothing. It always takes its line so the chart doesn't shift when it appears.
 function ChangeLine({ change, light }) {
   if (!change) return <Text style={{ fontSize: FONT.caption, marginTop: 6 }}>{'\u00A0'}</Text>;
   return (
@@ -179,8 +159,6 @@ function SummaryCard({
   onTimeRangeChange,
   mode,
   year,
-  budget,
-  onBudgetPress,
   light = false,
 }) {
   const { month: currMonth, year: currYear } = currentMonthYear();
@@ -294,7 +272,21 @@ function SummaryCard({
   // January's earlier bar is last year's December, which isn't in the chart, so it
   // is looked up on its own.
   const change = useMemo(() => {
-    if (picked == null || timeRange === 'month') return null;
+    if (timeRange === 'month') {
+      // Only the whole month, on Expense (Income has no month view). Last month is cut
+      // at the same day of the month, so the first half of a month isn't set against a
+      // whole one and always read as "less".
+      if (picked != null || mode !== 'expense') return null;
+      const prevMonth = (currMonth + 11) % 12;
+      const prevYear = currMonth === 0 ? currYear - 1 : currYear;
+      const today = new Date().getDate();
+      const sum = arr => arr.reduce((a, b) => a + b, 0);
+      const cur = sum(chartData.expense.slice(0, today));
+      const prev = sum(getDailyTotals(transactions, prevMonth, prevYear).expense.slice(0, today));
+      if (!prev) return null;
+      return { pct: Math.round(((cur - prev) / prev) * 100), label: MONTH_NAMES[prevMonth] };
+    }
+    if (picked == null) return null;
     const cur = barValues[picked];
     if (cur == null) return null;
     let prev;
@@ -309,7 +301,7 @@ function SummaryCard({
     }
     if (!prev) return null;
     return { pct: Math.round(((cur - prev) / prev) * 100), label };
-  }, [picked, timeRange, barValues, chartData, transactions, year, mode]);
+  }, [picked, timeRange, barValues, chartData, transactions, year, mode, currMonth, currYear]);
 
   // The bars grow up from the baseline, one after another, whenever the chart
   // becomes a different chart: a mode switch (Expense/Income) or a range change
@@ -374,13 +366,7 @@ function SummaryCard({
 
           <AnimatedAmount value={Math.abs(headlineValue)} color={headlineColor} />
 
-          {/* This month's budget, only where it means something: the month view, on
-              Expense, with the whole month showing rather than one tapped day. */}
-          {timeRange === 'month' && mode === 'expense' && picked == null ? (
-            <BudgetLine budget={budget} onPress={onBudgetPress} light={light} />
-          ) : (
-            <ChangeLine change={change} light={light} />
-          )}
+          <ChangeLine change={change} light={light} />
         </View>
 
         <View style={{ position: 'relative' }}>

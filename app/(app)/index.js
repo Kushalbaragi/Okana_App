@@ -12,6 +12,7 @@ import { useTransactions } from '../../hooks/useTransactions';
 import { useBudget } from '../../hooks/useBudget';
 import { useSavings } from '../../hooks/useSavings';
 import { useWidgetSync } from '../../hooks/useWidgetSync';
+import { useReminderDefaults } from '../../hooks/useReminderDefaults';
 import { useSubscription } from '../../hooks/useSubscription';
 import { getSubscriptionDisplayStatus } from '../../utils/trial';
 import { storageKeys } from '../../utils/storageKeys';
@@ -232,6 +233,8 @@ export default function Dashboard() {
   const [budgetSetupOpen, setBudgetSetupOpen] = useState(false);
   const [budgetSetupPending, setBudgetSetupPending] = useState(false);
   const [dailyPopupsResolved, setDailyPopupsResolved] = useState(false);
+  // The daily reminder comes on by default once, after the day's popups have cleared.
+  useReminderDefaults({ ready: dailyPopupsResolved && !!user, name: user?.user_metadata?.name });
 
   const [proRequired, setProRequired] = useState(false);
 
@@ -484,16 +487,6 @@ export default function Dashboard() {
     setTimeout(() => { askForReviewIfDue(user?.id, { maxAsks: 1 }); }, 900);
   }, [user?.id]);
 
-  // What the line under the headline amount needs: whether there is a budget, its
-  // amount and what has been spent against it this month.
-  const budgetLine = useMemo(() => ({
-    loading: budget.loading,
-    hasBudget: budget.hasBudget,
-    amount: budget.amount,
-    spent: budget.spentThisMonth,
-  }), [budget.loading, budget.hasBudget, budget.amount, budget.spentThisMonth]);
-  const openBudgetSetup = useCallback(() => setBudgetSetupOpen(true), []);
-
   // Switching tabs itself is instant — every bar in the chart fully
   // remounts (a fresh, genuinely-new instance, not a reused one) whenever
   // its period changes, which is what actually fixed the old "wrong candle
@@ -508,15 +501,27 @@ export default function Dashboard() {
     if (next === 'year') setYear(currYear);
   }, [currYear]);
 
-  // Income never shows Month — a daily income figure is mostly
-  // zeros with one payday spike, so it doesn't tell you anything at that
-  // granularity (see SummaryCard's own skip in its swipe handler). Tapping
-  // straight into one of those two modes while already on Month has to
-  // bump the range up too, since there's no swipe involved to do it there.
+  // Switching between Expense and Income starts the chart over, whichever range it was
+  // left on: on 1M for Expense, and on 1Y for Income, which has no month view (a daily
+  // income figure is mostly zeros with one payday spike, so it says nothing at that
+  // granularity). Picking the mode that is already showing changes nothing.
   const handleModeChange = useCallback((next) => {
+    if (next === mode) return;
     setMode(next);
-    if (next !== 'expense' && timeRange === 'month') handleTimeRangeChange('year');
-  }, [timeRange, handleTimeRangeChange]);
+    handleTimeRangeChange(next === 'expense' ? 'month' : 'year');
+  }, [mode, handleTimeRangeChange]);
+
+  // The chart always opens on 1M: coming back to Home from another screen (Settings,
+  // Subscription, ...) starts it over, rather than on whichever range it was left on.
+  // Income has no 1M view, so it starts on 1Y.
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  useFocusEffect(
+    useCallback(() => {
+      setTimeRange(modeRef.current === 'expense' ? 'month' : 'year');
+      setYear(currYear);
+    }, [currYear]),
+  );
 
   const openAdd = useCallback(() => {
     if (trialInfo.status === 'expired' || trialInfo.status === 'not_started') { setProRequired(true); return; }
@@ -716,8 +721,6 @@ export default function Dashboard() {
           onTimeRangeChange={handleTimeRangeChange}
           mode={mode}
           year={year}
-          budget={budgetLine}
-          onBudgetPress={openBudgetSetup}
           light={LIGHT_HOME}
         />
       </SectionBoundary>

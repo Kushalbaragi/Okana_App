@@ -80,6 +80,8 @@ const ARM_AFTER_MS = 520;
 // own 68 reaches 116, so the last row has to scroll up past that, with room to spare.
 const FAB_CLEARANCE = 148;
 
+const NO_OPEN_KEYS = [];
+
 const ROW_HEIGHT = 54;
 const HEADER_HEIGHT = 49;
 
@@ -361,27 +363,33 @@ function TransactionList({
   const now = useRef(new Date()).current;
   const currentMonthKey = now.getFullYear() * 12 + now.getMonth();
   const currentYear = now.getFullYear();
-  const [openKeys, setOpenKeys] = useState([]);
+  // Which groups are open belongs to the view they were opened in (the range and the
+  // Expense/Income mode): a different view reads as nothing open from its very first
+  // render. Cleared in an effect instead, the new view's first render still saw the
+  // old one's open groups (the same month key is a group in 1Y and in All), and they
+  // showed open for a frame before closing.
+  const viewKey = `${timeRange}|${mode}`;
+  const [open, setOpen] = useState({ view: viewKey, keys: [] });
+  // Forgotten for good the moment the view changes, not just hidden: otherwise going to
+  // 1M and back to All found the old All's open groups still stored and showed them again.
+  if (open.view !== viewKey) setOpen({ view: viewKey, keys: [] });
+  const openKeys = open.view === viewKey ? open.keys : NO_OPEN_KEYS;
+  const viewKeyRef = useRef(viewKey);
+  viewKeyRef.current = viewKey;
   const toggleGroup = useCallback(key => {
-    setOpenKeys(ks => (ks.includes(key) ? ks.filter(k => k !== key) : [...ks, key]));
+    setOpen(o => {
+      const ks = o.view === viewKeyRef.current ? o.keys : NO_OPEN_KEYS;
+      return { view: viewKeyRef.current, keys: ks.includes(key) ? ks.filter(k => k !== key) : [...ks, key] };
+    });
   }, []);
-  // Changing the chart's range rebuilds the list around a different span, so
-  // whatever was left open under the old one is closed. The rows that replace it
-  // go up plain and gain their swipe gestures once the chart has finished sliding
-  // — mounting a month of them in the same frame as the swipe is what made the
-  // change drag.
-  // The range changes here on the same commit the chart swaps its own data to —
-  // the chart has already slid out by then and is about to slide back in with the
-  // new range, and the two have to arrive together. Nothing about the swap is
-  // deferred; what IS deferred is the rows gaining their swipe gestures, which is
-  // the expensive part and is invisible either way.
-  // The range changes here on the very commit the chart swaps its own data on, so
-  // the new rows and the new chart arrive together. Whatever was left open under
-  // the old range is closed, and the new rows gain their swipe gestures a little
-  // later — that part is the expensive one, and it is invisible either way.
+  // Changing the chart's range rebuilds the list around a different span, on the very
+  // commit the chart swaps its own data on, so the new rows and the new chart arrive
+  // together (whatever was open under the old range is closed, see above). The new rows
+  // go up plain and gain their swipe gestures a little later: that part is the expensive
+  // one, mounting a month of them in the same frame as the change is what made it drag,
+  // and it is invisible either way.
   const [rangeSettled, setRangeSettled] = useState(false);
   useEffect(() => {
-    setOpenKeys([]);
     setRangeSettled(false);
     const t = setTimeout(() => setRangeSettled(true), ARM_AFTER_MS);
     return () => clearTimeout(t);
