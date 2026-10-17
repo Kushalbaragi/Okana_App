@@ -10,6 +10,7 @@ import { CheckIcon } from './icons';
 import { cardFill } from './savingsShared';
 import { useAuth } from '../context/AuthContext';
 import { money } from '../utils/summaryFacts';
+import { MONTH_NAMES } from '../utils/monthlyRecap';
 import { EMPTY_SUMMARY_HISTORY, pickSummaryMessage } from '../utils/summaryMessages';
 import { storageKeys } from '../utils/storageKeys';
 import { reportError } from '../utils/errors';
@@ -67,8 +68,8 @@ function ProgressSegment({ state, paused }) {
 
 // Each line of a slide comes in on its own, a beat after the one before it: a short slide
 // up and fade, `step` places down the line.
-const REVEAL_STEP_MS = 550;
-const REVEAL_MS = 950;
+const REVEAL_STEP_MS = 300;
+const REVEAL_MS = 600;
 // Lines only come in the first time a slide is reached. Coming back to it shows it as it
 // was left, already in place.
 const RevealContext = createContext(true);
@@ -215,7 +216,7 @@ function BiggerSlide({ cards }) {
 
 // 5. One closing message. It is picked when the summary opens (see useSummaryMessage), so
 // it is already there when this slide appears instead of popping in a moment later.
-function MessageSlide({ message, needsBudget, onOpenBudgetSetup }) {
+function MessageSlide({ message }) {
   // The title is there at once; the message follows as soon as it has been picked.
   if (!message) return <Frame title="One last thing" quiet lower={110}><View /></Frame>;
   return (
@@ -224,14 +225,23 @@ function MessageSlide({ message, needsBudget, onOpenBudgetSetup }) {
       <Reveal duration={400}>
         <Text style={{ fontSize: FONT.body, lineHeight: 24, color: darkText.primary, textAlign: 'center' }}>{message.text}</Text>
       </Reveal>
-      {(needsBudget || message.action === 'budget') && (
-        <Reveal step={1} duration={400} style={{ alignItems: 'center', marginTop: 28 }}>
-          <GlassPressable variant="active" radius={9999} onPress={onOpenBudgetSetup} className="px-6 py-[14px]">
-            <Text style={{ fontSize: FONT.body, fontWeight: '600', color: '#000000' }}>Set budget</Text>
-          </GlassPressable>
-        </Reveal>
-      )}
     </Frame>
+  );
+}
+
+// 6. Only for someone with no budget yet for the month that has just begun: the button is
+// the whole slide, and the summary stays on it until they act.
+function BudgetSlide({ onOpenBudgetSetup }) {
+  const month = MONTH_NAMES[new Date().getMonth()];
+  return (
+    // Centred like the opening slide.
+    <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32, paddingBottom: 100 }]}>
+      <Reveal>
+        <GlassPressable variant="active" radius={9999} onPress={onOpenBudgetSetup} className="px-6 py-[14px]">
+          <Text style={{ fontSize: FONT.body, fontWeight: '600', color: '#000000' }}>Set {month} budget</Text>
+        </GlassPressable>
+      </Reveal>
+    </View>
   );
 }
 
@@ -268,7 +278,8 @@ function Slide({ slide, message, onOpenBudgetSetup }) {
     case 'wins': return <LinesSlide {...slide} title="What went well" tone="good" />;
     case 'improve': return <LinesSlide {...slide} title="What to improve" tone="watch" />;
     case 'bigger': return <BiggerSlide {...slide} />;
-    case 'message': return <MessageSlide message={message} needsBudget={slide.needsBudget} onOpenBudgetSetup={onOpenBudgetSetup} />;
+    case 'message': return <MessageSlide message={message} />;
+    case 'budget': return <BudgetSlide onOpenBudgetSetup={onOpenBudgetSetup} />;
     default: return null;
   }
 }
@@ -333,13 +344,12 @@ function MonthlyRecapModal({ open, slides, instant = false, onClose, onOpenBudge
       timedIndexRef.current = index;
     }
     if (paused) { clearTimeout(timerRef.current); return; }
+    // The last slide stays until the person acts: a tap, the close button or Set budget.
+    if (index >= slides.length - 1) return;
     startedAtRef.current = Date.now();
-    timerRef.current = setTimeout(() => {
-      if (index >= slides.length - 1) requestClose();
-      else setIndex(index + 1);
-    }, remainingRef.current);
+    timerRef.current = setTimeout(() => setIndex(index + 1), remainingRef.current);
     return () => clearTimeout(timerRef.current);
-  }, [open, index, slides.length, requestClose, paused]);
+  }, [open, index, slides.length, paused]);
 
   if (!open || !slides.length) return null;
 

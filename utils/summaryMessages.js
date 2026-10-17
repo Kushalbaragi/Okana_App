@@ -1,11 +1,9 @@
 import { money, lakh, nice } from './summaryFacts'
 
-// The last slide of the monthly summary: one message that says what happened this month,
+// The closing message of the monthly summary: one message that says what happened this month,
 // in the person's own numbers and words, and what to do about it. Each rule below has a
 // `when` (is it true this month?), a `priority` (lower is more urgent) and the `text`.
 // Plain words, because they are read once, quickly, on the way out.
-//
-// `action: 'budget'` puts a small "Set budget" button under the message.
 
 const goalLine = (f) => f.goal && `${f.goal.name}`
 
@@ -25,8 +23,8 @@ const RULES = [
   // Budget
   {
     id: 'over_budget', priority: 20,
-    when: f => f.overBy > 0 && f.dailyLimit != null,
-    text: f => `You were ${money(f.overBy)} over your ${money(f.budgetAmount)} budget. In ${f.nextLabel}, aim for ${money(f.dailyLimit)} a day and check once a week.`,
+    when: f => f.overBy > 0,
+    text: f => `You were ${money(f.overBy)} over your ${money(f.budgetAmount)} budget. In ${f.nextLabel}, think twice before each purchase and keep your spending in check.`,
   },
   {
     id: 'budget_pace', priority: 45,
@@ -39,7 +37,7 @@ const RULES = [
     text: f => `You kept ${money(f.underBy)} of your budget. Move it to ${goalLine(f)} today, or it will get spent.`,
   },
   {
-    id: 'no_budget', priority: 30, action: 'budget',
+    id: 'no_budget', priority: 30,
     when: f => !f.hasBudgetNow && f.avg3 > 0,
     text: f => `You have no budget for ${f.nextLabel}. Set it at ${money(f.suggestedBudget)}. That is what you spent on average in the last 3 months.`,
   },
@@ -203,7 +201,7 @@ export function messageCandidates(facts) {
   return RULES
     .filter(r => { try { return r.when(facts) } catch { return false } })
     .sort((a, b) => a.priority - b.priority)
-    .map(r => { try { return { id: r.id, action: r.action || null, text: r.text(facts) } } catch { return null } })
+    .map(r => { try { return { id: r.id, text: r.text(facts) } } catch { return null } })
     // A line that could not be written, or came out with a hole in it, is dropped.
     .filter(c => c && c.text && !/NaN|undefined|null|Infinity/.test(c.text))
 }

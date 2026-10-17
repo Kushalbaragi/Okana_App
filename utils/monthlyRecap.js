@@ -93,7 +93,9 @@ export function getMonthlyRecapSlides(transactions, month, year, budgetInfo, has
   const shown = new Set(improves.map(i => i.id))
   const allCandidates = messageCandidates(f)
   const candidates = [...allCandidates.filter(c => !shown.has(c.id)), ...allCandidates.filter(c => shown.has(c.id))]
-  if (candidates.length) slides.push({ type: 'message', monthLabel: f.monthLabel, year, monthId: `${year}-${month}`, candidates, needsBudget: !hasBudgetThisMonth })
+  if (candidates.length) slides.push({ type: 'message', monthLabel: f.monthLabel, year, monthId: `${year}-${month}`, candidates })
+  // Last, and only for someone with no budget for the month just begun.
+  if (!hasBudgetThisMonth) slides.push({ type: 'budget', monthLabel: f.monthLabel, year })
   return slides
 }
 

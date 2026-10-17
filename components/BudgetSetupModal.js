@@ -234,7 +234,10 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, currentAmount, la
     ],
   }));
 
-  if (!visible) return null;
+  // Mounted in the same render that `open` turns true, instead of one render later (after
+  // an effect set `visible`), so the sheet is on its way a pass sooner.
+  const mounted = open || visible;
+  if (!mounted) return null;
 
   const confirmRGB = confirmDelta?.up ? '248,113,113' : '74,222,128';
   const confirmColor = `rgba(${confirmRGB},0.9)`;
@@ -356,7 +359,7 @@ function BudgetSetupModal({ open, onClose, onClosed, onSubmit, currentAmount, la
   );
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={handleRequestClose}>
+    <Modal visible={mounted} transparent animationType="none" onRequestClose={handleRequestClose}>
       {/* A Modal is a separate native hierarchy, so the app-root gesture root
           doesn't reach in here — see AddModal. */}
       <GestureHandlerRootView style={{ flex: 1 }}>

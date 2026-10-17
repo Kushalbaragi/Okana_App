@@ -105,6 +105,9 @@ async function hasViewedRecapServerSide(userId, monthId) {
 // the first thing on screen is the summary's page and not Home loading.
 const SUMMARY_BACKGROUND = require('../../assets/subscription-bg.webp');
 
+// How long the budget sheet takes to cover the summary behind it.
+const BUDGET_SHEET_RISE_MS = 400;
+
 export default function Dashboard() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -237,10 +240,24 @@ export default function Dashboard() {
 
   const [recapOpen, setRecapOpen] = useState(false);
   const [recapSlides, setRecapSlides] = useState([]);
+  // The day the summary was last on screen: the Insights page offers it again only that day.
+  const [summaryShownOn, setSummaryShownOn] = useState(null);
+  useEffect(() => {
+    if (!user?.id) return;
+    AsyncStorage.getItem(storageKeys.summaryShownOn(user.id)).then(setSummaryShownOn).catch(() => {});
+  }, [user?.id]);
+  useEffect(() => {
+    if (!recapOpen || !user?.id) return;
+    const day = today();
+    setSummaryShownOn(day);
+    AsyncStorage.setItem(storageKeys.summaryShownOn(user.id), day).catch(reportError);
+  }, [recapOpen, user?.id]);
 
   const [budgetSetupOpen, setBudgetSetupOpen] = useState(false);
   const [budgetSetupPending, setBudgetSetupPending] = useState(false);
   const [dailyPopupsResolved, setDailyPopupsResolved] = useState(false);
+  // Whether this launch is the first open of the current month. Decided once per launch.
+  const monthFirstOpenRef = useRef(null);
   // The daily reminder comes on by default once, after the day's popups have cleared.
   useReminderDefaults({ ready: dailyPopupsResolved && !!user, name: user?.user_metadata?.name });
 
@@ -332,6 +349,23 @@ export default function Dashboard() {
         // monthId below — they're unrelated keys for unrelated systems.
         const recapMonthId = `${prev.year}-${String(prev.month).padStart(2, '0')}`;
 
+        // The first open of a month with no budget asks for one, and only that: the
+        // summary waits for the next open. The ref keeps this effect re-running from
+        // turning the first open into the second.
+        if (monthFirstOpenRef.current == null) {
+          const { month: m0, year: y0 } = currentMonthYear();
+          const monthId = `${y0}-${String(m0 + 1).padStart(2, '0')}`;
+          const openedMonth = await AsyncStorage.getItem(storageKeys.monthOpened(user.id));
+          if (cancelled) return;
+          monthFirstOpenRef.current = openedMonth !== monthId;
+          if (monthFirstOpenRef.current) await AsyncStorage.setItem(storageKeys.monthOpened(user.id), monthId);
+        }
+        if (monthFirstOpenRef.current && !budget.hasBudget) {
+          setBudgetSetupPending(true);
+          if (!cancelled) setDailyPopupsResolved(true);
+          return;
+        }
+
         const shownKey = `okana_insight_shown_${user.id}`;
         const shownVal = await AsyncStorage.getItem(shownKey);
         if (shownVal === todayStr) { if (!cancelled) setDailyPopupsResolved(true); return; }
@@ -412,37 +446,10 @@ export default function Dashboard() {
     markRecapViewedServerSide(user.id, recapMonthId);
   }, [params.openRecap, user, txLoading, budget.loading, savings.loading, transactions, budget.lastMonthAmount, budget.lastMonthSpent, budget.hasBudget, router]);
 
-  // Budget setup popup: due on the first app-open of a month with no budget
-  // set yet. Kept as its OWN effect rather than folded into the once-a-day
-  // chain above — that chain only gets one real pass per day (subsequent
-  // re-runs short-circuit on the `shownKey` check), but `budget.loading`
-  // comes from a separate async fetch in useBudget that doesn't reliably
-  // resolve before that single daily pass runs, which would silently skip
-  // this check on some days. This effect just re-evaluates whenever the
-  // budget fetch settles, independent of that gate.
-  useEffect(() => {
-    if (!user || budget.loading || budget.hasBudget) return;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const { month, year: cy } = currentMonthYear();
-        const monthId = `${cy}-${String(month + 1).padStart(2, '0')}`;
-        const shownMonth = await AsyncStorage.getItem(storageKeys.budgetSetupShown(user.id));
-        if (!cancelled && shownMonth !== monthId) setBudgetSetupPending(true);
-      } catch (err) {
-        // Best-effort, same as markRecapViewedServerSide above — worst case
-        // the popup just doesn't offer itself this session.
-        if (!cancelled) reportError(err);
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [user, budget.loading, budget.hasBudget]);
-
-  // Only actually opens once today's recap decision has resolved (and isn't
-  // currently showing) — never ahead of or instead of it. Same
-  // simultaneous-Modal concern as above — staggered behind a short delay.
+  // Budget setup popup: requested by the effect above on the first open of a month with
+  // no budget (the Insights page offers it from then on). It only actually opens once the
+  // day's popups have resolved and no summary is showing, behind a short delay for the
+  // same simultaneous-Modal reason as above.
   useEffect(() => {
     if (!(budgetSetupPending && dailyPopupsResolved && !recapOpen && addModalClosed)) return;
     let cancelled = false;
@@ -450,37 +457,31 @@ export default function Dashboard() {
     return () => { cancelled = true; clearTimeout(t); };
   }, [budgetSetupPending, dailyPopupsResolved, recapOpen, addModalClosed]);
 
+  // The budget slide is only for someone with no budget: once one is set it goes, even from
+  // a summary that was built before. Reopening rebuilds the summary, so it returns only if
+  // the budget still isn't set.
+  const shownRecapSlides = useMemo(
+    () => (budget.hasBudget ? recapSlides.filter(sl => sl.type !== 'budget') : recapSlides),
+    [recapSlides, budget.hasBudget],
+  );
+  const openBudgetSetup = useCallback(() => setBudgetSetupOpen(true), []);
+
   const closeRecap = useCallback(() => {
     setRecapOpen(false);
   }, []);
 
-  // MonthlyRecapModal isn't a native <Modal> (it's a plain overlay View),
-  // so unlike the calendar-to-budget handoff below, there's no "two native
-  // Modals open at once" risk here — both state flips can happen together.
+  // From the summary's budget slide. MonthlyRecapModal is a plain overlay View, not a native
+  // <Modal>, so the sheet can open over it at once. The summary is let go of only after the
+  // sheet is up: closing it first showed the page underneath (Insights) for a moment.
   const openBudgetSetupFromRecap = useCallback(() => {
-    setRecapOpen(false);
     setBudgetSetupOpen(true);
+    setTimeout(() => setRecapOpen(false), BUDGET_SHEET_RISE_MS);
   }, []);
-
-  // What finishing with the budget setup records, wherever it was opened: it no
-  // longer needs to be offered on the home screen this month.
-  const markBudgetSetupShown = useCallback(async () => {
-    setBudgetSetupPending(false);
-    if (!user) return;
-    const { month, year: cy } = currentMonthYear();
-    const monthId = `${cy}-${String(month + 1).padStart(2, '0')}`;
-    try {
-      await AsyncStorage.setItem(storageKeys.budgetSetupShown(user.id), monthId);
-    } catch (err) {
-      // If this can't be saved the offer just comes back next launch.
-      reportError(err);
-    }
-  }, [user]);
 
   const closeBudgetSetup = useCallback(() => {
     setBudgetSetupOpen(false);
-    markBudgetSetupShown();
-  }, [markBudgetSetupShown]);
+    setBudgetSetupPending(false);
+  }, []);
 
   // The one moment the app asks for a store rating: someone has finished their
   // first month, read its recap, and set the next month's budget. Asked only
@@ -887,7 +888,8 @@ export default function Dashboard() {
       slideX={calendarSlideX}
       locked={walletLocked}
       onLocked={openProRequired}
-      onOpenSummary={openSummary}
+      onOpenSummary={summaryShownOn === today() ? openSummary : undefined}
+      onSetBudget={budget.hasBudget || budget.loading ? undefined : openBudgetSetup}
     />
 
     {/* A summary notification was tapped and the summary is still being built: show its
@@ -902,7 +904,7 @@ export default function Dashboard() {
     <MonthlyRecapModal
       instant={recapInstant}
       open={recapOpen}
-      slides={recapSlides}
+      slides={shownRecapSlides}
       onClose={closeRecap}
       onOpenBudgetSetup={openBudgetSetupFromRecap}
     />

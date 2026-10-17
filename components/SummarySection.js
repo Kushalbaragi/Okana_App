@@ -31,7 +31,14 @@ const NOTHING_YET = 'Keep adding your spending. Your insights will show up here.
 // to open rather than as money (red and green are kept for that).
 const SUMMARY_DOT = '#a78bfa';
 
-function SummarySection({ userId, transactions, budgetAmount, savings, light = false, onOpenSummary }) {
+// Both pills at the top of the page share one look; only their position differs.
+const pillStyle = (light, top) => ({
+  position: 'absolute', top, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8,
+  paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999,
+  backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.07)',
+});
+
+function SummarySection({ userId, transactions, budgetAmount, savings, light = false, onOpenSummary, onSetBudget }) {
   const t = textColor(light);
   // Only a name the user actually set: the account falls back to the start of their email
   // otherwise, which isn't something to call them by.
@@ -52,20 +59,35 @@ function SummarySection({ userId, transactions, budgetAmount, savings, light = f
     return hasAnyRecapData(transactions, prev.month, prev.year) ? `${MONTH_NAMES[prev.month]} ${prev.year}` : null;
   }, [transactions]);
 
+  // The budget pill takes the top spot, or goes just under the summary pill when that is showing.
+  const showSummaryPill = !!summaryMonth && !!onOpenSummary;
+
   return (
     // One group, centred between the tab switch and the bottom of the screen. Static:
     // the page never scrolls.
     <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 28, paddingTop: 24, paddingBottom: 72 }}>
-      {!!summaryMonth && !!onOpenSummary && (
+      {showSummaryPill && (
         <Pressable
           onPress={onOpenSummary}
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel={`Open your ${summaryMonth} summary`}
-          style={{ position: 'absolute', top: 16, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, backgroundColor: light ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.07)' }}
+          style={pillStyle(light, 16)}
         >
           <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: SUMMARY_DOT }} />
           <Text style={{ fontSize: FONT.caption, color: t.secondary }}>{summaryMonth} summary</Text>
+          <ChevronRight color={t.disabled} />
+        </Pressable>
+      )}
+      {!!onSetBudget && (
+        <Pressable
+          onPress={onSetBudget}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Set this month's budget"
+          style={pillStyle(light, showSummaryPill ? 60 : 16)}
+        >
+          <Text style={{ fontSize: FONT.caption, color: t.secondary }}>Set this month's budget</Text>
           <ChevronRight color={t.disabled} />
         </Pressable>
       )}

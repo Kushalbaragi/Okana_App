@@ -24,7 +24,7 @@ export async function clearDataCaches(userId) {
     storageKeys.budgetPlan(userId),
     storageKeys.syncedBudget(userId),
     storageKeys.pendingBudget(userId),
-    storageKeys.budgetSetupShown(userId),
+    storageKeys.monthOpened(userId),
     storageKeys.insightHistory(userId),
   ]);
 }
