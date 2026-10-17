@@ -1,8 +1,7 @@
 import { View, Text, useWindowDimensions } from 'react-native';
-import PaymentGrid from './PaymentGrid';
 import { Card, ProgressBar } from './savingsShared';
-import { CheckIcon } from './icons';
 import { darkText, EXPENSE, INCOME_HEX } from '../utils/colors';
+import { formatCurrency } from '../utils/format';
 import { GUTTER } from '../utils/spacing';
 import { FONT, TABULAR } from '../utils/type';
 import { PRICE_PER_YEAR } from '../utils/trial';
@@ -95,42 +94,26 @@ function ExpensesSlide({ top, bottom }) {
   );
 }
 
-function PlanRow({ name, amount, checked }) {
-  const muted = 'rgba(255,255,255,0.4)';
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 12 }}>
-      {checked ? (
-        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: INCOME_HEX, alignItems: 'center', justifyContent: 'center' }}>
-          <CheckIcon size={16} color="#000000" />
-        </View>
-      ) : (
-        <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.3)' }} />
-      )}
-      <Text style={{ flex: 1, fontSize: FONT.caption, color: checked ? muted : 'rgba(255,255,255,0.85)' }}>{name}</Text>
-      <Text style={{ fontSize: FONT.caption, fontWeight: '300', color: checked ? muted : '#ffffff', ...TABULAR }}>{amount}</Text>
-    </View>
-  );
-}
+// What the daily insights cover, as three made-up examples: what went wrong, what to
+// improve and what went well.
+const INSIGHT_CARDS = [
+  { label: 'Went wrong', color: EXPENSE, text: 'One purchase took 40% of your month' },
+  { label: 'Improve', color: '#fbbf24', text: 'Wait 28 days before big buys' },
+  { label: 'Went well', color: INCOME_HEX, text: 'Everything else stayed in line' },
+];
 
-function BudgetSlide({ top, bottom }) {
+function InsightsSlide({ top, bottom }) {
   return (
-    <Slide top={top} bottom={bottom} title="Plan the month">
-      <Caption>A budget and a list of what is coming.</Caption>
-      <View style={{ marginTop: 40, paddingHorizontal: BAR_INSET }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
-          <Text style={{ fontSize: FONT.caption, color: darkText.tertiary }}>Budget · September</Text>
-          <Text style={{ fontSize: FONT.caption, color: darkText.tertiary }}>62%</Text>
-        </View>
-        <ProgressBar percent={62} height={BAR_HEIGHT} trackColor="rgba(74,222,128,0.12)" />
+    <Slide top={top} bottom={bottom} title="Get custom insights">
+      <Caption>{'We study your spending, and tell you\nwhat went wrong and what to improve.'}</Caption>
+      <View style={{ marginTop: 40, gap: 10 }}>
+        {INSIGHT_CARDS.map(({ label, color, text }) => (
+          <View key={label} style={{ backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 16, paddingHorizontal: 18, paddingVertical: 16 }}>
+            <Text style={{ ...LABEL, paddingHorizontal: 0, color }}>{label}</Text>
+            <Text style={{ fontSize: FONT.body, lineHeight: 22, color: 'rgba(255,255,255,0.9)', marginTop: 6 }}>{text}</Text>
+          </View>
+        ))}
       </View>
-      <Text style={{ ...LABEL, marginTop: 28, marginBottom: 8 }}>Plan your next entry</Text>
-      <Card>
-        <View style={{ paddingHorizontal: BAR_INSET, paddingVertical: 4 }}>
-          <PlanRow name="Rent" amount="₹12,000" checked />
-          <PlanRow name="Internet" amount="₹800" />
-          <PlanRow name="Groceries" amount="₹6,000" />
-        </View>
-      </Card>
     </Slide>
   );
 }
@@ -181,33 +164,39 @@ function SavingsSlide({ top, bottom }) {
   );
 }
 
-// A 24-EMI loan, 8 paid: this year's twelve months, then next year's.
-const YEARS = [
-  { year: 2026, cells: Array.from({ length: 12 }, (_, i) => ({ paid: i < 8, inRange: true })) },
-  { year: 2027, cells: Array.from({ length: 12 }, () => ({ paid: false, inRange: true })) },
+// The Debt page's main view, made up: what is left to pay in all, and each loan with what
+// is still owed and how much is paid.
+const LOANS = [
+  { name: 'Home loan', left: 1240000, percent: 30 },
+  { name: 'Car loan', left: 310000, percent: 45 },
+  { name: 'Bike loan', left: 38400, percent: 33 },
+  { name: 'Phone EMI', left: 14000, percent: 60 },
 ];
+const TOTAL_LEFT = LOANS.reduce((sum, l) => sum + l.left, 0);
+// The total under the title, a step below the real page's headline figure so the list fits.
+const HERO_SIZE = 32;
 
 function DebtSlide({ top, bottom }) {
   return (
-    <Slide top={top} bottom={bottom} title="Pay off, one EMI at a time">
-      <Text style={{ fontSize: FONT.body, fontWeight: '500', color: darkText.secondary, textAlign: 'center', marginTop: 24 }}>Bike loan</Text>
-      <View style={{ alignItems: 'center', marginTop: 16, marginBottom: 20 }}>
-        <Text style={{ fontSize: FONT.display, fontWeight: '400', letterSpacing: -1.5, color: '#ffffff', ...TABULAR }}>₹38,400</Text>
+    <Slide top={top} bottom={bottom} title="All your EMI in one place">
+      <View style={{ alignItems: 'center', marginTop: 24, marginBottom: 24 }}>
+        <Text style={{ fontSize: HERO_SIZE, fontWeight: '400', letterSpacing: -1, color: '#ffffff', ...TABULAR }}>{formatCurrency(TOTAL_LEFT)}</Text>
         <Text style={{ fontSize: FONT.caption, color: darkText.tertiary, marginTop: 6 }}>left to pay</Text>
       </View>
-      <Text style={{ ...LABEL, marginBottom: 8 }}>EMI tracker</Text>
+      <Text style={{ ...LABEL, marginBottom: 8 }}>Loans · {LOANS.length}</Text>
       <Card>
-        <View style={{ paddingVertical: 16, paddingHorizontal: 20 }}>
-          <Text style={{ marginBottom: 14 }}>
-            <Text style={{ fontSize: FONT.amount, fontWeight: '600', letterSpacing: -0.5, color: 'rgba(255,255,255,0.9)' }}>16</Text>
-            <Text style={{ fontSize: FONT.caption, color: darkText.tertiary }}> EMI remaining</Text>
-          </Text>
-          <PaymentGrid years={YEARS} />
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6, paddingTop: 14, borderTopWidth: 1, borderTopColor: HAIRLINE }}>
-            <Text style={{ fontSize: FONT.caption, color: darkText.tertiary }}>Total loan <Text style={{ color: darkText.secondary }}>₹57,600</Text></Text>
-            <Text style={{ fontSize: FONT.caption, color: darkText.tertiary }}><Text style={{ color: darkText.secondary }}>₹2,400</Text> / month</Text>
+        {LOANS.map(({ name, left, percent }, i) => (
+          <View
+            key={name}
+            style={{ paddingVertical: 13, paddingHorizontal: 18, borderTopWidth: i ? 1 : 0, borderTopColor: HAIRLINE }}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 9 }}>
+              <Text style={{ fontSize: FONT.caption, color: 'rgba(255,255,255,0.9)' }}>{name}</Text>
+              <Text style={{ fontSize: FONT.caption, color: darkText.tertiary, ...TABULAR }}>{formatCurrency(left)} left</Text>
+            </View>
+            <ProgressBar percent={percent} height={6} trackColor="rgba(74,222,128,0.12)" />
           </View>
-        </View>
+        ))}
       </Card>
     </Slide>
   );
@@ -225,12 +214,12 @@ function StartSlide() {
   );
 }
 
-// In the order they are shown. The first and last have no title to line up, so
-// they sit in the middle of the screen instead of starting at `top`.
+// In the order they are shown. The first and last have no title to line up, so they sit
+// in the middle of the screen instead of starting at `top`.
 export const WELCOME_SLIDES = [
   { key: 'welcome', Component: WelcomeSlide },
   { key: 'expenses', Component: ExpensesSlide },
-  { key: 'budget', Component: BudgetSlide },
+  { key: 'insights', Component: InsightsSlide },
   { key: 'savings', Component: SavingsSlide },
   { key: 'debt', Component: DebtSlide },
   { key: 'start', Component: StartSlide },
