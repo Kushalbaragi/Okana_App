@@ -1,5 +1,4 @@
 import { parseISO, getDaysInMonth } from 'date-fns'
-import { darkText, lightText } from './colors'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -94,107 +93,9 @@ export function formatDateFull(dateStr) {
   return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`
 }
 
-// `spend` used to be 3 fixed buckets by RANK (which third of the month's
-// days a day's amount fell into) — that made two very different amounts,
-// say ₹50 and ₹1,400, land in the same bucket and render identically
-// whenever a couple of outlier days pulled the rank thresholds up. It's a
-// continuous scale now (see spendShadeForAmount below): every distinct
-// amount gets its own point between MIN/MAX rather than one of 3 shared
-// shades, so no two differently-sized spend days can accidentally match.
-const SPEND_SHADES = {
-  neutral: { bg: 'rgba(255,255,255,0.04)', color: darkText.disabled },
-  // A day that hasn't happened yet — dimmer than `neutral`, on purpose:
-  // neutral covers "no data to judge from" (before the account's earliest
-  // activity), which is a real, known cell just with nothing to shade;
-  // future is "irrelevant until it arrives," so it recedes further.
-  future:  { bg: 'rgba(255,255,255,0.02)', color: 'rgba(255,255,255,0.18)' },
-  green:   { bg: 'rgba(34,197,94,0.18)',  color: '#4ade80' },
-  // The two ends of the continuous spend scale — MIN is what the smallest
-  // nonzero spend day looks like, MAX is what the month's single biggest
-  // spend day looks like; everything else is interpolated between them.
-  // Pushed further apart than the first pass — MIN dimmer, MAX brighter
-  // and with a much stronger background fill — so low and high spend days
-  // read as clearly different at a glance instead of blending together.
-  spendBgTint: [239, 68, 68],
-  spendMin: { bgAlpha: 0.12, color: [252, 165, 165] },  // #fca5a5, faint red
-  spendMax: { bgAlpha: 0.55, color: [254, 226, 226] },  // #fee2e2, bold fill
-}
-
-// Same shape as SPEND_SHADES, tuned for a light background — the dark set's
-// pale near-white text tones were chosen for contrast against a dark cell
-// fill and read as barely-there on white. Only used when spendShadeFor is
-// explicitly asked for it (the light-theme experiment on the Calendar
-// screen); every other caller keeps the dark set unchanged.
-const SPEND_SHADES_LIGHT = {
-  neutral: { bg: 'rgba(0,0,0,0.04)', color: lightText.disabled },
-  future:  { bg: 'rgba(0,0,0,0.02)', color: 'rgba(0,0,0,0.18)' },
-  green:   { bg: 'rgba(34,197,94,0.16)', color: '#15803d' },
-  spendBgTint: [239, 68, 68],
-  spendMin: { bgAlpha: 0.10, color: [185, 28, 28] },   // #b91c1c
-  spendMax: { bgAlpha: 0.45, color: [127, 29, 29] },   // #7f1d1d, bold fill
-}
-
-export function getDailyExpenseTotals(transactions) {
-  const map = {}
-  transactions.forEach(tx => {
-    if (tx.type !== 'expense') return
-    map[tx.date] = (map[tx.date] || 0) + tx.amount
-  })
-  return map
-}
-
-// Just the month's single biggest spend day — the one number the
-// continuous scale needs to place every other day's amount relative to.
-export function getIntensityThresholds(dailyTotals) {
-  const values = Object.values(dailyTotals)
-  return { max: values.length ? Math.max(...values) : 0 }
-}
-
-// sqrt, not linear — spend days are usually skewed (lots of small ones,
-// a few big outliers), and a linear ratio against the single biggest day
-// crushes every ordinary day down near the dim end while only the outlier
-// itself stands out. sqrt spreads the low-to-mid range back out so a ₹50
-// and a ₹400 day still look visibly different from each other, not just
-// from the ₹1,400 day.
-function spendShadeForAmount(amount, max, shades) {
-  if (!amount) return shades.green
-  const ratio = max > 0 ? Math.sqrt(Math.min(1, amount / max)) : 1
-  const { bgAlpha: minA, color: minC } = shades.spendMin
-  const { bgAlpha: maxA, color: maxC } = shades.spendMax
-  const alpha = minA + (maxA - minA) * ratio
-  const r = Math.round(minC[0] + (maxC[0] - minC[0]) * ratio)
-  const g = Math.round(minC[1] + (maxC[1] - minC[1]) * ratio)
-  const b = Math.round(minC[2] + (maxC[2] - minC[2]) * ratio)
-  const bgRgb = shades.spendBgTint.join(',')
-  return { bg: `rgba(${bgRgb},${alpha.toFixed(3)})`, color: `rgb(${r},${g},${b})` }
-}
-
 export function getEarliestDate(transactions) {
   if (!transactions.length) return null
   return transactions.reduce((min, tx) => (tx.date < min ? tx.date : min), transactions[0].date)
-}
-
-export function spendShadeFor(dateStr, { dailyTotals, thresholds, earliest, todayStr, light = false }) {
-  const shades = light ? SPEND_SHADES_LIGHT : SPEND_SHADES
-  const isFuture = dateStr > todayStr
-  const isToday = dateStr === todayStr
-  // No transactions at all yet — every day, including today, has nothing
-  // to compare against, so none of them should read as "no spend" green.
-  // Today alone stays "known" (tappable) so a brand new account isn't
-  // completely inert before its first transaction; every other day stays
-  // neutral (or future, past today) and untappable until one actually
-  // exists.
-  if (!earliest) return { ...(isFuture ? shades.future : shades.neutral), isKnown: isToday }
-  // `future` and `neutral` both render untappable and unshaded, but stay
-  // distinct shades — future recedes further, since it's not just "no
-  // data to judge" (a real day, before the account existed) but "hasn't
-  // happened yet," which deserves to visually fade out more.
-  if (isFuture) return { ...shades.future, isKnown: false }
-  const noData = dateStr < earliest
-  if (noData) return { ...shades.neutral, isKnown: false }
-  const amt = dailyTotals[dateStr] || 0
-  const shade = spendShadeForAmount(amt, thresholds.max, shades)
-  return { ...shade, isKnown: true }
 }
 
 export function currentMonthYear() {

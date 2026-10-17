@@ -1,4 +1,5 @@
 import '../global.css';
+import '../utils/splash';
 import { useEffect } from 'react';
 import { LogBox, View, Text } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';

@@ -30,7 +30,8 @@ const NEW_ROW_MARK_MS = 3000;
 // (the frozen snapshot or the live goal); `shownEntries` is the history with the
 // not-yet-revealed payment left out. `payEmi` resolves to whether the payment
 // was saved, so the slider can spring back if it wasn't.
-export default function useEmiPayFlow({ goal, savings, emiConfirm }) {
+// `onError` is told what went wrong when a payment doesn't go through.
+export default function useEmiPayFlow({ goal, savings, emiConfirm, onError }) {
   const [moment, setMoment] = useState(null);
   const [payHold, setPayHold] = useState(false);
   const [phase, setPhase] = useState(null);
@@ -78,6 +79,7 @@ export default function useEmiPayFlow({ goal, savings, emiConfirm }) {
       reportError(e);
     }
     if (!result?.success) {
+      onError?.(result?.error || "That payment didn't go through. Please try again.");
       clearTimeout(failsafeRef.current);
       setPayHold(false);
       setPhase(null);
@@ -120,7 +122,7 @@ export default function useEmiPayFlow({ goal, savings, emiConfirm }) {
       remaining: Math.max(0, goal.remaining - goal.emiAmount),
     });
     return true;
-  }, [savings, goal, emiConfirm, armFailsafe]);
+  }, [savings, goal, emiConfirm, armFailsafe, onError]);
 
   // Once the moment is gone the page plays its own changes one at a time so
   // each can be seen, then — after a beat — asks about the expense.

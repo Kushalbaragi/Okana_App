@@ -64,7 +64,11 @@ function ShimmerLabel({ text, color, style }) {
 // changes (see `paid`), and only a payment that fails (`onComplete` resolving
 // false, or throwing) sends it back. Once `paid` is true it is replaced by a
 // quiet confirmation line, so the same slot can't be used to pay twice.
-export default function SlideToPay({ label, paidLabel, paid, onComplete, light = false }) {
+//
+// `lockedLabel`, when given, means there is nothing to pay yet (a loan whose first
+// EMI is still to come): the track is shown flat and still, with that line on it
+// and no thumb to drag.
+export default function SlideToPay({ label, paidLabel, lockedLabel, paid, onComplete, light = false }) {
   const [trackWidth, setTrackWidth] = useState(0);
   const x = useSharedValue(0);
   const max = Math.max(0, trackWidth - BORDER * 2 - THUMB - INSET * 2);
@@ -111,7 +115,7 @@ export default function SlideToPay({ label, paidLabel, paid, onComplete, light =
   };
 
   const pan = Gesture.Pan()
-    .enabled(!paid && max > 0)
+    .enabled(!paid && !lockedLabel && max > 0)
     .activeOffsetX([-6, 6])
     .failOffsetY([-14, 14])
     .onChange((e) => {
@@ -146,6 +150,17 @@ export default function SlideToPay({ label, paidLabel, paid, onComplete, light =
       >
         <CheckIcon size={16} color={POSITIVE} />
         <Text style={{ fontSize: FONT.body, fontWeight: '500', color: POSITIVE }}>{paidLabel}</Text>
+      </View>
+    );
+  }
+
+  if (lockedLabel) {
+    return (
+      <View
+        style={{ height: HEIGHT, borderRadius: HEIGHT / 2, backgroundColor: dim(light, 0.08), borderWidth: BORDER, borderColor: dim(light, 0.12), alignItems: 'center', justifyContent: 'center' }}
+        accessibilityRole="text"
+      >
+        <Text style={{ fontSize: FONT.body, fontWeight: '500', color: dim(light, 0.5) }}>{lockedLabel}</Text>
       </View>
     );
   }

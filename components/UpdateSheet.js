@@ -28,6 +28,7 @@ export function UpdateSheet({ open, latestVersion, onDismiss }) {
 
   useEffect(() => {
     if (open) {
+      posthog?.capture('app_update_shown', { version: latestVersion });
       setVisible(true);
       translateY.value = withTiming(0, { duration: OPEN_DURATION, easing: SETTLE_EASING });
     } else if (visible) {
@@ -43,6 +44,11 @@ export function UpdateSheet({ open, latestVersion, onDismiss }) {
   const backdropProgress = useDerivedValue(() => 1 - Math.min(1, Math.max(0, translateY.value / windowHeight)));
 
   if (!visible) return null;
+
+  function handleClose() {
+    posthog?.capture('app_update_dismissed', { version: latestVersion });
+    onDismiss();
+  }
 
   function handleUpdate() {
     posthog?.capture('app_update_tapped', { version: latestVersion });
@@ -73,7 +79,7 @@ export function UpdateSheet({ open, latestVersion, onDismiss }) {
               <UpdateIcon />
               <Text style={{ fontSize: FONT.body, fontWeight: '500', color: '#ffffff' }}>Update available</Text>
             </View>
-            <Pressable onPress={onDismiss} hitSlop={10} accessibilityRole="button" accessibilityLabel="Dismiss">
+            <Pressable onPress={handleClose} hitSlop={10} accessibilityRole="button" accessibilityLabel="Dismiss">
               <CloseIcon />
             </Pressable>
           </View>

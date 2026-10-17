@@ -81,3 +81,8 @@ export const INCOME_DIM = 'rgba(74,222,128,0.62)';
 // Income at reading weight rather than chart weight — slightly held back so
 // a green amount in a list doesn't glow next to white text beside it.
 export const INCOME_TEXT = 'rgba(74,222,128,0.8)';
+
+// The + button's fill: a mid-dark grey, one step up from the cards so it reads as
+// the thing to press without being a bright spot on the screen. Shared by the home
+// screen and the savings / debt pages.
+export const FAB_COLOR = '#3a3a3c';

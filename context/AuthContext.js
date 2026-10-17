@@ -1,4 +1,6 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { AppState } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePostHog } from 'posthog-react-native';
 import { supabase, fetchWithTimeout } from '../lib/supabase';
 import { EMPTY_WIDGET_SNAPSHOT } from '../utils/widgetSnapshot';
@@ -15,37 +17,60 @@ const AuthContext = createContext(null);
 // instead of a real emailed OTP. Every other email is untouched.
 const REVIEW_EMAIL = 'okanapreview@gmail.com';
 
+// The user from the session supabase-js persisted, read without any network call.
+async function readStoredUser() {
+  try {
+    const raw = await AsyncStorage.getItem(supabase.auth.storageKey);
+    return raw ? JSON.parse(raw)?.user ?? null : null;
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const posthog = usePostHog();
 
   useEffect(() => {
-    // Load initial session — falls back to signed-out rather than hanging
-    // on the loading spinner forever if this rejects (e.g. no network).
-    //
-    // Raced against a timeout for the same reason as sendOtp below: if the
-    // stored access token has expired (the default is after 1 hour, so any
-    // cold start more than an hour after the last one hits this), getSession
-    // triggers a network refresh before resolving — with no connectivity or
-    // a slow connection, that call has no built-in timeout and can hang the
-    // entire app on the launch spinner indefinitely. Falling back to
-    // signed-out on timeout is the safe direction to fail in: worst case is
-    // an easy re-login, not showing another user's cached data.
+    // Load initial session. getSession refreshes an expired access token over the
+    // network first (they last 1 hour, so any launch after a gap hits this), and
+    // that can be slow or fail offline. That must not look like a logout: the
+    // session is still in storage and the refresh is retried in the background, so
+    // on a timeout or a connectivity failure fall back to the stored user. Only a
+    // real SIGNED_OUT event (refresh token rejected) sends the user to login.
     Promise.race([
       supabase.auth.getSession(),
       new Promise((_, reject) => setTimeout(() => reject(new Error('timed out')), 6000)),
     ])
-      .then(({ data: { session } }) => setUser(session?.user ?? null))
-      .catch(() => setUser(null))
+      .then(async ({ data: { session }, error }) => {
+        if (session) setUser(session.user);
+        else if (error) setUser(await readStoredUser());
+        else setUser(null);
+      })
+      .catch(async () => setUser(await readStoredUser()))
       .finally(() => setLoading(false));
 
     // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // A launch-time refresh that fails on connectivity reports a null session
+      // here even though the stored one is intact; the load above handles it.
+      if (event === 'INITIAL_SESSION' && !session) return;
       setUser(session?.user ?? null);
     });
 
-    return () => subscription.unsubscribe();
+    // supabase-js only auto-refreshes while the app is in the foreground; on
+    // React Native it can't see that itself, so tell it. Coming back to the app
+    // then refreshes the token straight away instead of on the next 30 s tick.
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') supabase.auth.startAutoRefresh();
+      else supabase.auth.stopAutoRefresh();
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      appStateSub.remove();
+    };
   }, []);
 
   // Whatever way the session ended (logout, deleted account, expired token), the
@@ -66,7 +91,7 @@ export function AuthProvider({ children }) {
   // otherwise explain (there's no automatic retry anywhere in this app).
   // The timeout only stops the client from waiting — it doesn't cancel
   // whatever Supabase is doing server-side.
-  async function sendOtp({ email }) {
+  const sendOtp = useCallback(async ({ email }) => {
     // The review account never gets a real OTP — verifyOtp below routes it
     // through the server-side bypass instead, so there's nothing to send.
     if (email.trim().toLowerCase() === REVIEW_EMAIL) return;
@@ -80,13 +105,13 @@ export function AuthProvider({ children }) {
       ),
     ]);
     if (error) throw error;
-  }
+  }, []);
 
   // Verifies the code and reports back whether this is a brand-new account
   // (no name set yet) — the OTP screen uses that to decide whether to route
   // through a name-capture step before continuing, since the old signup
   // form (which used to collect it alongside a password) no longer exists.
-  async function verifyOtp({ email, token }) {
+  const verifyOtp = useCallback(async ({ email, token }) => {
     if (email.trim().toLowerCase() === REVIEW_EMAIL) {
       const res = await fetchWithTimeout(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/review-login`, {
         method: 'POST',
@@ -118,28 +143,32 @@ export function AuthProvider({ children }) {
     // reviewer, not a real user, and would otherwise pollute the funnel.
     if (isNewUser) posthog?.capture('signup_completed');
     return { isNewUser };
-  }
+  }, [posthog]);
 
-  async function setName({ name }) {
+  const setName = useCallback(async ({ name }) => {
     const { error } = await supabase.auth.updateUser({ data: { name } });
     if (error) throw error;
-  }
+  }, []);
 
-  async function logout() {
+  const logout = useCallback(async () => {
     await supabase.auth.signOut();
-  }
+  }, []);
 
   // Convenience getters from Supabase user object
-  const profile = user ? {
+  const profile = useMemo(() => (user ? {
     name: user.user_metadata?.name || user.email?.split('@')[0] || 'User',
     email: user.email,
     phone: user.user_metadata?.phone || '',
     joinDate: user.created_at,
     avatar: user.user_metadata?.avatar_url || null,
-  } : null;
+  } : null), [user]);
+
+  // Memoised, so every screen reading useAuth() re-renders only when one of these
+  // actually changes, not whenever this provider happens to render.
+  const value = useMemo(() => ({ user, profile, loading, sendOtp, verifyOtp, setName, logout }), [user, profile, loading, sendOtp, verifyOtp, setName, logout]);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, sendOtp, verifyOtp, setName, logout }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

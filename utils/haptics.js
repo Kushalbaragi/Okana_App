@@ -46,10 +46,11 @@ const SCROLL_TICK_MS = 45
 // call, so an ungated fling queues dozens of them and stutters the very drag the
 // ticks are meant to accompany. One timestamp for the whole app on purpose —
 // nothing can be flung in two places at once.
+// `minGapMs` lets a control ask for a sparser tick than the default.
 let lastScrollTick = 0
-export function hapticScrollTick() {
+export function hapticScrollTick(minGapMs = SCROLL_TICK_MS) {
   const now = Date.now()
-  if (now - lastScrollTick < SCROLL_TICK_MS) return
+  if (now - lastScrollTick < minGapMs) return
   lastScrollTick = now
   hapticTick()
 }

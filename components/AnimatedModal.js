@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Modal, View, Pressable, StyleSheet, useWindowDimensions, Platform, Keyboard } from 'react-native';
+import { Modal, View, Pressable, StyleSheet, useWindowDimensions, Keyboard } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, runOnJS } from 'react-native-reanimated';
 import { DialogBackdrop } from './DialogBackdrop';
 import { SETTLE_EASING } from '../utils/motion';
 import { OfflineBanner } from './OfflineBanner';
+import { useKeyboardOffset } from '../hooks/useKeyboardOffset';
 
 // Shared fade-backdrop + slide/scale-content shell, extracted from AddModal's
 // pattern. RN's built-in Modal animationType only animates the whole modal
@@ -44,18 +45,7 @@ export function AnimatedModal({ open, onClose, onClosed, variant = 'bottom', dim
   // snap the moment the keyboard height genuinely changes (open vs close).
   // Animating a shared value toward it gets both: deduped triggers AND a
   // smooth transition.
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const keyboardOffset = useSharedValue(0);
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, e => setKeyboardHeight(e.endCoordinates.height));
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
-    return () => { showSub.remove(); hideSub.remove(); };
-  }, []);
-  useEffect(() => {
-    keyboardOffset.value = withTiming(keyboardHeight, { duration: 250, easing: Easing.out(Easing.cubic) });
-  }, [keyboardHeight, keyboardOffset]);
+  const keyboardOffset = useKeyboardOffset();
 
   useEffect(() => {
     if (open) {

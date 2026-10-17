@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
-import { View, Text, TextInput, Pressable, Platform, Keyboard, StyleSheet } from 'react-native';
+import { useState } from 'react';
+import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
-import { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { useAnimatedStyle } from 'react-native-reanimated';
 import { Spinner } from './icons';
+import { useKeyboardOffset } from '../hooks/useKeyboardOffset';
 import { darkText } from '../utils/colors';
 import { GUTTER } from '../utils/spacing';
 import { FONT } from '../utils/type';
@@ -121,18 +122,7 @@ export function PillButton({ label, onPress, disabled, dim, loading, loadingLabe
 // AnimatedModal.js for why. With no keyboard it rests above the home indicator.
 export function useKeyboardLift(rest = 16) {
   const insets = useSafeAreaInsets();
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const offset = useSharedValue(0);
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, e => setKeyboardHeight(e.endCoordinates.height));
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
-    return () => { showSub.remove(); hideSub.remove(); };
-  }, []);
-  useEffect(() => {
-    offset.value = withTiming(keyboardHeight, { duration: 250, easing: Easing.out(Easing.cubic) });
-  }, [keyboardHeight, offset]);
+  const offset = useKeyboardOffset();
   const bottom = insets.bottom;
   return useAnimatedStyle(() => ({ paddingBottom: Math.max(offset.value, bottom) + rest }));
 }

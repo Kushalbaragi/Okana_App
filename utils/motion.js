@@ -23,6 +23,11 @@ export const SPRING_SMOOTH = { damping: 22, stiffness: 180, mass: 0.6 };
 // what makes a press feel "alive" rather than just a linear resize.
 export const SPRING_BOUNCY = { damping: 12, stiffness: 220, mass: 1 };
 
+// Changing the chart's range (Month / Year / All): the two transaction lists
+// crossfade. The old one fades out while the new one fades in, over the same span
+// and starting together, so there's never an empty beat.
+export const RANGE_FADE_MS = 325;
+
 // Builds a `layout` transition from one of the presets above, so a
 // LinearTransition and a plain withSpring animating the same kind of thing
 // (e.g. SPRING_QUICK for both a digit's own scale and its layout shift)

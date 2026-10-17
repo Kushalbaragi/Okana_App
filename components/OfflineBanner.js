@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
-import { useNetwork } from '../context/NetworkContext';
+import { useNetworkBanner } from '../context/NetworkContext';
 import { SETTLE_EASING } from '../utils/motion';
 import { FONT } from '../utils/type';
 
 const COPY = {
-  offline: { text: "You're offline", color: 'rgba(255,255,255,0.55)' },
+  offline: { text: "You're offline. This needs an internet connection.", color: 'rgba(255,255,255,0.55)' },
+  saved:   { text: "You're offline. Saved, and it'll sync when you're back online.", color: 'rgba(255,255,255,0.55)' },
   online:  { text: "You're back online", color: '#4ade80' },
 };
 
@@ -18,7 +19,7 @@ const COPY = {
 // triggered by notifyOffline() (an actual attempt that needed the
 // network), and its "you're online" follow-up only if that happened.
 export function OfflineBanner() {
-  const { banner } = useNetwork();
+  const banner = useNetworkBanner();
   const insets = useSafeAreaInsets();
   const progress = useSharedValue(0);
 
@@ -33,7 +34,7 @@ export function OfflineBanner() {
 
   useEffect(() => {
     progress.value = withTiming(banner ? 1 : 0, { duration: 320, easing: SETTLE_EASING });
-  }, [banner]);
+  }, [banner, progress]);
 
   const style = useAnimatedStyle(() => ({
     opacity: progress.value,

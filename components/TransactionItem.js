@@ -1,14 +1,12 @@
 import { memo, useCallback, useEffect, useRef } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
-import { parseISO } from 'date-fns';
 import { formatCurrencyPlain } from '../utils/format';
-import { MONTH_NAMES } from '../utils/monthlyRecap';
-import { SwipeDeleteAction, useSwipeDelete } from './SwipeDeleteAction';
+import { SwipeRow } from './SwipeDeleteAction';
+import DatePill from './DatePill';
 import { CARD_COLOR } from './Glass';
 import { textColor, INCOME_TEXT } from '../utils/colors';
-import { BODY, TABULAR, FONT } from '../utils/type';
+import { BODY, TABULAR } from '../utils/type';
 import { LEDGER_PILL_INSET } from '../utils/spacing';
 
 // `light` is a one-off experimental prop for trying a light theme on just
@@ -20,18 +18,7 @@ import { LEDGER_PILL_INSET } from '../utils/spacing';
 // the list paints rows flat first and flips this to true once the initial
 // commit has settled (see `settled` in TransactionList), moving the setup
 // off the critical path instead of removing the feature.
-// "4 Oct", in a column of fixed width (DATE_WIDTH) so the dates line up at the right edge.
-const DATE_WIDTH = 50;
-function shortDate(dateStr) {
-  const d = parseISO(dateStr);
-  return `${d.getDate()} ${MONTH_NAMES[d.getMonth()].slice(0, 3)}`;
-}
-
-function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, onSwipeOpen, onCardPress, light = false, swipeable = true, cardColor = CARD_COLOR, amountWidth }) {
-  // Tapping the trash slides the row shut and asks `onDelete` (which opens a
-  // confirmation) at once, rather than waiting for the slide to finish.
-  const { setSwipeableRef, handleDelete } = useSwipeDelete(tx.id, onDelete, registerSwipeable);
-
+function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, onSwipeOpen, onCardPress, light = false, swipeable = true, cardColor = CARD_COLOR }) {
   // Tapping a row opens it for editing. An already-open swipe takes
   // priority and swallows the tap (onCardPress returns true when it closed
   // one), so dismissing a swiped-open row can't also fling the edit sheet
@@ -68,31 +55,27 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
     <Pressable
       onPress={handleCardPress}
       className="py-3"
-      // Matches MonthHeader's own paddingHorizontal (both read
-      // LEDGER_PILL_INSET), so a row's amount starts under the pill's text
-      // above it rather than further left at the raw list edge.
+      // Paints the list's own card colour (opaque, so a swiped-open row can't
+      // show its delete button through itself). Padding is LEDGER_PILL_INSET,
+      // as MonthHeader's is, so text lines up with the month headers.
       style={{ backgroundColor: cardColor, paddingLeft: LEDGER_PILL_INSET, paddingRight: LEDGER_PILL_INSET }}
     >
-      {/* Just the amount and the description, like a line in a note: the amount, a
-          dash, then the description, with the day at the right edge. */}
+      {/* A date pill, then the description on the left and the amount on the right
+          so the figures line up down the list. */}
       <Animated.View className="flex-row items-center" style={contentStyle}>
         {/* Not yet synced to the server — sitting in the offline queue, or
             an insert/update still in flight. */}
         {tx._pending && (
           <View style={{ width: 5, height: 5, borderRadius: 2.5, marginRight: 8, backgroundColor: light ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }} />
         )}
-        {/* A column as wide as the list's longest amount, so the dashes line up. */}
-        <Text numberOfLines={1} style={[BODY, TABULAR, { width: amountWidth, color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>
-          {formatCurrencyPlain(tx.amount)}
-        </Text>
-        {/* Same colour as the amount, so the row reads as one line. */}
-        <Text style={[BODY, { marginLeft: 8, marginRight: 18, color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>–</Text>
+        <DatePill dateStr={tx.date} light={light} style={{ marginRight: 10 }} />
         <Text numberOfLines={1} style={[BODY, { flex: 1, color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>
           {tx.description || (isIncome ? 'Income' : 'Expense')}
         </Text>
-        {/* The day, plain and faint at the right edge, in a column of the same width
-            on every row so the dates line up. */}
-        <Text numberOfLines={1} style={{ width: DATE_WIDTH, marginLeft: 12, textAlign: 'right', fontSize: FONT.caption, color: light ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.18)' }}>{shortDate(tx.date)}</Text>
+        {/* Same colour as the description, so the row reads as one line. */}
+        <Text numberOfLines={1} style={[BODY, TABULAR, { marginLeft: 16, textAlign: 'right', color: isIncome ? INCOME_TEXT : textColor(light).secondary }]}>
+          {formatCurrencyPlain(tx.amount)}
+        </Text>
       </Animated.View>
     </Pressable>
   );
@@ -104,18 +87,9 @@ function TransactionItem({ tx, onEdit, onDelete, isIncome, registerSwipeable, on
   if (!swipeable) return row;
 
   return (
-    <ReanimatedSwipeable
-      ref={setSwipeableRef}
-      friction={1.8}
-      rightThreshold={32}
-      overshootRight={false}
-      renderRightActions={(_progress, drag) => (
-        <SwipeDeleteAction drag={drag} onDelete={handleDelete} label="Delete transaction" />
-      )}
-      onSwipeableWillOpen={() => onSwipeOpen?.(tx.id)}
-    >
+    <SwipeRow id={tx.id} onDelete={onDelete} registerSwipeable={registerSwipeable} onSwipeOpen={onSwipeOpen} label="Delete transaction">
       {row}
-    </ReanimatedSwipeable>
+    </SwipeRow>
   );
 }
 
