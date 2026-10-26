@@ -13,9 +13,9 @@ import { TABULAR, FONT } from '../utils/type';
 const REMOVE_MS = 240;
 
 // A goal or loan on the list, one row of the page's single grouped card (the list wraps
-// them in one Card; `divider` draws the line under this row): the name on the left in the
-// normal text colour, a quiet figure opposite it (what has been saved, or what is still
-// owed), and a thin bar under them. Deliberately nothing else — the rest is on its own
+// them in one Card; `divider` draws the line under this row): the name large on the left
+// with a quiet line under it ("₹18,000 saved of ₹30,000"), the percentage opposite, and a
+// bar across the full width below. Deliberately nothing else — the rest is on its own
 // page.
 //
 // Swiping it left reveals a delete button, which asks `onDelete` right away (the
@@ -37,6 +37,11 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
   const isDebt = goal.kind === 'debt';
   // Savings shows what has been saved; a loan shows what is still owed.
   const figure = isDebt ? goal.remaining : goal.saved;
+  // "₹18,000 saved of ₹30,000". A loan counts what is paid out of what the schedule
+  // adds up to, which is what its percentage is measured against.
+  const detail = isDebt
+    ? `${money(goal.saved)} paid of ${money(goal.saved + goal.remaining)}`
+    : `${money(goal.saved)} saved of ${money(goal.target)}`;
   const accessibilityLabel = done
     ? `${goal.name}, ${isDebt ? 'cleared' : 'completed'}`
     : `${goal.name}, ${money(figure)} ${isDebt ? 'left' : 'saved'}`;
@@ -65,15 +70,17 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
           </View>
         ) : (
           <>
-            <View className="flex-row items-baseline justify-between" style={{ gap: 12 }}>
-              <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: FONT.body, fontWeight: '400', color: textColor(light).primary }}>{goal.name}</Text>
-              {/* Text first, so the row's baseline comes from it, not the icon. */}
+            <View className="flex-row items-center justify-between" style={{ gap: 12 }}>
+              <View style={{ flexShrink: 1 }}>
+                <Text numberOfLines={1} style={{ fontSize: FONT.body, fontWeight: '400', color: textColor(light).primary }}>{goal.name}</Text>
+                <Text numberOfLines={1} style={{ fontSize: FONT.caption, fontWeight: '400', color: textColor(light).tertiary, marginTop: 4, ...TABULAR }}>{detail}</Text>
+              </View>
               <View className="flex-row items-center" style={{ gap: 4 }}>
-                <Text style={{ fontSize: FONT.body, fontWeight: '400', color: textColor(light).tertiary, ...TABULAR }}>{money(figure)} {isDebt ? 'left' : 'saved'}</Text>
+                <Text style={{ fontSize: FONT.body, fontWeight: '400', color: textColor(light).primary, ...TABULAR }}>{goal.percent}%</Text>
                 <ChevronRight color={textColor(light).disabled} />
               </View>
             </View>
-            <View style={{ marginTop: 12 }}>
+            <View style={{ marginTop: 16 }}>
               <ProgressBar percent={goal.percent} height={7} light={light} trackColor={dim(light, 0.1)} still={still} />
             </View>
           </>

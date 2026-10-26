@@ -627,7 +627,7 @@ function MonthsRulerRow({ label, value, onChange, session, light, open, onOpen, 
 // both the earlier two-step wizard (reverted — a multi-step goal-creation
 // flow has been tried and rejected here before) and the flat boxed-field
 // single page that came after it.
-export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onSubmit, light = false, kind = 'savings' }) {
+export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', initialTarget = 0, onSubmit, light = false, kind = 'savings' }) {
   const isEdit = !!goal;
   const copy = KIND_COPY[kind];
   // Debt has no "where it's kept"/"borrowed from" field any more — see
@@ -787,7 +787,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
   useEffect(() => {
     if (!open) return;
     setName(goal ? goal.name : initialName);
-    setAmount(goal ? goal.target : 0);
+    setAmount(goal ? goal.target : initialTarget);
     setLocation(goal ? goal.location : '');
     // Already resolved by useSavings.js's own `derived` layer for an
     // existing goal (even one saved before the type split existed — see its
@@ -820,7 +820,7 @@ export function GoalSheet({ open, onClose, onClosed, goal, initialName = '', onS
     setOpenField(null);
     setError('');
     setSubmitting(false);
-  }, [open, goal, initialName]);
+  }, [open, goal, initialName, initialTarget]);
 
   // EMI debt's own three fields, required — not because a blank one looks
   // wrong, but because nothing downstream works without it. Tenure already

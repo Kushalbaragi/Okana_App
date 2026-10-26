@@ -209,7 +209,7 @@ function StartSlide() {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 44, paddingHorizontal: GUTTER }}>
       <Text style={{ fontSize: FONT.display, fontWeight: '400', letterSpacing: -1.5, color: '#ffffff' }}>okana</Text>
-      <Text style={{ fontSize: FONT.caption, color: darkText.tertiary, marginTop: 4 }}>{`30 days free, then ₹${PRICE_PER_YEAR} a year`}</Text>
+      <Text style={{ fontSize: FONT.caption, color: darkText.tertiary, marginTop: 4 }}>{`7 days free, then ₹${PRICE_PER_YEAR} a year`}</Text>
     </View>
   );
 }

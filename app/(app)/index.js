@@ -124,7 +124,7 @@ export default function Dashboard() {
   // Read when the monthly summary is built, without that effect re-running on every refresh.
   const savingsRef = useRef(savings);
   savingsRef.current = savings;
-  useWidgetSync({ transactions, budget, goals: savings.goals });
+  useWidgetSync({ transactions, budget });
   const { subscription, refresh: refreshSubscription } = useSubscription(user);
   const trialInfo = useMemo(() => getSubscriptionDisplayStatus(subscription, today()), [subscription]);
   const posthog = usePostHog();
@@ -835,9 +835,10 @@ export default function Dashboard() {
       <ConfirmDialog
         open={proRequired}
         icon="🔒"
-        title="Subscription Required"
-        message="Everything you've added is still here. Subscribe to Okana Plus to keep adding new things."
-        confirmLabel="Subscribe Now"
+        title="Subscribe to continue"
+        message="Adding new things needs Okana Plus."
+        confirmLabel="Subscribe"
+        cancelLabel="Not now"
         tone="positive"
         onConfirm={subscribeFromProRequired}
         onCancel={closeProRequired}
@@ -888,6 +889,7 @@ export default function Dashboard() {
       slideX={calendarSlideX}
       locked={walletLocked}
       onLocked={openProRequired}
+      onSubscribe={subscribeFromProRequired}
       onOpenSummary={summaryShownOn === today() ? openSummary : undefined}
       onSetBudget={budget.hasBudget || budget.loading ? undefined : openBudgetSetup}
     />

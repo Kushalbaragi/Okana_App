@@ -41,7 +41,7 @@ const WALLET_SLIDE_SPRING = { duration: 500, dampingRatio: 1, overshootClamping:
 // read it to move in step with the page — Home uses it for its parallax. It is the
 // page's own value rather than a second animation started elsewhere, so the two
 // can never fall out of step.
-function WalletPage({ open, onClose, onClosed, savings, transactions, budgetAmount, light = false, userId, slideX, locked = false, onLocked, onOpenSummary, onSetBudget }) {
+function WalletPage({ open, onClose, onClosed, savings, transactions, budgetAmount, light = false, userId, slideX, locked = false, onLocked, onSubscribe, onOpenSummary, onSetBudget }) {
   const { width: windowWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
@@ -76,6 +76,15 @@ function WalletPage({ open, onClose, onClosed, savings, transactions, budgetAmou
     setSection(next);
   }, []);
 
+  // The Insights page's "Set a saving goal" button: over to Savings, with the new-goal
+  // sheet already up. (If the account is locked, the same subscription popup as the
+  // + button there.)
+  // `goal` ({ name, target }) fills the sheet in when the card has one in mind.
+  const openSavingGoal = useCallback((goal) => {
+    changeSection('savings');
+    savingsUI.openNewGoal(goal?.name || '', goal?.target || 0);
+  }, [changeSection, savingsUI.openNewGoal]);
+
   // One opacity per section — each animates toward 1 when it's the active
   // section and 0 otherwise, same duration/easing for both, so the crossfade
   // reads identically whichever way it is swapping.
@@ -96,7 +105,7 @@ function WalletPage({ open, onClose, onClosed, savings, transactions, budgetAmou
   // it earlier would pick today's insight and mark it as seen for a page the user
   // never looked at.
   const [summaryVisited, setSummaryVisited] = useState(false);
-  useEffect(() => { if (open && section === 'summary') setSummaryVisited(true); }, [open, section]);
+  useEffect(() => { if (open && section === 'summary' && !locked) setSummaryVisited(true); }, [open, section, locked]);
 
   // A small bottom toast confirming a write to the real ledger actually
   // happened — a debt or savings entry's own "add to transactions?" pill (see
@@ -302,9 +311,26 @@ function WalletPage({ open, onClose, onClosed, savings, transactions, budgetAmou
               </Animated.View>
 
               <Animated.View style={[StyleSheet.absoluteFill, summaryLayerStyle]} pointerEvents={section === 'summary' ? 'auto' : 'none'}>
-                {summaryVisited && (
+                {locked && (
+                  // Insights is Plus-only once the trial is over: the page says so itself,
+                  // in place of the content, rather than raising a popup over it.
+                  <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+                    <Text style={{ fontSize: 32 }}>🔒</Text>
+                    <Text style={{ marginTop: 14, fontSize: FONT.body, color: light ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.6)', textAlign: 'center' }}>
+                      Subscribe to see your insights.
+                    </Text>
+                    <Pressable
+                      onPress={onSubscribe}
+                      accessibilityRole="button"
+                      style={{ marginTop: 22, paddingVertical: 12, paddingHorizontal: 32, borderRadius: 999, backgroundColor: 'rgba(74,222,128,0.25)' }}
+                    >
+                      <Text style={{ fontSize: 16, fontWeight: '600', color: '#4ade80' }}>Subscribe Now</Text>
+                    </Pressable>
+                  </View>
+                )}
+                {summaryVisited && !locked && (
                   <ErrorBoundary resetKeys={[userId]}>
-                    <SummarySection userId={userId} transactions={transactions} budgetAmount={budgetAmount} savings={savings} light={light} onOpenSummary={onOpenSummary} onSetBudget={onSetBudget} />
+                    <SummarySection userId={userId} transactions={transactions} budgetAmount={budgetAmount} savings={savings} light={light} onOpenSummary={onOpenSummary} onSetBudget={onSetBudget} onSetGoal={openSavingGoal} />
                   </ErrorBoundary>
                 )}
               </Animated.View>

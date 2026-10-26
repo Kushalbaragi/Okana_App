@@ -1,4 +1,4 @@
-import { parseISO } from 'date-fns'
+import { parseISO, startOfDay } from 'date-fns'
 import { MONTH_NAMES } from './monthlyRecap'
 
 export const PRICE_PER_YEAR = 499
@@ -38,7 +38,16 @@ export function getSubscriptionDisplayStatus(subscription, todayStr) {
   // constructor's UTC-midnight parsing of a date-only string would shift
   // the actual cutoff by the local UTC offset, mattering most right at a
   // day boundary — exactly where an expiry check needs to be correct.
-  const isActive = subscription.status === 'active' || (expiresAt && expiresAt > parseISO(todayStr))
+  // Same rule as has_active_access on the server: expires_at against the
+  // current instant, not today's midnight, and never the raw status string —
+  // a trial row can still say 'active' (or expire later today, "0 days left")
+  // after the server has already stopped accepting writes for it.
+  // The count shown is whole days left, so it never reads 0 while still active:
+  // "1 day left" is the last day, and the day after (the expiry date itself)
+  // is expired — even if the server would honour the last few hours of it.
+  const isActive = expiresAt
+    ? expiresAt > new Date() && (!subscription.is_trial || parseISO(todayStr) < startOfDay(expiresAt))
+    : subscription.status === 'active'
   if (!isActive) {
     return { status: 'expired', chargeDate: subscription.expires_at, cancelAtPeriodEnd: false, paymentFailed: subscription.status === 'on_hold' }
   }

@@ -72,7 +72,7 @@ function AllSetPage({ soundPlayer, active }) {
       </FadeIn>
       <FadeIn delay={SUB_DELAY_MS} play={active}>
         <Text style={{ fontSize: FONT.caption, color: darkText.tertiary, marginTop: 10, textAlign: 'center', lineHeight: 19 }}>
-          {'30 days free.\nNo payment required.'}
+          {'7 days free.\nNo payment required.'}
         </Text>
       </FadeIn>
     </View>

@@ -2,55 +2,37 @@ import Foundation
 import SwiftUI
 import WidgetKit
 
-// What the widgets show, as left in the shared app group by the app (see
+// What the widget shows, as left in the shared app group by the app (see
 // utils/widgetSnapshot.js and utils/widgetBridge.js). This mirrors
-// resolveWidgetSnapshot there: a widget can be drawn long after the app last wrote
-// the snapshot, so a new day shifts the daily bars along and a new month starts
-// the month total over.
+// resolveWidgetSnapshot there: the widget can be drawn long after the app last
+// wrote the snapshot, so a new month starts over at nothing.
 
 let appGroup = "group.com.kushalbaragi.okana"
 let snapshotKey = "okana_widget_snapshot"
-let widgetDays = 30
-
-struct GoalSnapshot: Codable, Hashable {
-  let name: String
-  let saved: Double
-  let target: Double
-
-  var percent: Int {
-    target > 0 ? min(100, Int((saved / target * 100).rounded())) : 0
-  }
-}
 
 private struct StoredSnapshot: Codable {
   var signedIn: Bool
   var monthKey: String?
   var spent: Double?
-  var budget: Double?
-  var daysEnd: String?
-  var days: [Double]?
-  var goals: [GoalSnapshot]?
+  var month: [Double]?
+  var lastMonthSpent: Double?
 }
 
 struct WidgetData {
   let monthLabel: String
   let spent: Double
-  let budget: Double?
-  let days: [Double]
-  let goals: [GoalSnapshot]
-
-  var daysTotal: Double { days.reduce(0, +) }
+  // This month, one entry per day (day 1 first), and how far into it today is.
+  let month: [Double]
+  let today: Int
+  // All of last month's spend, or nil when there was none to compare against.
+  let lastMonthSpent: Double?
 
   static let sample = WidgetData(
     monthLabel: "September",
-    spent: 27450,
-    budget: 40000,
-    days: [820, 0, 450, 1200, 300, 0, 2100, 640, 380, 0, 900, 1500, 260, 700, 0, 420, 1800, 350, 0, 610, 980, 240, 0, 1300, 520, 310, 1240, 640, 900, 740],
-    goals: [
-      GoalSnapshot(name: "Goa trip", saved: 31000, target: 50000),
-      GoalSnapshot(name: "Laptop", saved: 42000, target: 120000),
-      GoalSnapshot(name: "Emergency fund", saved: 18000, target: 100000),
-    ]
+    spent: 19190,
+    month: [820, 0, 450, 1200, 300, 0, 2100, 640, 380, 0, 900, 1500, 260, 700, 0, 420, 1800, 350, 0, 610, 980, 240, 0, 1300, 520, 0, 0, 0, 0, 0],
+    today: 25,
+    lastMonthSpent: 25400
   )
 
   // nil when there is nothing to show: never written, or signed out.
@@ -58,23 +40,10 @@ struct WidgetData {
     guard
       let json = UserDefaults(suiteName: appGroup)?.string(forKey: snapshotKey),
       let stored = try? JSONDecoder().decode(StoredSnapshot.self, from: Data(json.utf8)),
-      stored.signedIn,
-      let storedDays = stored.days,
-      let daysEnd = stored.daysEnd
+      stored.signedIn
     else { return nil }
 
     let calendar = Calendar.current
-    let parser = DateFormatter()
-    parser.locale = Locale(identifier: "en_US_POSIX")
-    parser.dateFormat = "yyyy-MM-dd"
-
-    var days = storedDays
-    if let end = parser.date(from: daysEnd) {
-      let gap = calendar.dateComponents([.day], from: calendar.startOfDay(for: end), to: calendar.startOfDay(for: now)).day ?? 0
-      let shift = min(max(gap, 0), widgetDays)
-      if shift > 0 { days = Array(days.dropFirst(shift)) + Array(repeating: 0, count: shift) }
-    }
-
     let monthKey = DateFormatter()
     monthKey.locale = Locale(identifier: "en_US_POSIX")
     monthKey.dateFormat = "yyyy-MM"
@@ -83,12 +52,17 @@ struct WidgetData {
     monthName.dateFormat = "LLLL"
 
     let sameMonth = stored.monthKey == monthKey.string(from: now)
+    // A new month that started while the app stayed closed has nothing in it yet.
+    let monthLength = calendar.range(of: .day, in: .month, for: now)?.count ?? 30
+    let storedMonth = sameMonth ? (stored.month ?? []) : []
+    let month = (0..<monthLength).map { $0 < storedMonth.count ? storedMonth[$0] : 0 }
     return WidgetData(
       monthLabel: monthName.string(from: now),
       spent: sameMonth ? (stored.spent ?? 0) : 0,
-      budget: sameMonth ? stored.budget : nil,
-      days: days,
-      goals: stored.goals ?? []
+      month: month,
+      today: calendar.component(.day, from: now),
+      // Last month changes when the month does, and only the app knows it.
+      lastMonthSpent: sameMonth ? stored.lastMonthSpent : nil
     )
   }
 }

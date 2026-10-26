@@ -181,9 +181,11 @@ export function useSavingsUI({ locked = false, onLocked } = {}) {
   // animates closed instead of blanking mid-slide.
   const [sheetData, setSheetData] = useState(null);
 
-  const openNewGoal = useCallback((initialName = '') => {
+  // `initialName` and `initialTarget` start the new-goal sheet filled in (the Insights
+  // page's "Create emergency fund" button); both empty by default.
+  const openNewGoal = useCallback((initialName = '', initialTarget = 0) => {
     if (locked) { onLocked?.(); return; }
-    setSheetData({ kind: 'goal', goalId: null, initialName });
+    setSheetData({ kind: 'goal', goalId: null, initialName, initialTarget });
     setSheetClosed(false);
     setSheetOpen(true);
   }, [locked, onLocked]);
@@ -379,6 +381,7 @@ export function SavingsSheetsHost({ savings, ui, light = false, kind = 'savings'
         onClosed={ui.markSheetClosed}
         goal={goal}
         initialName={sheetData?.initialName || ''}
+        initialTarget={sheetData?.initialTarget || 0}
         onSubmit={submitGoal}
         light={light}
         kind={kind}
