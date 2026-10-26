@@ -27,8 +27,13 @@ export const KIND_COPY = {
   savings: {
     heroCaption: 'saved so far',
     newLabel: 'Add saving goal',
-    emptyTitle: 'What are you saving for?',
-    emptyBody: 'Emergency fund, trip, a phone…\nTap + to add a goal',
+    // The empty page: a two-line headline with its last words in green, a few
+    // examples, one line on why, and a link that opens the new goal sheet.
+    emptyTitle: ['Put money aside', 'for what ', 'matters.'],
+    emptyExamples: ['Emergency fund', 'iPhone 17', 'MacBook Air', 'Royal Enfield 350'],
+    emptyBody: 'Save it first, then buy it.\nNo EMIs, no interest.',
+    emptyAction: '+ Add a goal',
+    emptyAccent: POSITIVE,
     namePlaceholder: 'Goal name',
     sheetTitleNew: 'Add saving goal',
     sheetTitleEdit: 'Edit goal',
@@ -50,8 +55,11 @@ export const KIND_COPY = {
   debt: {
     heroCaption: 'left to pay',
     newLabel: 'New loan',
-    emptyTitle: 'What are you paying off?',
-    emptyBody: 'Car, bike, personal, a friend…\nTap + to add a loan',
+    // Loans say what the page does, as three dotted lines, in red: money owed.
+    emptyTitle: ['All your loans,', 'in ', 'one place.'],
+    emptyPoints: ['Track every EMI you pay', 'See your total EMI each month', 'Know when each loan ends'],
+    emptyAction: '+ Add a loan',
+    emptyAccent: '#f87171',
     namePlaceholder: 'Loan name',
     sheetTitleNew: 'New loan',
     sheetTitleEdit: 'Edit loan',

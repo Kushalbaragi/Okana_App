@@ -13,10 +13,10 @@ import { TABULAR, FONT } from '../utils/type';
 const REMOVE_MS = 240;
 
 // A goal or loan on the list, one row of the page's single grouped card (the list wraps
-// them in one Card; `divider` draws the line under this row): the name large on the left
-// with a quiet line under it ("₹18,000 saved of ₹30,000"), the percentage opposite, and a
-// bar across the full width below. Deliberately nothing else — the rest is on its own
-// page.
+// them in one Card; `divider` draws the line under this row): the name on the left, the
+// amount opposite ("₹42,000 saved", or for a loan "₹85,800 left") with a chevron, as it
+// opens the goal's page, and a bar across the full width below. Deliberately nothing
+// else — the target, percentage and the rest are on its own page.
 //
 // Swiping it left reveals a delete button, which asks `onDelete` right away (the
 // caller confirms — a goal takes its history with it). `registerSwipeable`,
@@ -37,14 +37,10 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
   const isDebt = goal.kind === 'debt';
   // Savings shows what has been saved; a loan shows what is still owed.
   const figure = isDebt ? goal.remaining : goal.saved;
-  // "₹18,000 saved of ₹30,000". A loan counts what is paid out of what the schedule
-  // adds up to, which is what its percentage is measured against.
-  const detail = isDebt
-    ? `${money(goal.saved)} paid of ${money(goal.saved + goal.remaining)}`
-    : `${money(goal.saved)} saved of ${money(goal.target)}`;
+  // Read out in full, since the card itself only shows the amount and the bar.
   const accessibilityLabel = done
     ? `${goal.name}, ${isDebt ? 'cleared' : 'completed'}`
-    : `${goal.name}, ${money(figure)} ${isDebt ? 'left' : 'saved'}`;
+    : `${goal.name}, ${money(figure)} ${isDebt ? 'left' : 'saved'}, ${goal.percent}%`;
 
   // Paints the card's own fill, so a swiped-open row doesn't show its delete button
   // through itself.
@@ -71,17 +67,16 @@ function GoalCard({ goal, onPress, onDelete, registerSwipeable, onSwipeOpen, onC
         ) : (
           <>
             <View className="flex-row items-center justify-between" style={{ gap: 12 }}>
-              <View style={{ flexShrink: 1 }}>
-                <Text numberOfLines={1} style={{ fontSize: FONT.body, fontWeight: '400', color: textColor(light).primary }}>{goal.name}</Text>
-                <Text numberOfLines={1} style={{ fontSize: FONT.caption, fontWeight: '400', color: textColor(light).tertiary, marginTop: 4, ...TABULAR }}>{detail}</Text>
-              </View>
+              <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: FONT.body, fontWeight: '400', color: textColor(light).primary }}>{goal.name}</Text>
               <View className="flex-row items-center" style={{ gap: 4 }}>
-                <Text style={{ fontSize: FONT.body, fontWeight: '400', color: textColor(light).primary, ...TABULAR }}>{goal.percent}%</Text>
+                <Text style={{ fontSize: FONT.body, fontWeight: '400', color: textColor(light).primary, ...TABULAR }}>
+                  {money(figure)} <Text style={{ fontSize: FONT.caption, color: textColor(light).tertiary }}>{isDebt ? 'left' : 'saved'}</Text>
+                </Text>
                 <ChevronRight color={textColor(light).disabled} />
               </View>
             </View>
-            <View style={{ marginTop: 16 }}>
-              <ProgressBar percent={goal.percent} height={7} light={light} trackColor={dim(light, 0.1)} still={still} />
+            <View style={{ marginTop: 12 }}>
+              <ProgressBar percent={goal.percent} height={8} light={light} trackColor={dim(light, 0.1)} still={still} />
             </View>
           </>
         )}

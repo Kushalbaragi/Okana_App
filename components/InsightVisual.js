@@ -1,5 +1,5 @@
 import { Fragment } from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import Svg, { G, Line, Path, Circle, Ellipse, Rect, Defs, ClipPath, Text as SvgText } from 'react-native-svg';
 import { textColor } from '../utils/colors';
 import { FONT, TABULAR } from '../utils/type';
@@ -372,6 +372,90 @@ export function MonthTicks({ months, light = false }) {
   );
 }
 
+// Bars for lowest_month and the average insights: one slim bar per month (or day),
+// with its label under it.
+//   highlight  'good' or 'bad' draws the last bar in green or red (lowest_month,
+//              above_usual)
+//   tone       'expense' or 'income' colours every bar a muted red or green; grey without
+//   average    a dashed line across at the average of the values, or at this value
+//              when it is a number (above_usual: the usual month, not counting this one)
+//   fromZero   bars rise from zero (days, where a day can be nothing: those show as a
+//              green dot, as on the home chart); otherwise from three quarters of the
+//              lowest, since month totals sit close together and the gap must read
+// A few bars are 9 wide; many (a month of days) share the same overall width.
+const BARS = { w: 9, gap: 6, h: 84, width: 99, manyGap: 2 };
+const BAR_COLORS = { expense: '#783c3c', income: '#326e46' };
+
+export function ValueBars({ values, labels = [], highlight = null, average = false, tone = null, fromZero = false, light = false }) {
+  const t = textColor(light);
+  const color = BAR_COLORS[tone] || '#46464a';
+  const many = values.length > 7;
+  const gap = many ? BARS.manyGap : BARS.gap;
+  const w = many ? (BARS.width - gap * (values.length - 1)) / values.length : BARS.w;
+  const width = many ? BARS.width : values.length * w + (values.length - 1) * gap;
+  const floor = fromZero ? 0 : Math.min(...values) * 0.75;
+  const range = Math.max(Math.max(...values) - floor, 1);
+  const heightOf = (v) => ((v - floor) / range) * BARS.h;
+  const last = values.length - 1;
+  const lastColor = highlight === 'good' ? COIN_GREEN.face : highlight === 'bad' ? COIN_RED.face : null;
+  const avgY = BARS.h - heightOf(typeof average === 'number' ? average : values.reduce((a, b) => a + b, 0) / values.length);
+  return (
+    <View>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap, height: BARS.h, width }}>
+        {values.map((v, i) => (
+          v > 0 ? (
+            <View key={i} style={{ width: w, height: Math.max(w, heightOf(v)), borderRadius: w / 2, backgroundColor: lastColor && i === last ? lastColor : color }} />
+          ) : (
+            <View key={i} style={{ width: w, alignItems: 'center' }}>
+              <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: COIN_GREEN.face }} />
+            </View>
+          )
+        ))}
+        {average && (
+          <Svg width={width + 8} height={2} style={{ position: 'absolute', left: -4, top: avgY - 1 }}>
+            <Line x1={0} y1={1} x2={width + 8} y2={1} stroke="#ffffff" strokeWidth={1} strokeDasharray="3 3" />
+          </Svg>
+        )}
+      </View>
+      <View style={{ flexDirection: 'row', gap, width, marginTop: 6 }}>
+        {values.map((_, i) => (
+          <View key={i} style={{ width: w, alignItems: 'center', overflow: 'visible' }}>
+            {!!labels[i] && <Text numberOfLines={1} style={{ width: 20, textAlign: 'center', fontSize: 10, color: lastColor && i === last ? lastColor : t.tertiary }}>{labels[i]}</Text>}
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// A salary cut into parts for learn_50_30_20: one bar the width of the page, each part
+// as wide as its share, its percent on it and its name under it. Only the saved part is
+// green; the rest stay grey, as colour here means money moving.
+const SPLIT_GREYS = ['#6e6e72', '#46464a'];
+
+export function SplitBar({ parts, light = false }) {
+  const t = textColor(light);
+  let grey = 0;
+  const colors = parts.map(p => (p.good ? COIN_GREEN.face : SPLIT_GREYS[grey++ % SPLIT_GREYS.length]));
+  return (
+    <View style={{ width: '100%' }}>
+      <Text style={{ fontSize: 11, color: t.tertiary, marginBottom: 8 }}>Salary</Text>
+      <View style={{ flexDirection: 'row', gap: 3 }}>
+        {parts.map((p, i) => (
+          <View key={i} style={{ flex: p.pct, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: colors[i] }}>
+            <Text style={{ fontSize: FONT.caption, fontWeight: '600', color: p.good ? '#0b2e17' : '#ffffff', ...TABULAR }}>{p.pct}%</Text>
+          </View>
+        ))}
+      </View>
+      <View style={{ flexDirection: 'row', gap: 3, marginTop: 8 }}>
+        {parts.map((p, i) => (
+          <Text key={i} style={{ flex: p.pct, textAlign: 'center', fontSize: 11, color: p.good ? COIN_GREEN.face : t.tertiary }}>{p.label}</Text>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 // An open safe for savings_withdrawal: the door swung open, a little savings (green)
 // still inside, and red coins rolling out across the floor.
 const SAFE_LEFT = [[30, 74], [48, 76]];
@@ -422,34 +506,10 @@ export function FinishArch({ label, light = false }) {
         <Path d="M62 100 V44" stroke="#3a3a3c" strokeDasharray="5 5" strokeWidth={2} />
         <Path d="M44 46 v-26 a18 18 0 0 1 36 0 v26" fill="none" stroke={COIN_GREEN.face} strokeWidth={5} />
         <Rect x={40} y={8} width={44} height={12} rx={3} fill={COIN_GREEN.face} />
-        <SvgText x={62} y={17} textAnchor="middle" fill="#0b3d1f" fontSize={7} fontWeight="700">DEBT-FREE</SvgText>
+        <SvgText x={62} y={17} textAnchor="middle" fill="#0b3d1f" fontSize={7} fontWeight="700">LOAN-FREE</SvgText>
         <Circle cx={62} cy={92} r={4} fill="#ffffff" />
       </Svg>
       {!!label && <Text numberOfLines={1} style={{ fontSize: FONT.caption, color: t.tertiary, marginTop: 6, maxWidth: 124 }}>{label}</Text>}
-    </View>
-  );
-}
-
-// A taxi meter for average_day: what each day costs, on the meter's display, in a
-// fixed-width font like a real meter's.
-const METER_FONT = Platform.select({ ios: 'Menlo', default: 'monospace' });
-
-export function TaxiMeter({ reading, light = false }) {
-  const t = textColor(light);
-  return (
-    <View style={{ width: 120, height: 96 }}>
-      <Svg width={120} height={96} viewBox="0 0 120 96" style={StyleSheet.absoluteFill}>
-        <Rect x={44} y={4} width={32} height={10} rx={3} fill="#3a3a3c" />
-        <Rect x={6} y={14} width={108} height={66} rx={10} fill="#1c1c1e" stroke="#3a3a3c" strokeWidth={2} />
-        <Rect x={16} y={26} width={88} height={30} rx={4} fill="#000" />
-        <Rect x={30} y={80} width={12} height={10} fill="#3a3a3c" />
-        <Rect x={78} y={80} width={12} height={10} fill="#3a3a3c" />
-      </Svg>
-      {/* The reading sits in the display, 16 to 104 across and 26 to 56 down. */}
-      <View style={{ position: 'absolute', left: 18, right: 18, top: 26, height: 30, alignItems: 'center', justifyContent: 'center' }}>
-        <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 18, fontWeight: '700', color: COIN_RED.face, fontFamily: METER_FONT, ...TABULAR }}>{reading}</Text>
-      </View>
-      <Text style={{ position: 'absolute', left: 0, right: 0, top: 62, textAlign: 'center', fontSize: 8, letterSpacing: 1, color: t.tertiary }}>PER DAY</Text>
     </View>
   );
 }
@@ -498,10 +558,12 @@ export function PlannerPage({ heading, hint, light = false }) {
 }
 
 // A ledger for first_day: a notebook headed TODAY with its first line written in and
-// the rest of the page still empty, a pen at the edge.
+// the rest of the page still empty, a pen at the edge. For first_entry, `entry` is the
+// user's own first line ({ label, amount }) and `done` puts a green tick on the corner
+// in place of the pen.
 const LEDGER_BLANKS = [58, 72, 86, 100];
 
-export function Ledger({ light = false }) {
+export function Ledger({ entry = { label: 'Tea', amount: '20' }, done = false, light = false }) {
   const t = textColor(light);
   return (
     <Svg width={112} height={116} viewBox="0 0 112 116">
@@ -509,15 +571,22 @@ export function Ledger({ light = false }) {
       <Line x1={72} y1={8} x2={72} y2={108} stroke="#2c2c2e" />
       <SvgText x={18} y={24} fill={t.tertiary} fontSize={7} letterSpacing={1}>TODAY</SvgText>
       <Line x1={14} y1={30} x2={98} y2={30} stroke="#3a3a3c" />
-      <SvgText x={18} y={44} fill="#e5e5e5" fontSize={8}>Tea</SvgText>
-      <SvgText x={96} y={44} textAnchor="end" fill={COIN_GREEN.face} fontSize={8} fontWeight="600">20</SvgText>
+      <SvgText x={18} y={44} fill="#e5e5e5" fontSize={8}>{entry.label.length > 12 ? `${entry.label.slice(0, 11)}…` : entry.label}</SvgText>
+      <SvgText x={96} y={44} textAnchor="end" fill={COIN_GREEN.face} fontSize={8} fontWeight="600">{entry.amount}</SvgText>
       {LEDGER_BLANKS.map(y => (
         <G key={y}>
           <Line x1={18} y1={y - 3} x2={66} y2={y - 3} stroke="#2c2c2e" strokeDasharray="2 3" />
           <Line x1={78} y1={y - 3} x2={96} y2={y - 3} stroke="#2c2c2e" strokeDasharray="2 3" />
         </G>
       ))}
-      <Path d="M100 40 l8 -8" stroke="#e5e5e5" strokeWidth={2} />
+      {done ? (
+        <G>
+          <Circle cx={100} cy={12} r={10} fill={COIN_GREEN.face} />
+          <Path d="M95 12 l3.5 3.5 l6.5 -7" fill="none" stroke="#0b2e17" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+        </G>
+      ) : (
+        <Path d="M100 40 l8 -8" stroke="#e5e5e5" strokeWidth={2} />
+      )}
     </Svg>
   );
 }

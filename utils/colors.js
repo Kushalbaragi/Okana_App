@@ -73,11 +73,7 @@ export const EXPENSE_HEX = '#FF4B4B';
 export const INCOME_HEX = '#4ade80';
 
 export const EXPENSE = 'rgba(255,75,75,0.92)';
-// The same red with the weight taken out, for a series that isn't the one
-// being read right now.
-export const EXPENSE_DIM = 'rgba(255,75,75,0.56)';
 export const INCOME = 'rgba(74,222,128,0.95)';
-export const INCOME_DIM = 'rgba(74,222,128,0.62)';
 // Income at reading weight rather than chart weight — slightly held back so
 // a green amount in a list doesn't glow next to white text beside it.
 export const INCOME_TEXT = 'rgba(74,222,128,0.8)';

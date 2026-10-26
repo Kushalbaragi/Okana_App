@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAudioPlayer } from 'expo-audio';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
 import SlideStack from '../../components/SlideStack';
 import { SuccessBadge } from '../../components/SuccessBadge';
 import { AuthBackground, PillButton } from '../../components/AuthKit';
@@ -18,9 +19,12 @@ import { FONT } from '../../utils/type';
 
 const SUCCESS_SOUND = require('../../assets/sounds/success.wav');
 
-// How long each page stays before the next slides in.
-const GREETING_HOLD_MS = 6000;
-const ALL_SET_HOLD_MS = 6000;
+// How long each page stays before the next slides in: each just long enough for its
+// own reveal to finish and be read (the greeting's line is drawn by about 1.5 s, the
+// "all set" page's last line has faded in by about 2.8 s), so a new account reaches
+// "Start tracking" in about 6 s rather than 12.
+const GREETING_HOLD_MS = 2200;
+const ALL_SET_HOLD_MS = 3400;
 
 // Set only once the pages are actually finished (not on mount) — app/index.js
 // redirects back here on every cold launch until this is set, so closing the
@@ -96,8 +100,10 @@ function TrackPage({ onFinish, bottom }) {
 export default function WelcomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, profile } = useAuth();
-  const firstName = (profile?.name || 'there').split(' ')[0];
+  const { user } = useAuth();
+  // Only a name the user set (signup doesn't ask for one): without it the greeting
+  // is just "Welcome".
+  const firstName = (user?.user_metadata?.name || '').split(' ')[0];
   const [page, setPage] = useState(0);
   const finished = useRef(false);
   // Created here (mounted well before the badge plays it) so the sound has
@@ -116,7 +122,11 @@ export default function WelcomeScreen() {
     finished.current = true;
     // If this can't be saved, the pages just show again next launch.
     if (user) AsyncStorage.setItem(welcomeSeenKey(user.id), '1').catch(reportError);
-    router.replace('/(app)');
+    // On the account too, so signing in on another device isn't taken for a new
+    // account (see isNewAccount). Best-effort: offline, the pages may show again there.
+    supabase.auth.updateUser({ data: { welcomed: true } }).catch(() => {});
+    // Straight into the first transaction: Home opens the add sheet.
+    router.replace({ pathname: '/(app)', params: { openAdd: '1' } });
   }
 
   return (

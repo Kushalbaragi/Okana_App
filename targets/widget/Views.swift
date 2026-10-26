@@ -41,11 +41,11 @@ struct DailyChartView: View {
         // "This month", the total and the change, centred one below the other, the
         // labels small and dimmed so the total stands out and the candles get the height.
         VStack(spacing: 3) {
-          Text("This month").font(.system(size: 9)).foregroundStyle(Theme.muted).opacity(labelOpacity)
-          Text(money(data.spent)).font(number(18)).foregroundStyle(.white).lineLimit(1)
+          Text(data.monthLabel).font(.system(size: 11)).foregroundStyle(Theme.muted).opacity(labelOpacity)
+          Text(money(data.spent)).font(number(24)).foregroundStyle(.white).lineLimit(1)
           if let change = monthChange(data) {
             Text("\(change > 0 ? "↑" : "↓") \(abs(change))%")
-              .font(.system(size: 9, weight: .medium))
+              .font(.system(size: 11, weight: .medium))
               .foregroundStyle(change > 0 ? Theme.red : Theme.green)
               .opacity(labelOpacity)
           }

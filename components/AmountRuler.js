@@ -161,6 +161,35 @@ function EdgeFade({ side, color }) {
   );
 }
 
+// The ruler is drawn in tiles of this width, and only the few near the part on
+// screen are mounted. Drawn whole, a full currency ruler is one SVG about 20,000pt
+// wide — a bitmap tens of thousands of pixels across — and drawing that held the
+// budget sheet back by most of a second on open. Each tile reuses the same two
+// paths, cropped to its own stretch by its viewBox, so a tile is cheap to draw.
+const TILE = 1024;
+
+function RulerTiles({ from, to, trackWidth, minorPath, majorPath, labels, minorColor, majorColor, labelColor }) {
+  const tiles = [];
+  for (let t = from; t <= to; t++) {
+    const left = t * TILE;
+    const w = Math.min(TILE, trackWidth - left);
+    if (w <= 0) break;
+    tiles.push(
+      <Svg key={t} width={w} height={HEIGHT} viewBox={`${left} 0 ${w} ${HEIGHT}`} style={{ position: 'absolute', left, top: 0 }}>
+        <Path d={minorPath} stroke={minorColor} strokeWidth="1.5" strokeLinecap="round" />
+        <Path d={majorPath} stroke={majorColor} strokeWidth="2" strokeLinecap="round" />
+        {/* A label straddling a seam is drawn in both tiles, each showing its own half. */}
+        {labelColor && labels.filter(m => m.x > left - 24 && m.x < left + w + 24).map(mark => (
+          <SvgText key={mark.x} x={mark.x} y={LABEL_Y} fontSize="11" fill={labelColor} textAnchor="middle">
+            {mark.text}
+          </SvgText>
+        ))}
+      </Svg>,
+    );
+  }
+  return tiles;
+}
+
 // The most often a moving ruler tells its caller what it is on. Fast enough that
 // a figure elsewhere on the form keeps up, slow enough that a form rebuilding
 // itself can never be what the scroll is waiting on. The ruler's OWN readout
@@ -218,6 +247,13 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
+  // The first tile at least partly on screen: the content is padded by half the
+  // viewport less PAD, so the track's own x at the screen's left edge is the scroll
+  // offset less that. Moved on from the scroll handler only when it changes.
+  const tileAt = (x, halfW) => Math.max(0, Math.floor((x - halfW + PAD) / TILE));
+  const [firstTile, setFirstTile] = useState(() => tileAt(initialOffset.x, width / 2));
+  const firstTileSV = useSharedValue(firstTile);
+
   // The readout above the ticks, when this ruler is drawing its own (see
   // LiveFigure) — told about every tick, since it is one line of text.
   const figureRef = useRef(null);
@@ -260,12 +296,19 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
     // The exact value, not the nearest tick's — same reason as above.
     figureRef.current?.set(initialValue);
     scrollRef.current?.scrollTo({ x: index * SPACING, animated: false });
+    setFirstTile(tileAt(index * SPACING, viewportW / 2));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionKey]);
 
+  const halfViewport = viewportW / 2;
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (e) => {
       scrollX.value = e.contentOffset.x;
+      const tile = Math.max(0, Math.floor((e.contentOffset.x - halfViewport + PAD) / TILE));
+      if (tile !== firstTileSV.value) {
+        firstTileSV.value = tile;
+        runOnJS(setFirstTile)(tile);
+      }
       const raw = Math.round(e.contentOffset.x / SPACING);
       const index = raw < 0 ? 0 : raw > count - 1 ? count - 1 : raw;
       if (index !== lastIndex.value) {
@@ -273,7 +316,10 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
         runOnJS(report)(index);
       }
     },
-  });
+  }, [halfViewport]);
+
+  // One tile of slack either side, so a fast fling never outruns the tiles.
+  const tileRange = { from: Math.max(0, firstTile - 1), to: firstTile + Math.ceil(viewportW / TILE) + 1 };
 
   // The "already done" tint: a green copy of the same ticks, laid exactly
   // over the grey ones and clipped to the half of the ruler left of the
@@ -313,24 +359,15 @@ function AmountRuler({ initialValue, sessionKey, onChange, light = false, surfac
         contentContainerStyle={{ paddingHorizontal: viewportW / 2 - PAD }}
         contentOffset={initialOffset}
       >
-        <Svg width={trackWidth} height={HEIGHT}>
-          <Path d={minorPath} stroke={tickColor} strokeWidth="1.5" strokeLinecap="round" />
-          <Path d={majorPath} stroke={majorColor} strokeWidth="2" strokeLinecap="round" />
-          {labels.map(mark => (
-            <SvgText key={mark.x} x={mark.x} y={LABEL_Y} fontSize="11" fill={labelColor} textAnchor="middle">
-              {mark.text}
-            </SvgText>
-          ))}
-        </Svg>
+        <View style={{ width: trackWidth, height: HEIGHT }}>
+          <RulerTiles {...tileRange} trackWidth={trackWidth} minorPath={minorPath} majorPath={majorPath} labels={labels} minorColor={tickColor} majorColor={majorColor} labelColor={labelColor} />
+        </View>
       </AnimatedScrollView>
 
       {tintCompleted && (
         <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: '50%', height: HEIGHT, overflow: 'hidden' }}>
-          <Animated.View style={tintStyle}>
-            <Svg width={trackWidth} height={HEIGHT}>
-              <Path d={minorPath} stroke={DONE_TICK} strokeWidth="1.5" strokeLinecap="round" />
-              <Path d={majorPath} stroke={DONE_MAJOR} strokeWidth="2" strokeLinecap="round" />
-            </Svg>
+          <Animated.View style={[{ width: trackWidth, height: HEIGHT }, tintStyle]}>
+            <RulerTiles {...tileRange} trackWidth={trackWidth} minorPath={minorPath} majorPath={majorPath} labels={labels} minorColor={DONE_TICK} majorColor={DONE_MAJOR} />
           </Animated.View>
         </View>
       )}

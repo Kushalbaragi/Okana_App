@@ -263,6 +263,8 @@ export function useSavings(onEntryLogged) {
     writesInFlightRef.current += 1
     try {
       const { error } = await sendOp(op, user.id)
+      // Supabase returns a dropped connection as `error` rather than throwing it.
+      if (error && isConnectivityError(error, isOnlineRef.current)) throw error
       if (error && !isDuplicate(error)) {
         rollback()
         reportError(error)

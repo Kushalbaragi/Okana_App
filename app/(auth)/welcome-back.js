@@ -17,8 +17,9 @@ const HOLD_MS = 3500;
 // actual fresh sign-in, not on every cold start.
 export default function WelcomeBackScreen() {
   const router = useRouter();
-  const { profile, user } = useAuth();
-  const firstName = (profile?.name || 'there').split(' ')[0];
+  const { user } = useAuth();
+  // Only a name the user set: the email's start isn't something to greet them by.
+  const firstName = (user?.user_metadata?.name || '').split(' ')[0];
 
   useEffect(() => {
     // Someone signing back in has no use for the new-account pages (index.js

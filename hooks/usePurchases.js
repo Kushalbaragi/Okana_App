@@ -32,7 +32,6 @@ export function usePurchases(userId) {
     } catch (err) {
       // Fail quietly rather than crashing the app root — e.g. a malformed
       // key, or the native module genuinely unavailable in this environment.
-      console.error('RevenueCat configure failed', err);
       reportError(err);
     }
   }, [userId]);

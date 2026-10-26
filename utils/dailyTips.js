@@ -40,12 +40,33 @@ const QUOTES = {
   ],
   deposit_missed: ['Missed a month? Start again today.', 'Even a small deposit keeps the habit.'],
   first_day: ['What gets measured gets managed.'],
+  first_entry: ['Small steps, every day.', 'One down. Keep it going.', 'Every rupee, every day.'],
   month_less: ['A lighter month. Your future self says thanks.'],
   month_more: ["Every rupee you don't spend is a rupee that works for you."],
   biggest_expense: ['Think twice before a big buy.', 'Fix it before you replace it.'],
   average_day: ['Small daily spends add up fast.'],
   week_more: ['A costly week? Make the next one light.'],
   week_less: ['A light week. Well done.'],
+  average_month_spend: [
+    'Know your number. Stay below it.',
+    'A usual month is a good place to start.',
+    'Spend less than you earn, every month.',
+  ],
+  average_month_income: [
+    'Pay yourself first.',
+    'Save a part of every salary.',
+    'Live on less than you earn.',
+  ],
+  above_usual: [
+    'A costly month? Make the rest of it light.',
+    'A few quiet days can still save this month.',
+    'Notice it now. Fix it this week.',
+  ],
+  lowest_month: [
+    'Small wins, kept up, become the plan.',
+    'Your best month yet. Do it again.',
+    'Less spent is more kept.',
+  ],
 
   // Total saved
   goal_almost: ['Almost there. Do not stop now.', 'One more push.'],
@@ -62,7 +83,7 @@ const QUOTES = {
   // Health insurance
 
   // Debt-free life
-  debt_free_date: ['Real freedom is not having debt in life.'],
+  debt_free_date: ['Real freedom is a life with no loans.'],
   debt_progress: [
     'One step at a time.',
     'Each payment makes you lighter.',
@@ -71,8 +92,8 @@ const QUOTES = {
     'Every EMI paid is a win.',
   ],
   debt_clear_first: [
-    'Clear debt first. Then you are free.',
-    'Debt costs you every day.',
+    'Clear your loans first. Then you are free.',
+    'A loan costs you every day.',
     'The sooner you pay, the less you owe.',
     'Pay the costly one first.',
     'Owe less. Own more.',
@@ -83,7 +104,7 @@ const QUOTES = {
     'Keep your EMIs small.',
     'Own things that pay you. Skip things that cost you.',
   ],
-  debt_load_high: ['A big debt keeps you stuck in your job.', 'Pay down debt. Gain choices.'],
+  debt_load_high: ['A big loan keeps you stuck in your job.', 'Pay down your loans. Gain choices.'],
 
   // Financial freedom and early retirement
   income_up: [

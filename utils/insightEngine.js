@@ -53,19 +53,25 @@ import { LEARN_CARDS } from './learnCards'
 //   Calm and neutral. Notice a change, don't scold it: "more", not "too much".
 //   Short — one sentence. Amounts in rupees, grouped the Indian way.
 //
-// THE INSIGHTS (21). The id is the rule's name here and in the selector's memory.
+// THE INSIGHTS (27). The id is the rule's name here and in the selector's memory.
 // Each rule below has its own comment saying what it observes and when it fires.
 //
 //   Getting started
 //     first_day           a new account with nothing logged yet
+//     first_entry         the first entry is in, on the day it was made
 //   Spending
 //     month_vs_last       this month against last, to the same day
 //     biggest_expense     the largest single purchase this month
 //     week_vs_last        the last 7 days against the 7 before
 //     average_day         what a day costs on average
+//     lowest_month        the month that just ended, the lowest yet
+//     average_month_spend   what a usual month costs
+//     average_month_income  what a usual month brings in
+//     above_usual         this month has already passed a usual month
 //   Budget and forecast
 //     budget_pace         the budget against the calendar
 //     set_budget          a new month with no budget set
+//     first_budget        a new account's second day, with no budget yet
 //   Salary and income
 //     income_change       income against the month before
 //   Savings
@@ -149,6 +155,17 @@ export const T = {
   SAVED_WINDOW_DAYS: 14,
   // How long an insight rests after being shown before it may come back.
   COOLDOWN_DAYS: 7,
+  // lowest_month: said in the first days of a new month, against at least this many
+  // earlier well-logged months, with up to this many months drawn.
+  LOWEST_MONTH_DAYS: 10,
+  LOWEST_MONTH_MIN_EARLIER: 2,
+  LOWEST_MONTH_BARS: 6,
+  // The monthly averages: over the last few well-logged months, once there are at least
+  // AVERAGE_MIN_MONTHS of them.
+  AVERAGE_MONTHS: 6,
+  AVERAGE_MIN_MONTHS: 2,
+  // above_usual: said for this many days after the month passes the usual month.
+  ABOVE_USUAL_DAYS: 5,
   // Data confidence. The engine can only see what was logged, and someone who logs
   // now and then looks the same as someone who spends now and then. So a month is
   // only compared once it holds at least this many distinct days with a transaction
@@ -182,6 +199,27 @@ const money = (n) =>
 // overspend spilling off the top. Beside the text, with the share as its headline.
 const budgetVisual = (used, tone) => ({ type: 'budgetCoins', used, headline: `${used}%`, tone, caption: 'of your budget used' })
 
+// The two monthly-average insights: the months as bars with the average across, the
+// average as the headline, red for spending and green for income.
+const averageMonth = (months, field, avg, kind) => ({
+  // Just above an ordinary learn card, so they get their day; resting a month keeps
+  // them from crowding anything out.
+  score: 59,
+  variants: [`About ${money(avg)} a month`],
+  description: `Based on your last ${months.length} months.`,
+  visual: {
+    type: 'bars',
+    ...monthBars(months, field),
+    average: true,
+    barTone: kind,
+    headline: money(avg),
+    tone: kind === 'income' ? 'good' : 'bad',
+    caption: `is your average ${kind} per month`,
+  },
+  quoteKey: `average_month_${field}`,
+  evidence: { average: Math.round(avg), months: months.length },
+})
+
 const pad = (n) => String(n).padStart(2, '0')
 const monthKey = (year, month) => `${year}-${pad(month + 1)}` // month is 0-based
 const keyOf = (dateStr) => dateStr.slice(0, 7)
@@ -202,6 +240,12 @@ export function dayNumber(now = new Date()) {
 }
 
 const sum = (arr) => arr.reduce((a, b) => a + b, 0)
+
+// A list of months ({ key, [field] }) as the bars picture's values and initials.
+const monthBars = (months, field) => ({
+  values: months.map(m => m[field]),
+  labels: months.map(m => monthNameOf(m.key)[0]),
+})
 
 // The user's first name goes into a line only when that line is a moment worth speaking
 // to them about: good news, a goal close to done, a budget that's been passed. `when`
@@ -325,6 +369,15 @@ export function computeFacts({ transactions = [], budget = null, goals = [], nam
   const lastWellLogged = !!lastKey && completedSpend.some(m => m.key === lastKey)
   const lastSpend = lastWellLogged ? spendIn(lastKey) : null
 
+  // The well-logged completed months that had income, for the average income rule.
+  const completedIncome = completedSpend
+    .map(m => ({ key: m.key, income: incomeByMonth[m.key] || 0 }))
+    .filter(m => m.income > 0)
+
+  // This month's spend day by day, up to today, for the average-day picture.
+  const dailySpend = Array.from({ length: dayOfMonth }, () => 0)
+  for (const t of monthExpenses) dailySpend[dayOf(t.date) - 1] += t.amount
+
   // Recent days, for the daily rules. `dayStr(n)` is n days before today.
   const dayStr = (n) => toDateStr(new Date(dateFromStr(todayStr).getTime() - n * 86400000))
   const spendBetween = (a, b) => sum(expenses.filter(t => t.date >= a && t.date <= b).map(t => t.amount))
@@ -358,12 +411,24 @@ export function computeFacts({ transactions = [], budget = null, goals = [], nam
   for (let i = depositMonths.has(curKey) ? curIdx : curIdx - 1; depositMonths.has(indexToKey(i)); i--) savingStreak++
   const streakStartKey = savingStreak ? indexToKey((depositMonths.has(curKey) ? curIdx : curIdx - 1) - savingStreak + 1) : null
 
-  // An average day, this month and last.
+  // An average day this month.
   const avgDaySpend = dayOfMonth >= 5 ? spendThisMonth / dayOfMonth : null
-  const lastAvgDaySpend = lastWellLogged && lastKey ? spendIn(lastKey) / daysInMonth(Number(lastKey.slice(0, 4)), Number(lastKey.slice(5, 7)) - 1) : null
 
   // How much has been logged, and what has been saved lately.
   const totalEntries = expenses.length + incomes.length
+  // Whole days since the first entry of all (0 on its own day), or null before one.
+  // The very first entry made, and whole days since the day it was made (0 on that
+  // day): when it was added, not the date it is for, so a first entry backdated to
+  // yesterday still makes today day 1. Entries without an added time (older rows)
+  // fall back to their date.
+  const addedOn = (t) => (t.createdAt ? toDateStr(new Date(t.createdAt)) : t.date)
+  const firstEntry = transactions.filter(t => t.amount > 0).reduce((first, t) => {
+    if (!first) return t
+    const a = t.createdAt || t.date
+    const b = first.createdAt || first.date
+    return a < b ? t : first
+  }, null)
+  const daysSinceFirstEntry = firstEntry ? Math.round((dateFromStr(todayStr) - dateFromStr(addedOn(firstEntry))) / 86400000) : null
   const savedWindowStart = dayStr(T.SAVED_WINDOW_DAYS)
   const savedRecentNet = sum(savingsGoals.flatMap(g => (g.entries || []).filter(e => e.date >= savedWindowStart && e.date <= todayStr).map(e => (e.type === 'add' ? e.amount : -e.amount))))
 
@@ -379,7 +444,7 @@ export function computeFacts({ transactions = [], budget = null, goals = [], nam
     name: String(name || '').trim().split(/\s+/)[0],
     now, todayStr, dayOfMonth, monthLength, curKey, curLabel: monthNameOf(curKey),
     spendThisMonth, countThisMonth: countByMonth[curKey] || 0,
-    completedKeys, lastKey, priorKey, compare,
+    completedKeys, lastKey, priorKey, compare, completedSpend, completedIncome, dailySpend,
     biggestExpense, topExpenses,
     budgetAmount, budgetUsedPct, monthElapsedPct,
     yearAvgSpend, yearAvgIncome, monthlySpend,
@@ -388,7 +453,7 @@ export function computeFacts({ transactions = [], budget = null, goals = [], nam
     weekSpend, weekPrevSpend, weekLogged, weekPrevLogged,
     incomeLast, incomePrior, priorWellLogged, lastWellLogged,
     withdrawnThisMonth, withdrawalCount, savingStreak, streakStartKey,
-    avgDaySpend, lastAvgDaySpend, totalEntries,
+    avgDaySpend, totalEntries, firstEntry, daysSinceFirstEntry,
   }
 }
 
@@ -420,10 +485,42 @@ export const RULES = [
       return {
         score: 99,
         variants: ['What gets tracked gets better'],
-        description: "Add each spend as it happens. In a week, you'll see where your money goes.",
-        // A ledger with today's first line written in, the rest still empty.
-        visual: { type: 'ledger', headline: 'Day 1', tone: 'good', caption: 'What gets tracked gets better' },
+        description: 'Track every rupee you spend from morning to evening to see where your money goes.',
+        // A ledger with today's first line written in, the rest still empty, and a
+        // button into the add sheet.
+        visual: { type: 'ledger', headline: 'Day 1', tone: 'good', cta: 'Add your first expense', ctaAction: 'add' },
         quoteKey: 'first_day',
+        evidence: {},
+      }
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // 0b. first_entry — the first entry is in, on the day it was made.
+  //    Observes: the account's first transaction, dated today.
+  //    Fires: the rest of that day, in first_day's place (no cooldown, same top
+  //    score), with the entry itself written in the ledger and a tick on it.
+  // -------------------------------------------------------------------------
+  {
+    id: 'first_entry',
+    cooldown: 0,
+    build(f) {
+      if (!f.firstEntry || f.daysSinceFirstEntry !== 0) return null
+      const e = f.firstEntry
+      const label = (e.description || '').trim() || (e.type === 'income' ? 'Income' : 'Expense')
+      return {
+        score: 99,
+        variants: [e.type === 'income' ? 'First entry, done' : 'First expense, done'],
+        description: 'Now make it a habit: add every spend, every day, down to the last rupee.',
+        visual: {
+          type: 'ledger',
+          entry: { label, amount: Math.round(e.amount).toLocaleString('en-IN') },
+          done: true,
+          headline: 'Day 1',
+          tone: 'good',
+          caption: e.type === 'income' ? 'First entry, done' : 'First expense, done',
+        },
+        quoteKey: 'first_entry',
         evidence: {},
       }
     },
@@ -970,15 +1067,15 @@ export const RULES = [
       if (last.estimatedFinishDate < f.todayStr) return null
       return {
         score: 66,
-        variants: [`Debt-free by ${monthNameOf(keyOf(last.estimatedFinishDate)).slice(0, 3)} ${last.estimatedFinishDate.slice(0, 4)}`],
+        variants: [`Loan-free by ${monthNameOf(keyOf(last.estimatedFinishDate)).slice(0, 3)} ${last.estimatedFinishDate.slice(0, 4)}`],
         description: `${last.name} is your last loan, and it ends then if you keep paying on schedule.`,
-        // A road ending at a "debt-free" arch, the last loan named under it.
+        // A road ending at a "loan-free" arch, the last loan named under it.
         visual: {
           type: 'arch',
           label: last.name,
           headline: `${monthNameOf(keyOf(last.estimatedFinishDate)).slice(0, 3)} ${last.estimatedFinishDate.slice(0, 4)}`,
           tone: 'good',
-          caption: "you'll be debt-free",
+          caption: "you'll be loan-free",
         },
         quoteKey: 'debt_free_date',
         evidence: { loan: last.name, date: last.estimatedFinishDate },
@@ -996,20 +1093,130 @@ export const RULES = [
     id: 'average_day',
     build(f) {
       if (f.avgDaySpend == null || !(f.avgDaySpend > 0)) return null
+      const days = f.dailySpend.length
       return {
         score: 47,
         variants: [`About ${money(f.avgDaySpend)} a day`],
-        description: f.lastAvgDaySpend > 0 ? `Last month: ${money(f.lastAvgDaySpend)} a day.` : null,
-        // A taxi meter showing what a day costs, beside the text. A plain fact, so neutral.
+        description: `Based on ${f.curLabel} so far.`,
+        // This month's days as bars, no-spend days as green dots, with the average across.
         visual: {
-          type: 'meter',
-          reading: Math.round(f.avgDaySpend).toLocaleString('en-IN'),
+          type: 'bars',
+          values: f.dailySpend,
+          labels: f.dailySpend.map((_, i) => (i === 0 || i === days - 1 ? String(i + 1) : '')),
+          average: true,
+          barTone: 'expense',
+          fromZero: true,
           headline: money(f.avgDaySpend),
-          tone: 'neutral',
-          caption: 'average expense per day',
+          tone: 'bad',
+          caption: 'is your average expense per day',
         },
         quoteKey: 'average_day',
         evidence: { perDay: Math.round(f.avgDaySpend) },
+      }
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // 49. average_month_spend / average_month_income — a usual month, in and out.
+  //    Observes: the average over the last AVERAGE_MONTHS well-logged completed months
+  //    (income: those of them with income logged).
+  //    Fires: once there are AVERAGE_MIN_MONTHS such months. Plain facts, scored below
+  //    anything notable, and rested a month as they barely move.
+  // -------------------------------------------------------------------------
+  {
+    id: 'average_month_spend',
+    cooldown: 30,
+    build(f) {
+      const months = f.completedSpend.filter(m => m.spend > 0).slice(-T.AVERAGE_MONTHS)
+      if (months.length < T.AVERAGE_MIN_MONTHS) return null
+      const avg = sum(months.map(m => m.spend)) / months.length
+      return averageMonth(months, 'spend', avg, 'expense')
+    },
+  },
+  {
+    id: 'average_month_income',
+    cooldown: 30,
+    build(f) {
+      const months = f.completedIncome.slice(-T.AVERAGE_MONTHS)
+      if (months.length < T.AVERAGE_MIN_MONTHS) return null
+      const avg = sum(months.map(m => m.income)) / months.length
+      return averageMonth(months, 'income', avg, 'income')
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // 50. above_usual — this month has already cost more than a usual month.
+  //    Observes: this month's spending so far against the average of the last
+  //    AVERAGE_MONTHS well-logged completed months, and the day it passed it.
+  //    Fires: for ABOVE_USUAL_DAYS days from the day it passed, once a month. Scored
+  //    under budget_pace's warnings: a budget the user set says it better.
+  // -------------------------------------------------------------------------
+  {
+    id: 'above_usual',
+    cooldown: 30,
+    build(f) {
+      const months = f.completedSpend.filter(m => m.spend > 0).slice(-T.AVERAGE_MONTHS)
+      if (months.length < T.AVERAGE_MIN_MONTHS) return null
+      const usual = sum(months.map(m => m.spend)) / months.length
+      if (!(f.spendThisMonth > usual)) return null
+      let total = 0
+      const passedOn = f.dailySpend.findIndex(v => (total += v) > usual) + 1
+      if (!passedOn || f.dayOfMonth - passedOn >= T.ABOVE_USUAL_DAYS) return null
+      const left = f.monthLength - f.dayOfMonth
+      const bars = monthBars([...months, { key: f.curKey, spend: f.spendThisMonth }], 'spend')
+      return {
+        score: 70,
+        variants: [`More than your usual month already`],
+        description: `You usually spend around ${money(Math.round(usual / 1000) * 1000)}. ${left === 0 ? 'Last day of the month.' : `${left} ${left === 1 ? 'day' : 'days'} to go.`}`,
+        // The usual months in grey with their average across, this month in red above it.
+        visual: {
+          type: 'bars',
+          ...bars,
+          highlight: 'bad',
+          average: usual,
+          headline: money(f.spendThisMonth),
+          tone: 'bad',
+          caption: `spent in ${f.curLabel}, more than your usual month`,
+        },
+        quoteKey: 'above_usual',
+        evidence: { spent: f.spendThisMonth, usual: Math.round(usual), passedOn },
+      }
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // 48. lowest_month — the month that just ended was the lowest yet.
+  //    Observes: last month's spend against every earlier well-logged month.
+  //    Fires: in the first LOWEST_MONTH_DAYS days of a new month, when last month was
+  //    well logged and below each of at least LOWEST_MONTH_MIN_EARLIER earlier ones.
+  // -------------------------------------------------------------------------
+  {
+    id: 'lowest_month',
+    cooldown: 30,
+    build(f) {
+      if (!f.lastWellLogged || f.dayOfMonth > T.LOWEST_MONTH_DAYS) return null
+      const last = f.completedSpend[f.completedSpend.length - 1]
+      const earlier = f.completedSpend.slice(0, -1).filter(m => m.spend > 0)
+      if (!last || earlier.length < T.LOWEST_MONTH_MIN_EARLIER || !(last.spend > 0)) return null
+      if (earlier.some(m => m.spend <= last.spend)) return null
+      const usual = sum(earlier.map(m => m.spend)) / earlier.length
+      const label = monthNameOf(last.key)
+      return {
+        score: 74,
+        variants: withName(f, true, `${label} was your lowest month yet`, `${label} was your lowest month yet`),
+        // "Around", so the usual month is rounded to the nearest thousand.
+        description: `You usually spend around ${money(Math.round(usual / 1000) * 1000)} per month.`,
+        // The recent months as bars, the one that just ended in green, beside the text.
+        visual: {
+          type: 'bars',
+          ...monthBars(f.completedSpend.slice(-T.LOWEST_MONTH_BARS), 'spend'),
+          highlight: 'good',
+          headline: money(last.spend),
+          tone: 'good',
+          caption: `${label} was your lowest month yet`,
+        },
+        quoteKey: 'lowest_month',
+        evidence: { month: last.key, spend: last.spend, usual: Math.round(usual), earlier: earlier.length },
       }
     },
   },
@@ -1035,6 +1242,39 @@ export const RULES = [
         visual: { type: 'chest', headline: money(m), tone: 'good', caption: 'saved, across all your goals' },
         quoteKey: 'saved_milestone',
         evidence: { milestone: m },
+      }
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // 51. first_budget — a new account's second day, with no budget yet.
+  //    Observes: no budget, the first entry a day or two ago, and no well-logged month
+  //    behind it yet (once there is one, set_budget takes over in each new month).
+  //    Fires: on days 2 and 3 of using the app, ahead of everything but first_day.
+  //    Says what a budget is for; there is no usual month yet to suggest a number.
+  // -------------------------------------------------------------------------
+  {
+    id: 'first_budget',
+    build(f) {
+      if (f.budgetAmount || f.completedSpend.length > 0) return null
+      if (!(f.daysSinceFirstEntry >= 1 && f.daysSinceFirstEntry <= 2)) return null
+      return {
+        score: 98,
+        variants: [`Give ${f.curLabel} a budget`],
+        description: 'A budget turns tracking into a plan. Okana shows how you are doing, every day.',
+        // A blank planner page promising "This month I will spend ₹ ___", and a button
+        // that opens the budget sheet.
+        visual: {
+          type: 'planner',
+          heading: f.curLabel.toUpperCase(),
+          hint: '',
+          headline: `Day ${f.daysSinceFirstEntry + 1}`,
+          tone: 'good',
+          caption: `Give ${f.curLabel} a budget`,
+          cta: `Set ${f.curLabel} budget`,
+        },
+        quoteKey: 'set_budget',
+        evidence: { daysSinceFirstEntry: f.daysSinceFirstEntry },
       }
     },
   },

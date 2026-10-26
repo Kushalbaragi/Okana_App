@@ -27,6 +27,14 @@ async function readStoredUser() {
   }
 }
 
+// A brand-new account: it has never been through the welcome pages. Signup no longer
+// asks for a name, so `welcomed` (set when those pages finish, see welcome.js) is
+// what says so; a name means an account from before that, which counts as welcomed.
+export function isNewAccount(user) {
+  const meta = user?.user_metadata || {};
+  return !meta.welcomed && !meta.name;
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -129,14 +137,14 @@ export function AuthProvider({ children }) {
       const { data, error } = await supabase.auth.verifyOtp({ token_hash: body.hashed_token, type: 'magiclink' });
       if (error) throw error;
       // Same check as the real path below — the very first time this
-      // account is used it genuinely has no name yet, and should route
+      // account is used it has never been welcomed, and should route
       // through onboarding exactly like any other new signup so a reviewer
       // sees the full app, not just a skipped-ahead Dashboard.
-      return { isNewUser: !data.user?.user_metadata?.name };
+      return { isNewUser: isNewAccount(data.user) };
     }
     const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
     if (error) throw error;
-    const isNewUser = !data.user?.user_metadata?.name;
+    const isNewUser = isNewAccount(data.user);
     // Signup only, not every login — login_completed was mostly redundant
     // with PostHog's own automatic app-opened event for a returning user.
     // Not fired on the review-account bypass above — that's Apple's
@@ -144,11 +152,6 @@ export function AuthProvider({ children }) {
     if (isNewUser) posthog?.capture('signup_completed');
     return { isNewUser };
   }, [posthog]);
-
-  const setName = useCallback(async ({ name }) => {
-    const { error } = await supabase.auth.updateUser({ data: { name } });
-    if (error) throw error;
-  }, []);
 
   const logout = useCallback(async () => {
     await supabase.auth.signOut();
@@ -165,7 +168,7 @@ export function AuthProvider({ children }) {
 
   // Memoised, so every screen reading useAuth() re-renders only when one of these
   // actually changes, not whenever this provider happens to render.
-  const value = useMemo(() => ({ user, profile, loading, sendOtp, verifyOtp, setName, logout }), [user, profile, loading, sendOtp, verifyOtp, setName, logout]);
+  const value = useMemo(() => ({ user, profile, loading, sendOtp, verifyOtp, logout }), [user, profile, loading, sendOtp, verifyOtp, logout]);
 
   return (
     <AuthContext.Provider value={value}>

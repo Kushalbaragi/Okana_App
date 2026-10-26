@@ -53,7 +53,7 @@ function biggerOf(f) {
   const cards = []
   if (f.emiShare != null) cards.push({ label: 'EMIs took', value: `${f.emiShare}% of income`, percent: f.emiShare, tone: f.emiShare > 35 ? 'amber' : 'green' })
   if (f.goal) cards.push({ label: f.goal.name, value: `${f.goal.percent}% done`, percent: f.goal.percent, tone: 'green' })
-  if (f.loans.length && f.debtFree) cards.push({ label: 'Debt free by', value: dateLabel(f.debtFree), note: `${f.loans.length} loan${f.loans.length === 1 ? '' : 's'} left` })
+  if (f.loans.length && f.debtFree) cards.push({ label: 'Loan-free by', value: dateLabel(f.debtFree), note: `${f.loans.length} loan${f.loans.length === 1 ? '' : 's'} left` })
   return cards
 }
 

@@ -32,7 +32,7 @@ export default function Index() {
   // Every destination except Home is its own full screen, ready the moment it
   // mounts, so the native splash can go as the redirect happens. Home hides it
   // itself, once it has data to show (see Dashboard's entrance).
-  const toHome = !!user && !!user.user_metadata?.name && welcomeSeen === true;
+  const toHome = !!user && welcomeSeen === true;
   useEffect(() => {
     if (!checking && !toHome) hideSplash();
   }, [checking, toHome]);
@@ -47,11 +47,8 @@ export default function Index() {
 
   if (user) {
     // Reaching OTP verification already makes `user` truthy, well before
-    // name.js or welcome.js's carousel (including the trial-purchase step)
-    // has actually run — without these, closing the app anywhere in that
-    // stretch (e.g. right after a failed "Start Free Trial") would land
-    // straight on Home next launch, silently skipping the rest.
-    if (!user.user_metadata?.name) return <Redirect href="/(auth)/name" />;
+    // welcome.js's pages have run — without this, closing the app partway
+    // would land straight on Home next launch, silently skipping the rest.
     if (!welcomeSeen) return <Redirect href="/(auth)/welcome" />;
     return <Redirect href="/(app)" />;
   }

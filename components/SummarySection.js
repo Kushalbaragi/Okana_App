@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import ShimmerQuote from './ShimmerQuote';
-import { CoinStack, CoinCompare, Receipt, BudgetCoins, PiggyBank, EmiTicks, LoanBars, PriceTag, BalanceScale, PartyPopper, Fireworks, MonthTicks, OpenSafe, WiltingPlant, FinishArch, TaxiMeter, TreasureChest, PlannerPage, Ledger, MonthsCover, FamilyShield, Clipboard, GrowStacks, CartPause, LaptopNight, Sunset, Untangle, Stairs, CardCut, NeedIt, Packs, CreepSplit, Rule72, WorryPeace, RainUmbrella } from './InsightVisual';
+import { CoinStack, CoinCompare, Receipt, BudgetCoins, PiggyBank, EmiTicks, LoanBars, PriceTag, BalanceScale, PartyPopper, Fireworks, MonthTicks, ValueBars, SplitBar, OpenSafe, WiltingPlant, FinishArch, TreasureChest, PlannerPage, Ledger, MonthsCover, FamilyShield, Clipboard, GrowStacks, CartPause, LaptopNight, Sunset, Untangle, Stairs, CardCut, NeedIt, Packs, CreepSplit, Rule72, WorryPeace, RainUmbrella } from './InsightVisual';
 import { useAuth } from '../context/AuthContext';
 import { useInsight } from '../hooks/useInsight';
 import { ChevronRight } from './icons';
@@ -37,11 +37,18 @@ const SUMMARY_DOT = '#a78bfa';
 const COIN_BAD = '#f87171';
 const COIN_GOOD = '#4ade80';
 // Insight pictures drawn beside the text, with their own headline and caption in place of a title.
-const SIDE_VISUALS = ['coins', 'coinCompare', 'receipt', 'budgetCoins', 'piggy', 'emiTicks', 'loanBars', 'priceTag', 'scale', 'popper', 'fireworks', 'monthTicks', 'safe', 'wilt', 'arch', 'meter', 'chest', 'planner', 'incomeCompare', 'ledger', 'monthsCover', 'familyShield', 'clipboard', 'growStacks', 'cartPause', 'laptopNight', 'sunset', 'untangle', 'stairs', 'cardCut', 'needIt', 'packs', 'creepSplit', 'rule72', 'worryPeace', 'rainUmbrella'];
+const SIDE_VISUALS = ['splitBar', 'coins', 'coinCompare', 'receipt', 'budgetCoins', 'piggy', 'emiTicks', 'loanBars', 'priceTag', 'scale', 'popper', 'fireworks', 'monthTicks', 'bars', 'safe', 'wilt', 'arch', 'chest', 'planner', 'incomeCompare', 'ledger', 'monthsCover', 'familyShield', 'clipboard', 'growStacks', 'cartPause', 'laptopNight', 'sunset', 'untangle', 'stairs', 'cardCut', 'needIt', 'packs', 'creepSplit', 'rule72', 'worryPeace', 'rainUmbrella'];
 // Of those, the ones whose text is centred against the picture rather than bottom-aligned.
-const CENTRED_TEXT = ['receipt', 'emiTicks', 'loanBars', 'priceTag', 'scale', 'popper', 'fireworks', 'monthTicks', 'safe', 'wilt', 'arch', 'meter', 'chest', 'planner', 'incomeCompare', 'ledger', 'monthsCover', 'familyShield', 'clipboard', 'growStacks', 'cartPause', 'laptopNight', 'sunset', 'untangle', 'stairs', 'cardCut', 'needIt', 'packs', 'creepSplit', 'rule72', 'worryPeace', 'rainUmbrella'];
+const CENTRED_TEXT = ['receipt', 'emiTicks', 'loanBars', 'priceTag', 'scale', 'popper', 'fireworks', 'monthTicks', 'bars', 'safe', 'wilt', 'arch', 'chest', 'planner', 'incomeCompare', 'ledger', 'monthsCover', 'familyShield', 'clipboard', 'growStacks', 'cartPause', 'laptopNight', 'sunset', 'untangle', 'stairs', 'cardCut', 'needIt', 'packs', 'creepSplit', 'rule72', 'worryPeace', 'rainUmbrella'];
 
 // Both pills at the top of the page share one look; only their position differs.
+// Their height (8 padding each side around a caption line), and the room kept clear
+// under the lower one.
+const PILL_HEIGHT = 34;
+const PILL_GAP_BELOW = 24;
+// The page's own top padding: the pills are placed from the page's edge, the content
+// after this padding.
+const PAGE_TOP = 24;
 const pillStyle = (light, top) => ({
   position: 'absolute', top, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8,
   paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999,
@@ -64,12 +71,13 @@ function renderPicture(visual, light) {
     case 'popper': return <PartyPopper />;
     case 'fireworks': return <Fireworks />;
     case 'monthTicks': return <MonthTicks months={visual.months} light={light} />;
+    case 'splitBar': return <SplitBar parts={visual.parts} light={light} />;
+    case 'bars': return <ValueBars values={visual.values} labels={visual.labels} highlight={visual.highlight} average={visual.average} tone={visual.barTone} fromZero={visual.fromZero} light={light} />;
     case 'safe': return <OpenSafe />;
     case 'wilt': return <WiltingPlant label={visual.label} light={light} />;
     case 'arch': return <FinishArch label={visual.label} light={light} />;
-    case 'meter': return <TaxiMeter reading={visual.reading} light={light} />;
     case 'chest': return <TreasureChest />;
-    case 'ledger': return <Ledger light={light} />;
+    case 'ledger': return <Ledger entry={visual.entry} done={visual.done} light={light} />;
     case 'monthsCover': return <MonthsCover months={visual.months} label={visual.label} light={light} />;
     case 'familyShield': return <FamilyShield label={visual.label} light={light} />;
     case 'clipboard': return <Clipboard label={visual.label} light={light} />;
@@ -92,7 +100,7 @@ function renderPicture(visual, light) {
   }
 }
 
-function SummarySection({ userId, transactions, budgetAmount, savings, light = false, onOpenSummary, onSetBudget, onSetGoal }) {
+function SummarySection({ userId, transactions, budgetAmount, savings, light = false, onOpenSummary, onSetBudget, onSetGoal, onAddTransaction }) {
   const t = textColor(light);
   // Only a name the user actually set: the account falls back to the start of their email
   // otherwise, which isn't something to call them by.
@@ -127,14 +135,16 @@ function SummarySection({ userId, transactions, budgetAmount, savings, light = f
 
   // The budget pill takes the top spot, or goes just under the summary pill when that is showing.
   const showSummaryPill = !!summaryMonth && !!onOpenSummary;
-  // The budget pill steps aside when today's insight carries its own "Set budget" button.
+  // What an insight's button does: add a transaction (first_day), or set the budget.
+  const ctaPress = visual?.ctaAction === 'add' ? onAddTransaction : onSetBudget;
+  // The budget pill steps aside when today's insight carries its own button.
   const showBudgetPill = !!onSetBudget && !visual?.cta;
 
   return (
     // One group, sitting a third of the way down the space between the tab switch and
     // the bottom of the screen (the free space splits 1 : 2 above and below it), which
     // reads as the middle to the eye. Static: the page never scrolls.
-    <View style={{ flex: 1, paddingHorizontal: 28, paddingTop: 24, paddingBottom: 72 }}>
+    <View style={{ flex: 1, paddingHorizontal: 28, paddingTop: PAGE_TOP, paddingBottom: 72 }}>
       {showSummaryPill && (
         <Pressable
           onPress={onOpenSummary}
@@ -159,6 +169,11 @@ function SummarySection({ userId, transactions, budgetAmount, savings, light = f
           <Text style={{ fontSize: FONT.caption, color: t.secondary }}>Set this month's budget</Text>
           <ChevronRight color={t.disabled} />
         </Pressable>
+      )}
+      {/* The pills float, so the page keeps their room plus a gap clear under them: a
+          tall insight would otherwise ride up against (or under) the lower one. */}
+      {(showSummaryPill || showBudgetPill) && (
+        <View style={{ height: (showSummaryPill && showBudgetPill ? 60 : 16) + PILL_HEIGHT + PILL_GAP_BELOW - PAGE_TOP }} />
       )}
       <View style={{ flex: 1 }} />
       {ready && (
@@ -244,19 +259,20 @@ function SummarySection({ userId, transactions, budgetAmount, savings, light = f
           ) : sideVisual ? (
             // The coins sit beside the text, and the headline figure and caption say
             // what the title would have, so there is no title above.
-            // Bottom-aligned, so the coins end where the description does.
-            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 20 }}>
+            // Coins are bottom-aligned, so they end where the description does; every
+            // other picture and its text are centred on each other, whichever is taller
+            // (with a button under the text, the picture sits in the middle of it all).
+            <View style={{ flexDirection: 'row', alignItems: CENTRED_TEXT.includes(visual.type) ? 'center' : 'flex-end', gap: 20 }}>
               {renderPicture(visual, light)}
-              {/* Beside most pictures the text sits in the middle; beside coins it ends with them. */}
-              <View style={{ flex: 1, alignSelf: CENTRED_TEXT.includes(visual.type) ? 'center' : 'auto' }}>
+              <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: FONT.amount + 4, fontWeight: '600', letterSpacing: -0.6, color: visual.tone === 'good' ? COIN_GOOD : visual.tone === 'bad' ? COIN_BAD : t.primary }}>{visual.headline}</Text>
-                <Text style={{ fontSize: FONT.body, lineHeight: 22, color: t.primary, marginTop: 2 }}>{visual.caption}</Text>
+                {!!visual.caption && <Text style={{ fontSize: FONT.body, lineHeight: 22, color: t.primary, marginTop: 2 }}>{visual.caption}</Text>}
                 {description && (
                   <Text style={{ fontSize: FONT.body, lineHeight: 22, color: t.secondary, marginTop: 10 }}>{description}</Text>
                 )}
                 {/* An insight that asks for something gets a button to do it (set_budget). */}
-                {!!visual.cta && !!onSetBudget && (
-                  <Pressable onPress={onSetBudget} accessibilityRole="button" hitSlop={6} style={{ alignSelf: 'flex-start', marginTop: 14, paddingVertical: 10, paddingHorizontal: 18, borderRadius: 999, backgroundColor: 'rgba(74,222,128,0.25)' }}>
+                {!!visual.cta && !!ctaPress && (
+                  <Pressable onPress={ctaPress} accessibilityRole="button" hitSlop={6} style={{ alignSelf: 'flex-start', marginTop: 14, paddingVertical: 10, paddingHorizontal: 18, borderRadius: 999, backgroundColor: 'rgba(74,222,128,0.25)' }}>
                     <Text style={{ fontSize: FONT.caption, fontWeight: '600', color: COIN_GOOD }}>{visual.cta}</Text>
                   </Pressable>
                 )}

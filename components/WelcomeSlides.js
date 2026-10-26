@@ -1,5 +1,7 @@
-import { View, Text, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
+import { Image } from 'expo-image';
 import { Card, ProgressBar } from './savingsShared';
+import { CoinStack } from './InsightVisual';
 import { darkText, EXPENSE, INCOME_HEX } from '../utils/colors';
 import { formatCurrency } from '../utils/format';
 import { GUTTER } from '../utils/spacing';
@@ -38,19 +40,29 @@ function Caption({ children }) {
   return <Text style={{ fontSize: FONT.caption, color: darkText.tertiary, textAlign: 'center', lineHeight: 19, marginTop: 10 }}>{children}</Text>;
 }
 
-// The middle of the whole screen, not of what is left above the footer.
-function Centered({ children }) {
-  return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: GUTTER }}>{children}</View>;
-}
+// The line that says what the app is for near the middle of the screen, in the
+// slide-title style with "money" in green, and the logo and name a fixed gap above
+// it: measured from the line rather than from the top, so the two never crowd each
+// other on a short phone.
+const LOGO = 64;
+// From the tagline's middle up to the bottom of "Okana".
+const LOGO_ABOVE_MIDDLE = 50;
+// The whole group sits this far below the middle of the screen.
+const GROUP_BELOW_MIDDLE = 40;
 
 function WelcomeSlide() {
   return (
-    <Centered>
-      {/* "Welcome to" steps back so the name is what is read. */}
-      <Text style={TITLE}>
-        <Text style={{ opacity: 0.6 }}>Welcome to </Text>Okana
-      </Text>
-    </Centered>
+    <View style={{ flex: 1, transform: [{ translateY: GROUP_BELOW_MIDDLE }] }}>
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: '50%', marginBottom: LOGO_ABOVE_MIDDLE, alignItems: 'center' }}>
+        <Image source={require('../assets/icon.png')} contentFit="cover" style={{ width: LOGO, height: LOGO, borderRadius: 15 }} />
+        <Text style={{ fontSize: FONT.body, color: '#ffffff', marginTop: 10 }}>Okana</Text>
+      </View>
+      <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', paddingHorizontal: GUTTER }]}>
+        <Text style={TITLE}>
+          Know where your <Text style={{ color: INCOME_HEX }}>money</Text> goes
+        </Text>
+      </View>
+    </View>
   );
 }
 
@@ -61,7 +73,7 @@ function ExpensesSlide({ top, bottom }) {
   const { height } = useWindowDimensions();
   const chartHeight = Math.max(110, Math.min(190, Math.round(height * 0.22)));
   return (
-    <Slide top={top} bottom={bottom} title="See where it goes">
+    <Slide top={top} bottom={bottom} title="Track every rupee">
       <Caption>{'No category, no friction.\nJust add and watch.'}</Caption>
       <View style={{ marginTop: 40, paddingHorizontal: 6 }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 9, height: chartHeight }}>
@@ -94,25 +106,21 @@ function ExpensesSlide({ top, bottom }) {
   );
 }
 
-// What the daily insights cover, as three made-up examples: what went wrong, what to
-// improve and what went well.
-const INSIGHT_CARDS = [
-  { label: 'Went wrong', color: EXPENSE, text: 'One purchase took 40% of your month' },
-  { label: 'Improve', color: '#fbbf24', text: 'Wait 28 days before big buys' },
-  { label: 'Went well', color: INCOME_HEX, text: 'Everything else stayed in line' },
-];
-
+// A real insight, made-up numbers: how much of the income goes to EMIs, as the
+// Insights page draws it (coins beside the text).
 function InsightsSlide({ top, bottom }) {
   return (
     <Slide top={top} bottom={bottom} title="Get custom insights">
       <Caption>{'We study your spending, and tell you\nwhat went wrong and what to improve.'}</Caption>
-      <View style={{ marginTop: 40, gap: 10 }}>
-        {INSIGHT_CARDS.map(({ label, color, text }) => (
-          <View key={label} style={{ backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 16, paddingHorizontal: 18, paddingVertical: 16 }}>
-            <Text style={{ ...LABEL, paddingHorizontal: 0, color }}>{label}</Text>
-            <Text style={{ fontSize: FONT.body, lineHeight: 22, color: 'rgba(255,255,255,0.9)', marginTop: 6 }}>{text}</Text>
+      <View style={{ flex: 1, justifyContent: 'center', paddingBottom: 40 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 20 }}>
+          <CoinStack percent={51} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: FONT.amount + 4, fontWeight: '600', letterSpacing: -0.6, color: '#f87171' }}>51%</Text>
+            <Text style={{ fontSize: FONT.body, lineHeight: 22, color: '#ffffff', marginTop: 2 }}>of your income goes to EMIs</Text>
+            <Text style={{ fontSize: FONT.body, lineHeight: 22, color: darkText.secondary, marginTop: 10 }}>You pay ₹25,500 a month in EMIs, against about ₹50,000 earned.</Text>
           </View>
-        ))}
+        </View>
       </View>
     </Slide>
   );

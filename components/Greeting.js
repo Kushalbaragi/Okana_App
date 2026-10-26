@@ -48,8 +48,9 @@ export default function Greeting({ label, name }) {
         numberOfLines={1}
         style={[{ position: 'absolute', left: 0, right: 0, top: '50%', marginTop: -(WORDS_GAP + 28), fontSize: FONT.title, lineHeight: 28, textAlign: 'center', paddingHorizontal: LINE_SIDE }, wordsStyle]}
       >
-        <Text style={{ fontWeight: '400', color: darkText.secondary }}>{label}, </Text>
-        <Text style={{ fontWeight: '600', color: '#ffffff' }}>{name}</Text>
+        {/* Without a name (signup no longer asks for one), just the label. */}
+        <Text style={{ fontWeight: '400', color: name ? darkText.secondary : '#ffffff' }}>{name ? `${label}, ` : label}</Text>
+        {!!name && <Text style={{ fontWeight: '600', color: '#ffffff' }}>{name}</Text>}
       </Animated.Text>
     </View>
   );

@@ -57,7 +57,7 @@ const DISMISS_DISTANCE = 120;
 const DISMISS_VELOCITY = 800;
 
 // Expense/Income modes for the SegmentedSwitch below — the same sliding-pill
-// switch the Budget / Savings / Debt page uses, shared by this sheet's
+// switch the Insights / Savings / Loans page uses, shared by this sheet's
 // Expense/Income toggle and Savings' Add/Withdraw toggle.
 const TYPE_MODES = ['expense', 'income'];
 const TYPE_LABELS = { expense: 'Expense', income: 'Income' };
@@ -101,6 +101,10 @@ function AddModal({
   // instead of the usual blank ones, all still freely editable before
   // submitting.
   prefill,
+  // Close as soon as Save is tapped instead of waiting for the save to come back
+  // (Home: the transaction is on screen already, and the round trip is most of a
+  // second). The caller then owns saying so if the save is refused.
+  closeOnSubmit = false,
 }) {
   const insets = useSafeAreaInsets();
   const switchOptions = useMemo(() => modes.map(id => ({ id, label: labels[id] })), [modes, labels]);
@@ -295,9 +299,15 @@ function AddModal({
     const mySession = sessionRef.current;
     setSubmitting(true);
     setError('');
-    const result = isEdit
-      ? await onEdit(editData.id, { type, amount: val, date, description })
-      : await onAdd({ type, amount: val, date, description });
+    const save = isEdit
+      ? onEdit(editData.id, { type, amount: val, date, description })
+      : onAdd({ type, amount: val, date, description });
+    if (closeOnSubmit) {
+      hapticHeavy();
+      onClose();
+      return;
+    }
+    const result = await save;
     // The sheet was closed and reopened while this was in flight (drag-
     // dismiss is blocked while submitting, but the Android back button's
     // onRequestClose isn't) — this result belongs to a session the user

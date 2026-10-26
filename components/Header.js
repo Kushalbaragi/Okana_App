@@ -43,7 +43,7 @@ function Header({ onMenuOpen, onCalendarOpen, mode, onSelectMode, light = false 
         onPress={onCalendarOpen}
         className="w-9 h-9 items-center justify-center rounded-xl"
         accessibilityRole="button"
-        accessibilityLabel="Open budget and savings"
+        accessibilityLabel="Open insights, savings and loans"
       >
         <WalletIcon color={iconColor} />
       </Pressable>

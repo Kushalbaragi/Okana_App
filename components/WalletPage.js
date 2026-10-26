@@ -19,7 +19,7 @@ import { FONT } from '../utils/type';
 const SECTIONS = [
   { id: 'summary', label: 'Insights' },
   { id: 'savings', label: 'Savings' },
-  { id: 'debt', label: 'Debt' },
+  { id: 'debt', label: 'Loans' },
 ];
 // Same fade the home screen uses when a tab switches.
 const SECTION_FADE_MS = 220;
@@ -41,7 +41,7 @@ const WALLET_SLIDE_SPRING = { duration: 500, dampingRatio: 1, overshootClamping:
 // read it to move in step with the page — Home uses it for its parallax. It is the
 // page's own value rather than a second animation started elsewhere, so the two
 // can never fall out of step.
-function WalletPage({ open, onClose, onClosed, savings, transactions, budgetAmount, light = false, userId, slideX, locked = false, onLocked, onSubscribe, onOpenSummary, onSetBudget }) {
+function WalletPage({ open, onClose, onClosed, savings, transactions, budgetAmount, light = false, userId, slideX, locked = false, onLocked, onSubscribe, onOpenSummary, onSetBudget, onAddTransaction }) {
   const { width: windowWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
@@ -330,7 +330,7 @@ function WalletPage({ open, onClose, onClosed, savings, transactions, budgetAmou
                 )}
                 {summaryVisited && !locked && (
                   <ErrorBoundary resetKeys={[userId]}>
-                    <SummarySection userId={userId} transactions={transactions} budgetAmount={budgetAmount} savings={savings} light={light} onOpenSummary={onOpenSummary} onSetBudget={onSetBudget} onSetGoal={openSavingGoal} />
+                    <SummarySection userId={userId} transactions={transactions} budgetAmount={budgetAmount} savings={savings} light={light} onOpenSummary={onOpenSummary} onSetBudget={onSetBudget} onSetGoal={openSavingGoal} onAddTransaction={onAddTransaction} />
                   </ErrorBoundary>
                 )}
               </Animated.View>

@@ -137,9 +137,9 @@ export function UpdateIcon({ size = 18, color = '#4ade80' }) {
   );
 }
 
-// The header's entry to the Budget / Savings page (which also holds the spend
-// calendar). A wallet rather than a calendar or a piggy bank: it says "money"
-// for both halves of that page, and it stays legible at this size.
+// The header's entry to the Insights / Savings / Loans page. A wallet rather than
+// a piggy bank: it says "money" for all of that page, and it stays legible at
+// this size.
 export function WalletIcon({ size = 18, color = 'rgba(255,255,255,0.7)' }) {
   const stroke = { stroke: color, strokeWidth: 1.4, strokeLinecap: 'round', strokeLinejoin: 'round' };
   return (

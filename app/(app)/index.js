@@ -33,7 +33,7 @@ import { hideSplash } from '../../utils/splash';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useTourStep } from '../../hooks/useTourStep';
 import { PlusIcon } from '../../components/icons';
-import { currentMonthYear, today, formatCurrency } from '../../utils/format';
+import { currentMonthYear, today, toDateStr, formatCurrency } from '../../utils/format';
 import { getMonthlyRecapSlides, hasAnyRecapData, prevMonthYear, MONTH_NAMES } from '../../utils/monthlyRecap';
 import { SETTLE_EASING } from '../../utils/motion';
 import { FAB_COLOR } from '../../utils/colors';
@@ -125,7 +125,7 @@ export default function Dashboard() {
   const savingsRef = useRef(savings);
   savingsRef.current = savings;
   useWidgetSync({ transactions, budget });
-  const { subscription, refresh: refreshSubscription } = useSubscription(user);
+  const { subscription, loading: subLoading, refresh: refreshSubscription } = useSubscription(user);
   const trialInfo = useMemo(() => getSubscriptionDisplayStatus(subscription, today()), [subscription]);
   const posthog = usePostHog();
   // Fires once, exactly on the transition into 'expired' — not on every
@@ -281,7 +281,7 @@ export default function Dashboard() {
   // SummaryCard/TransactionList are shown (via `displayTransactions` below)
   // to a snapshot taken when the sheet opens, only letting the real
   // (already-updated) data through once the sheet has actually finished
-  // closing — same stash-then-fire shape as pendingBudgetCrossedRef below,
+  // closing — same stash-then-fire shape as pendingBudgetCrossed below,
   // timed off the same addModalClosed flip. Set from both openAdd and
   // openEdit so the two land on the home screen with identical timing;
   // delete has no sheet, so TransactionItem holds it until the swipe row
@@ -352,6 +352,12 @@ export default function Dashboard() {
         // The first open of a month with no budget asks for one, and only that: the
         // summary waits for the next open. The ref keeps this effect re-running from
         // turning the first open into the second.
+        //
+        // Except on signup day: then the only ask is the first expense, so that day
+        // doesn't count as the month's first open and the budget is asked on the
+        // first open of the next day instead.
+        const signupDay = user.created_at ? toDateStr(new Date(user.created_at)) : null;
+        if (monthFirstOpenRef.current == null && signupDay === todayStr) monthFirstOpenRef.current = false;
         if (monthFirstOpenRef.current == null) {
           const { month: m0, year: y0 } = currentMonthYear();
           const monthId = `${y0}-${String(m0 + 1).padStart(2, '0')}`;
@@ -548,6 +554,18 @@ export default function Dashboard() {
     setHoldReveal(true);
   }, [trialInfo.status, transactions]);
 
+  // ?openAdd=1 (from the welcome pages, right after signup): straight into the
+  // first transaction. Waits for the subscription, so the trial reads as started
+  // rather than as "not started" while it loads, and for any budget or summary sheet
+  // to close, as two sheets up at once is broken on Android (while this one is open,
+  // those wait for it in turn). Without access it just doesn't open: the first thing
+  // a new account sees is never the paywall.
+  useEffect(() => {
+    if (params.openAdd !== '1' || subLoading || budgetSetupOpen || recapOpen) return;
+    router.setParams({ openAdd: undefined });
+    if (trialInfo.status === 'trial' || trialInfo.status === 'subscribed') openAdd();
+  }, [params.openAdd, subLoading, budgetSetupOpen, recapOpen, trialInfo.status, openAdd, router]);
+
   // What the Wallet page uses for anything new it can't add without a
   // subscription (a goal or a loan).
   const walletLocked = trialInfo.status === 'expired' || trialInfo.status === 'not_started';
@@ -599,14 +617,14 @@ export default function Dashboard() {
     setTimeout(flushDelete, DELETE_BACKSTOP_MS);
   }, [deleteTx, flushDelete]);
 
-  // Set by addTransactionWithBudgetCheck below, consumed by the effect
-  // right after it — not opened directly there because AddModal is still
-  // mid-close at that point (its own native <Modal> is still up), and two
-  // native Modals mounted at once is broken on Android (same constraint
-  // documented on WalletPage/AddModal above). Stashing the amount
-  // and waiting for addModalClosed to flip true mirrors that same
-  // stash-then-fire pattern.
-  const pendingBudgetCrossedRef = useRef(null);
+  // Set by the save wrappers below, consumed by the effects right after them — not
+  // opened directly there because AddModal may still be mid-close at that point (its
+  // own native <Modal> is still up), and two native Modals mounted at once is broken
+  // on Android (same constraint documented on WalletPage/AddModal above). The sheet
+  // closes the moment Save is tapped (closeOnSubmit), so the save's answer can land
+  // before or after it has gone: state, not a ref, so either order shows it.
+  const [pendingBudgetCrossed, setPendingBudgetCrossed] = useState(null);
+  const [saveFailure, setSaveFailure] = useState(null);
 
   // Wraps addTransaction so it can compare this month's spend right before
   // and right after this one add — that's what "crossed" means (a genuine
@@ -618,21 +636,34 @@ export default function Dashboard() {
     const affectsBudget = data.type === 'expense' && budget.hasBudget && budget.amount > 0;
     const prevSpent = budget.spentThisMonth;
     const result = await addTransaction(data);
-    if (result?.success !== false && affectsBudget) {
+    if (result?.success === false) {
+      setSaveFailure({ title: "Couldn't save that", message: result.error });
+    } else if (affectsBudget) {
       const newSpent = prevSpent + parseFloat(data.amount);
-      if (prevSpent <= budget.amount && newSpent > budget.amount) {
-        pendingBudgetCrossedRef.current = newSpent - budget.amount;
-      }
+      if (prevSpent <= budget.amount && newSpent > budget.amount) setPendingBudgetCrossed(newSpent - budget.amount);
     }
     return result;
   }, [addTransaction, budget.hasBudget, budget.amount, budget.spentThisMonth]);
 
+  const editTransactionWithNotice = useCallback(async (id, data) => {
+    const result = await editTransaction(id, data);
+    if (result?.success === false) setSaveFailure({ title: "Couldn't save that", message: result.error });
+    return result;
+  }, [editTransaction]);
+
   useEffect(() => {
-    if (!addModalClosed || pendingBudgetCrossedRef.current == null) return;
-    setBudgetCrossedOverAmount(pendingBudgetCrossedRef.current);
-    pendingBudgetCrossedRef.current = null;
+    if (!addModalClosed || pendingBudgetCrossed == null) return;
+    setBudgetCrossedOverAmount(pendingBudgetCrossed);
+    setPendingBudgetCrossed(null);
     setBudgetCrossedOpen(true);
-  }, [addModalClosed]);
+  }, [addModalClosed, pendingBudgetCrossed]);
+
+  // A refused save is told once the sheet has gone and nothing else is up.
+  useEffect(() => {
+    if (!addModalClosed || !saveFailure || budgetCrossedOpen) return;
+    setNotice(saveFailure);
+    setSaveFailure(null);
+  }, [addModalClosed, saveFailure, budgetCrossedOpen]);
 
   const openEdit = useCallback((tx) => {
     setAddModalClosed(false);
@@ -698,6 +729,12 @@ export default function Dashboard() {
 
   const openCalendar = useCallback(() => setCalendarOpen(true), []);
   const closeCalendar = useCallback(() => setCalendarOpen(false), []);
+  // From the Insights page's Day 1 button: the page slides away as the add sheet comes up
+  // over Home, where the new transaction then shows.
+  const addFromInsights = useCallback(() => {
+    setCalendarOpen(false);
+    openAdd();
+  }, [openAdd]);
   // From the Insights page: last month's summary slides in over the wallet page, through
   // the same ?openRecap=1 path the summary notification uses. Closing it lands back there.
   const openSummary = useCallback(() => {
@@ -804,10 +841,11 @@ export default function Dashboard() {
         onClose={closeAddModal}
         onClosed={handleAddModalClosed}
         onAdd={addTransactionWithBudgetCheck}
-        onEdit={editTransaction}
+        onEdit={editTransactionWithNotice}
         editData={editData}
         light={LIGHT_HOME}
         calendar
+        closeOnSubmit
       />
 
       <BudgetSetupModal
@@ -892,6 +930,7 @@ export default function Dashboard() {
       onSubscribe={subscribeFromProRequired}
       onOpenSummary={summaryShownOn === today() ? openSummary : undefined}
       onSetBudget={budget.hasBudget || budget.loading ? undefined : openBudgetSetup}
+      onAddTransaction={addFromInsights}
     />
 
     {/* A summary notification was tapped and the summary is still being built: show its

@@ -124,7 +124,7 @@ export const LEARN_CARDS = [
           numbered: true,
           checks: [
             { label: '6-month emergency fund', detail: 'Six months of spending, kept aside for surprises.' },
-            { label: 'No debt', detail: 'Clear every loan and card balance.' },
+            { label: 'No loans', detail: 'Clear every loan and card balance.' },
             { label: 'Health insurance', detail: "So one hospital bill can't undo your savings." },
             { label: 'Term insurance', detail: 'So the people who depend on you are covered.' },
             { label: 'Early retirement savings', detail: 'Invest every month to get out of the 9-to-5 trap.' },
@@ -199,6 +199,41 @@ export const LEARN_CARDS = [
           ],
         },
         evidence: {},
+      }
+    },
+  },
+
+  // The 50/30/20 split of a salary, worked out on the user's own average income (or an
+  // example salary until there is one). Fits best when they keep less than a fifth of it.
+  {
+    id: 'learn_50_30_20',
+    build(f) {
+      const own = f.yearAvgIncome > 0
+      const income = own ? roundTo(f.yearAvgIncome, 1000) : 50000
+      const keepsLittle = own && f.yearAvgSpend > 0 && f.yearAvgSpend > f.yearAvgIncome * 0.8
+      return {
+        triggered: keepsLittle,
+        title: '50-30-20 budgeting rule',
+        description: 'Split each salary three ways: half for needs, 30% for wants, and 20% saved before you spend.',
+        // The salary as one bar cut 50/30/20, and the split in rupees under the description.
+        visual: {
+          type: 'splitBar',
+          parts: [
+            { label: 'Needs', pct: 50 },
+            { label: 'Wants', pct: 30 },
+            { label: 'Save', pct: 20, good: true },
+          ],
+          sum: [
+            { label: own ? 'Your usual income' : 'A salary of', value: rupees(income), strong: true },
+            { label: 'Needs · 50%', value: rupees(income * 0.5), rule: true },
+            { label: 'Wants · 30%', value: rupees(income * 0.3) },
+            { label: 'Save · 20%', value: rupees(income * 0.2), tone: 'good' },
+          ],
+          note: own
+            ? 'Needs are rent, food, bills and EMIs. Wants are everything else. A guide, not a law: start where you can.'
+            : 'An example salary. Log your income to see your own split.',
+        },
+        evidence: { income, own },
       }
     },
   },

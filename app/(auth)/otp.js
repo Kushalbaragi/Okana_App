@@ -60,7 +60,7 @@ export default function OtpScreen() {
       const { isNewUser } = await verifyOtp({ email, token: fullCode });
       hapticAdded();
       if (isNewUser) {
-        router.replace({ pathname: '/(auth)/name' });
+        router.replace('/(auth)/welcome');
       } else {
         router.replace('/(auth)/welcome-back');
       }

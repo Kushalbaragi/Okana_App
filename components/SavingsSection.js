@@ -548,8 +548,8 @@ function paymentGrid(firstEmiDate, tenureMonths, emisPaid = 0) {
   return { years };
 }
 
-// The round "+" at the bottom of the page: on a goal's page it opens the add /
-// withdraw sheet, on the list it opens the new goal / loan sheet.
+// The round "+" at the bottom of a goal's or loan's own page: it opens the add /
+// withdraw (or log a payment) sheet. The list pages add from a "+ Add" link instead.
 function AddFab({ onPress, label }) {
   // The home screen's button, same size, colour and distance from the screen edge.
   // Centred by a full-width wrapper rather than left: '50%' on the button itself, and
@@ -598,15 +598,56 @@ function Divider({ inset = 16, light }) {
   return <View style={{ height: StyleSheet.hairlineWidth, marginHorizontal: inset, backgroundColor: light ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)' }} />;
 }
 
-// A first visit, kept to one question, one line of examples and one button.
-function EmptyState({ light, kind = 'savings' }) {
+// A first visit: what the page is for in two lines (the last words in the page's
+// accent: green for savings, red for loans), then either a few things people save for
+// with one line on why (savings) or three dotted lines on what the page does (loans),
+// and a link that does what the + does.
+function EmptyState({ light, kind = 'savings', onAdd }) {
+  const copy = KIND_COPY[kind];
+  const t = textColor(light);
+  const [line1, line2, accent] = copy.emptyTitle;
+  return (
+    <View className="items-center" style={{ paddingTop: 72, paddingHorizontal: 16 }}>
+      <Text style={{ fontSize: FONT.title, fontWeight: '600', lineHeight: 28, textAlign: 'center', color: ink(light) }}>
+        {line1}{'\n'}{line2}<Text style={{ color: copy.emptyAccent }}>{accent}</Text>
+      </Text>
+      {copy.emptyPoints ? (
+        <View style={{ marginTop: 28, gap: 14 }}>
+          {copy.emptyPoints.map(line => (
+            <View key={line} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: copy.emptyAccent }} />
+              <Text style={{ fontSize: FONT.body, color: t.secondary }}>{line}</Text>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <>
+          <View style={{ marginTop: 28, gap: 10, alignItems: 'center' }}>
+            {copy.emptyExamples.map(name => (
+              <Text key={name} style={{ fontSize: FONT.body, color: t.secondary }}>{name}</Text>
+            ))}
+          </View>
+          <Text style={{ fontSize: FONT.caption, lineHeight: 19, textAlign: 'center', color: t.tertiary, marginTop: 24 }}>{copy.emptyBody}</Text>
+        </>
+      )}
+      <Pressable onPress={onAdd} hitSlop={12} accessibilityRole="button" style={{ marginTop: 28 }}>
+        <Text style={{ fontSize: FONT.body, fontWeight: '600', color: copy.emptyAccent }}>{copy.emptyAction}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+// A section label with the page's "+ Add" at its right end, in the page's accent. The
+// list pages have no round + button: this, on the first label of the page, is how a
+// new goal or loan is added.
+function LabelWithAdd({ light, kind, onAdd, children }) {
   const copy = KIND_COPY[kind];
   return (
-    <View className="items-center" style={{ paddingTop: 96, paddingHorizontal: 16 }}>
-      <Text className="text-xl text-center" style={{ fontWeight: '400', color: ink(light) }}>{copy.emptyTitle}</Text>
-      <Text className="text-[16px] text-center" style={{ color: textColor(light).tertiary, marginTop: 8, lineHeight: 22 }}>
-        {copy.emptyBody}
-      </Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingRight: 20 }}>
+      <SectionLabel light={light} bottom={0}>{children}</SectionLabel>
+      <Pressable onPress={onAdd} hitSlop={12} accessibilityRole="button" accessibilityLabel={copy.newLabel}>
+        <Text style={{ fontSize: FONT.caption, fontWeight: '600', color: copy.emptyAccent }}>{copy.emptyAction}</Text>
+      </Pressable>
     </View>
   );
 }
@@ -1212,6 +1253,7 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
 
   const swipes = useSwipeGroup();
   const { openDeleteGoal } = ui;
+  const addNew = useCallback(() => ui.openNewGoal(''), [ui]);
   const cardProps = { onPress: onOpenGoal, onDelete: openDeleteGoal, registerSwipeable: swipes.registerSwipeable, onSwipeOpen: swipes.onSwipeOpen, onCardPress: swipes.onRowPress, light };
 
   return (
@@ -1239,7 +1281,7 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
                 the loans it is made of. */}
             {listChart && (
               <View style={{ marginBottom: 16 }}>
-                <SectionLabel light={light}>{kind === 'debt' ? 'Monthly EMI' : copy.monthlyTitle}</SectionLabel>
+                <LabelWithAdd light={light} kind={kind} onAdd={addNew}>{kind === 'debt' ? 'Monthly EMI' : copy.monthlyTitle}</LabelWithAdd>
                 <Card light={light}>
                   <View style={{ paddingTop: 22, paddingBottom: 16 }}>
                     <MonthSlider key={chartKey} months={listChart.months} initialIndex={listChart.initialIndex} light={light} label={kind === 'debt' ? 'EMIs paid by month' : 'Savings by month'} onSettle={kind === 'debt' ? onChartSettle : undefined} currentIndex={kind === 'debt' ? listChart.currentIndex : listChart.initialIndex} />
@@ -1257,16 +1299,19 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
           // GUTTER (20), not 16 — matches the goal detail page's own
           // paddingHorizontal below, and the app's screen edge everywhere
           // else. Was the one screen still at 16.
-          contentContainerStyle={{ paddingHorizontal: GUTTER, paddingTop: isEmpty ? 8 : 0, paddingBottom: 148 }}
+          contentContainerStyle={{ paddingHorizontal: GUTTER, paddingTop: isEmpty ? 8 : 0, paddingBottom: 64 }}
         >
           {isEmpty ? (
-            <EmptyState light={light} kind={kind} />
+            <EmptyState light={light} kind={kind} onAdd={addNew} />
           ) : (
             <>
               {/* Outside the fading block, so only the number changes with the month. */}
-              {shownGoals.length > 0 && (
+              {/* Without the monthly chart above, the "+ Add" sits on this label instead. */}
+              {shownGoals.length > 0 && (listChart ? (
                 <SectionLabel light={light}>{kind === 'debt' ? 'Loans' : 'Goals'} · {shownGoals.length}</SectionLabel>
-              )}
+              ) : (
+                <LabelWithAdd light={light} kind={kind} onAdd={addNew}>{kind === 'debt' ? 'Loans' : 'Goals'} · {shownGoals.length}</LabelWithAdd>
+              ))}
               {shownGoals.length > 0 && (
                 <Card light={light}>
                   {shownGoals.map((g, i) => <GoalCard key={g.id} goal={g} {...cardProps} done={browsing && !!g.completedAt} note={browsing ? earlyCloseNote(g, pickedMonth) : undefined} divider={i < shownGoals.length - 1} still={hasBrowsed.current} />)}
@@ -1299,7 +1344,6 @@ function SavingsSection({ savings, ui, active, light = false, detailGoalId, onOp
             </>
           )}
         </ScrollView>
-        <AddFab onPress={() => ui.openNewGoal('')} label={copy.newLabel} />
       </Animated.View>
 
       <Animated.View style={[StyleSheet.absoluteFill, detailStyle]} pointerEvents={detailOpen ? 'auto' : 'none'}>

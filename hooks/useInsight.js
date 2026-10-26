@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { computeFacts, pickInsight, runRules, dayNumber, EMPTY_HISTORY } from '../utils/insightEngine'
+import { computeFacts, pickInsight, dayNumber, EMPTY_HISTORY } from '../utils/insightEngine'
 import { quoteFor } from '../utils/dailyTips'
 import { storageKeys } from '../utils/storageKeys'
 import { reportError } from '../utils/errors'
@@ -11,11 +11,6 @@ import { reportError } from '../utils/errors'
 // keeps what it showed lately (so an insight rests after it's been seen) in
 // AsyncStorage, per user, and holds back the insight until that memory has loaded:
 // choosing before it has would pick without knowing what was just shown.
-// Dev only: the id of an insight to show whenever its numbers allow, to check its
-// design without waiting for its day. It doesn't touch the shown-history. null to
-// pick normally.
-const PREVIEW_INSIGHT = null
-
 export function useInsight({ userId, name, transactions, budgetAmount, goals }) {
   // undefined = not loaded yet; an object once it has been read (or failed to be).
   const [history, setHistory] = useState(undefined)
@@ -42,8 +37,7 @@ export function useInsight({ userId, name, transactions, budgetAmount, goals }) 
 
   const picked = useMemo(() => {
     if (history === undefined) return null
-    const preview = PREVIEW_INSIGHT && runRules(facts, day).find(c => c.id === PREVIEW_INSIGHT)
-    return preview ? { insight: preview, history } : pickInsight(facts, history, day)
+    return pickInsight(facts, history, day)
   }, [facts, history, day])
 
   // Remember what was shown. Picking again with the new memory returns the same

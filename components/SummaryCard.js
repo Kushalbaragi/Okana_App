@@ -273,16 +273,14 @@ function SummaryCard({
   // is looked up on its own.
   const change = useMemo(() => {
     if (timeRange === 'month') {
-      // Only the whole month, on Expense (Income has no month view). Last month is cut
-      // at the same day of the month, so the first half of a month isn't set against a
-      // whole one and always read as "less".
+      // Only the whole month, on Expense (Income has no month view): this month's total against all of
+      // last month's.
       if (picked != null || mode !== 'expense') return null;
       const prevMonth = (currMonth + 11) % 12;
       const prevYear = currMonth === 0 ? currYear - 1 : currYear;
-      const today = new Date().getDate();
       const sum = arr => arr.reduce((a, b) => a + b, 0);
-      const cur = sum(chartData.expense.slice(0, today));
-      const prev = sum(getDailyTotals(transactions, prevMonth, prevYear).expense.slice(0, today));
+      const cur = sum(chartData.expense);
+      const prev = sum(getDailyTotals(transactions, prevMonth, prevYear).expense);
       if (!prev) return null;
       return { pct: Math.round(((cur - prev) / prev) * 100), label: MONTH_NAMES[prevMonth] };
     }

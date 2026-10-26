@@ -206,6 +206,8 @@ export function useBudget(user, transactions) {
         )
         .select()
         .single()
+      // Supabase returns a dropped connection as `error` rather than throwing it.
+      if (error && isConnectivityError(error, isOnlineRef.current)) throw error
       if (error) { reportError(error); return { success: false, error: friendlyError(error) } }
       // This set is now the source of truth for the month — drop any
       // stale pending value so a later refresh doesn't reapply an older

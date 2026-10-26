@@ -232,6 +232,8 @@ export function useTransactions() {
 
     try {
       const { data, error } = await supabase.from('transactions').insert(payload).select().single()
+      // Supabase returns a dropped connection as `error` rather than throwing it.
+      if (error && isConnectivityError(error, isOnlineRef.current)) throw error
       if (error) {
         // A real rejection, not connectivity — retrying later won't help,
         // so roll the optimistic entry back out and surface it.
@@ -295,6 +297,7 @@ export function useTransactions() {
         .eq('id', id)
         .eq('user_id', user.id)
 
+      if (error && isConnectivityError(error, isOnlineRef.current)) throw error
       if (error) {
         // Real rejection — resync from the server to undo the optimistic
         // edit, since there's no separate "previous values" snapshot kept
@@ -348,6 +351,7 @@ export function useTransactions() {
         .eq('id', id)
         .eq('user_id', user.id)
 
+      if (error && isConnectivityError(error, isOnlineRef.current)) throw error
       if (error) {
         // Real rejection — resync to bring the row back if it's still
         // actually there server-side.

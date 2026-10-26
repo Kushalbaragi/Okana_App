@@ -9,7 +9,7 @@ export const PRICE_PER_YEAR = 499
 export const PLUS_BENEFITS = [
   'Add unlimited transactions',
   'In a graph, watch your money grow or shrink',
-  'Plan your budget and save toward goals',
+  'Daily insights, and save toward goals',
   'Track and pay off loans',
   'Monthly recap summary',
   'Made for a common salary person',

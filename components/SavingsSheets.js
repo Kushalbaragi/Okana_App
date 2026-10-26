@@ -481,7 +481,7 @@ function DebtTypeStep({ onSelect, light }) {
     // comment): this step's own height is what the sheet is sized to, so
     // there is no gap above or below the two tiles to begin with.
     <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
-      <Text style={{ fontSize: FONT.body, color: textColor(light).secondary, marginBottom: 12 }}>What kind of debt is this?</Text>
+      <Text style={{ fontSize: FONT.body, color: textColor(light).secondary, marginBottom: 12 }}>What kind of loan is this?</Text>
       <View style={{ gap: 12 }}>
         <DebtTypeOption
           label="EMI / Loan"
